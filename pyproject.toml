@@ -1,0 +1,61 @@
+[project]
+name = "sensai"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Esteban Peroz", email = "esteban.peroz@epitech.eu" },
+    { name = "Noah Savoye", email = "noah.savoye@epitech.eu" },
+    { name = "Amos Almacin", email = "jhong.almacin@epitech.eu" },
+    { name = "Ewan Czarny", email = "ewan.czarny@epitech.eu" },
+
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pre-commit==4.6.2",
+    "pytest==9.1.1",
+    "ruff==0.16.8"
+]
+
+[project.scripts]
+sensai = "sensai:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+exclude = [
+    ".git",
+    ".github",
+    ".venv"
+]
+line-length = 80
+
+[tool.ruff.lint]
+select = [ "ALL" ]
+ignore = [
+    "D203",
+    "D213",
+    "COM812",
+    "CPY001",
+    "D100",
+    "D104",
+    "T201",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "S101",
+    "INP001",
+    "PLR2004",
+    "D",
+    "TC",
+]
