@@ -12,8 +12,6 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/epitech/coding-style-checker:latest
 
     steps:
     - uses: actions/checkout@v7

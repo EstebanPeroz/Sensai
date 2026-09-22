@@ -5,9 +5,6 @@
 - [uv](https://docs.astral.sh/uv/)
 - `make`
 
-uv downloads the right Python version (3.14, see `.python-version`) if it is
-not already installed.
-
 ## Quick start
 
 ```sh
