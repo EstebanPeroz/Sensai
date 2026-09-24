@@ -26,7 +26,7 @@ make lint     # run every pre-commit check (same as the CI)
 make format   # format the code and fix what ruff can fix
 ```
 
-The coding style (80-character lines, every ruff rule enabled) is configured
+The coding style (120-character lines, every ruff rule enabled) is configured
 in `pyproject.toml` under `[tool.ruff]`. The pre-commit hooks, defined in
 `.pre-commit-config.yaml`, run on every commit:
 
