@@ -1,7 +1,7 @@
 name: Mirror
 
 env:
-  TARGET_REPO_URL: "git@github.com:EpitechPGE3-2026/G-AIA-500-NAN-5-1-sensai-2.git"
+  TARGET_REPO_NAME: "EpitechPGE3-2026/G-AIA-500-NAN-5-1-sensai-2"
 
 on:
   workflow_run:
@@ -17,7 +17,8 @@ jobs:
     name: Push to Target Main Repository
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push'
+      github.event.workflow_run.event == 'push' &&
+      github.event.repository.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -28,6 +29,6 @@ jobs:
       - uses: pixta-dev/repository-mirroring-action@v1
         with:
           target_repo_url:
-            ${{ env.TARGET_REPO_URL }}
+            git@github.com:${{ env.TARGET_REPO_NAME }}.git
           ssh_private_key:
             ${{ secrets.GIT_SSH_PRIVATE_KEY }}
