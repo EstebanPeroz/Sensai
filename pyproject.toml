@@ -4,10 +4,11 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
-    { name = "Esteban Peroz", email = "esteban.peroz@epitech.eu" },
-    { name = "Noah Savoye", email = "noah.savoye@epitech.eu" },
     { name = "Amos Almacin", email = "jhong.almacin@epitech.eu" },
+    { name = "Dimitri Collineau", email = "dimitri.collineau@epitech.eu" },
+    { name = "Esteban Peroz", email = "esteban.peroz@epitech.eu" },
     { name = "Ewan Czarny", email = "ewan.czarny@epitech.eu" },
+    { name = "Noah Savoye", email = "noah.savoye@epitech.eu" },
 
 ]
 requires-python = ">=3.14"
@@ -37,7 +38,7 @@ exclude = [
     ".github",
     ".venv"
 ]
-line-length = 80
+line-length = 120
 
 [tool.ruff.lint]
 select = [ "ALL" ]
