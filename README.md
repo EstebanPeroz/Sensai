@@ -93,3 +93,45 @@ versions.
 ├── tests/                    # pytest test suite
 └── docs/
 ```
+
+## Contributors
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/amosAlmacin">
+        <img src="https://github.com/amosAlmacin.png?size=100" width="100px;" alt="Amos Almacin"/>
+        <br />
+        <sub><b>Amos Almacin</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/Dimitri-Collineau">
+        <img src="https://github.com/Dimitri-Collineau.png?size=100" width="100px;" alt="Dimitri-Collineau"/>
+        <br />
+        <sub><b>Dimitri Collineau</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/EstebanPeroz">
+        <img src="https://github.com/EstebanPeroz.png?size=100" width="100px;" alt="EstebanPeroz"/>
+        <br />
+        <sub><b>Esteban Peroz</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/EwanCz">
+        <img src="https://github.com/EwanCz.png?size=100" width="100px;" alt="EwanCz"/>
+        <br />
+        <sub><b>Ewan Czarny</b></sub>
+      </a>
+    </td>
+    <td align="center">
+      <a href="https://github.com/N0AH-sve">
+        <img src="https://github.com/N0AH-sve.png?size=100" width="100px;" alt="N0AH-sve"/>
+        <br />
+        <sub><b>Noah Savoye</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
