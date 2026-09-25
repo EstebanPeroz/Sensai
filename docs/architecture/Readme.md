@@ -77,8 +77,7 @@ sensai/
 
 - **`core/` — Mediator.** `core.py` is the hub every other module is wired
   into; it doesn't own logic itself, it coordinates. `reasoning_loop.py`
-  implements the ReAct-style loop described in
-  [`04-technical-notes.md`](04-technical-notes.md). `events.py` is an
+  implements the ReAct-style loop. `events.py` is an
   `EventBus` — the Observer half of the design — so the UX layer (and
   anything else) can react to streaming tokens, tool calls, etc. without the
   core depending on the UI.
