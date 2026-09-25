@@ -85,7 +85,7 @@ sensai/
 - **`ux/` — pluggable front end.** `model.py` defines the interface a front
   end must implement; `tui/` and `web/` are two concrete implementations
   (CLI is the required base loop's front end, `web/` maps to the "Web UI"
-  feature in [`03-team-and-features.md`](03-team-and-features.md)).
+  feature).
 
 - **`pipeline/` — Chain of Responsibility.** One generic `Chain` class is
   instantiated twice: an inbound chain (`precompute/`: PII masking →

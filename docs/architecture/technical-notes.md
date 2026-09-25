@@ -36,9 +36,7 @@ condition. This is the open design problem for
 
 Proposed approach: **LLM-as-judge**. Send the first model's output to a
 second model whose job is to check for hallucinations, giving that second
-model tools (web search, RAG) to verify claims against real sources. This
-maps to the "Automated Eval & Hallucination Detection" feature in
-[`03-team-and-features.md`](03-team-and-features.md).
+model tools (web search, RAG) to verify claims against real sources.
 
 ## RAG
 
