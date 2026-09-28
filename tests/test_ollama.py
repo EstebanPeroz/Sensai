@@ -1,4 +1,5 @@
 import json
+from collections.abc import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -89,6 +90,45 @@ class TestChatStreaming:
     def test_returns_none_on_non_ok_status(self, adapter: OllamaAdapter) -> None:
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(ok=False)):
             assert adapter.chat({"model": "x", "messages": []}, stream=True) is None
+
+    def test_closes_response_after_full_consumption(self, adapter: OllamaAdapter) -> None:
+        lines = [json.dumps({"model": "m", "message": {"role": "assistant", "content": "hi"}, "done": True})]
+        response = mock_response(lines=lines)
+        with patch("sensai.llm.ollama.requests.post", return_value=response):
+            result = adapter.chat({"model": "m", "messages": []}, stream=True)
+            assert result is not None
+            list(result)
+
+        response.close.assert_called_once()
+
+    def test_closes_response_on_early_termination(self, adapter: OllamaAdapter) -> None:
+        lines = [
+            json.dumps({"model": "m", "message": {"role": "assistant", "content": "a"}, "done": False}),
+            json.dumps({"model": "m", "message": {"role": "assistant", "content": "b"}, "done": False}),
+        ]
+        response = mock_response(lines=lines)
+        with patch("sensai.llm.ollama.requests.post", return_value=response):
+            result = adapter.chat({"model": "m", "messages": []}, stream=True)
+            assert result is not None
+            next(result)
+            result.close()
+
+        response.close.assert_called_once()
+
+    def test_closes_response_on_read_error_mid_stream(self, adapter: OllamaAdapter) -> None:
+        def raising_lines(*_args: object, **_kwargs: object) -> Iterator[str]:
+            yield json.dumps({"model": "m", "message": {"role": "assistant", "content": "a"}, "done": False})
+            raise requests.exceptions.ChunkedEncodingError
+
+        response = mock_response(lines=[])
+        response.iter_lines.side_effect = raising_lines
+        with patch("sensai.llm.ollama.requests.post", return_value=response):
+            result = adapter.chat({"model": "m", "messages": []}, stream=True)
+            assert result is not None
+            chunks = list(result)
+
+        assert [chunk.content for chunk in chunks] == ["a"]
+        response.close.assert_called_once()
 
 
 class TestEmbedding:

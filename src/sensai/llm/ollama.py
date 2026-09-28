@@ -131,10 +131,15 @@ class OllamaAdapter(InterfaceAdapter):
 
     @staticmethod
     def _iter_json_lines(result: requests.Response) -> Iterator[dict]:
-        for line in result.iter_lines(decode_unicode=True):
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                continue
+        try:
+            for line in result.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                try:
+                    yield json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+        except requests.RequestException:
+            return
+        finally:
+            result.close()
