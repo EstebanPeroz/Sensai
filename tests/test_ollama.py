@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from sensai.config.settings import OllamaSettings
 from sensai.llm.ollama import OllamaAdapter
 from sensai.llm.responses import ChatResponse, ShowResponse
 
@@ -13,7 +14,7 @@ _API_PATH = "http://localhost:11434/"
 
 @pytest.fixture
 def adapter() -> OllamaAdapter:
-    return OllamaAdapter()
+    return OllamaAdapter(OllamaSettings())
 
 
 def mock_response(
@@ -31,6 +32,23 @@ def mock_response(
         response.json.return_value = json_data
     response.iter_lines.return_value = iter(lines or [])
     return response
+
+
+class TestSettings:
+    def test_uses_configured_base_url_and_timeout(self) -> None:
+        adapter = OllamaAdapter(OllamaSettings(base_url="http://ollama:1234", timeout=5))
+        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})) as mock_post:
+            adapter.show("model")
+
+        assert mock_post.call_args.args == ("http://ollama:1234/api/show",)
+        assert mock_post.call_args.kwargs["timeout"] == 5
+
+    def test_uses_configured_embedding_model(self) -> None:
+        adapter = OllamaAdapter(OllamaSettings(embedding_model="embeddinggemma"))
+        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})) as mock_post:
+            adapter.embeddings(["a"])
+
+        assert mock_post.call_args.kwargs["json"]["model"] == "embeddinggemma"
 
 
 class TestChatNonStreaming:

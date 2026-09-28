@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import tomllib
-from importlib import resources
 from typing import TYPE_CHECKING, Literal, overload
 
 import requests
@@ -13,19 +11,18 @@ from sensai.llm.responses import ChatResponse, ShowResponse
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-with resources.files("sensai.config").joinpath("settings.toml").open("rb") as f:
-    _settings = tomllib.load(f)["adapter"]["ollama"]
+    from sensai.config.settings import OllamaSettings
 
 
 class OllamaAdapter(InterfaceAdapter):
     """Ollama API wrapper to call needed endpoints."""
 
-    _Embedding_model = _settings["embedding_model"]
-    _API_PATH = _settings["API_path"]
-
-    def __init__(self) -> None:
+    def __init__(self, settings: OllamaSettings) -> None:
         """Init ollama Adapter."""
         super().__init__()
+        self._base_url = settings.base_url.rstrip("/") + "/"
+        self._embedding_model = settings.embedding_model
+        self._timeout = settings.timeout
 
     @overload
     def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse] | None: ...
@@ -36,11 +33,11 @@ class OllamaAdapter(InterfaceAdapter):
         """Send a chat call on the ollama API."""
         payload["stream"] = stream
         if stream:
-            chunks = self._call_stream("api/chat", payload=payload, timeout=30)
+            chunks = self._call_stream("api/chat", payload=payload)
             if chunks is None:
                 return None
             return (ChatResponse(chunk) for chunk in chunks)
-        content = self._call("api/chat", payload=payload, timeout=10)
+        content = self._call("api/chat", payload=payload)
         if content is None:
             return None
         return ChatResponse(content)
@@ -56,8 +53,7 @@ class OllamaAdapter(InterfaceAdapter):
         """Send messages to embed and receive a list of vector for each message."""
         content = self._call(
             endpoint="api/generate",
-            payload={"model": self._Embedding_model, "inputs": messages},
-            timeout=5,
+            payload={"model": self._embedding_model, "inputs": messages},
         )
 
         if content is None:
@@ -66,7 +62,7 @@ class OllamaAdapter(InterfaceAdapter):
 
     def show(self, model_name: str) -> ShowResponse | None:
         """Get info on a specified model on the ollama API."""
-        content = self._call("api/show", {"model": model_name}, timeout=3)
+        content = self._call("api/show", {"model": model_name})
         if content is None:
             return None
         response: ShowResponse = ShowResponse(model=model_name)
@@ -94,12 +90,12 @@ class OllamaAdapter(InterfaceAdapter):
             return False
         return content.get("done", False)
 
-    def _call(self, endpoint: str, payload: dict, *, timeout: int = 10) -> dict | None:
+    def _call(self, endpoint: str, payload: dict) -> dict | None:
         try:
             result = requests.post(
-                self._API_PATH + endpoint,
+                self._base_url + endpoint,
                 json=payload,
-                timeout=timeout,
+                timeout=self._timeout,
             )
         except requests.RequestException:
             return None
@@ -112,13 +108,13 @@ class OllamaAdapter(InterfaceAdapter):
         except requests.exceptions.JSONDecodeError:
             return None
 
-    def _call_stream(self, endpoint: str, payload: dict, *, timeout: int = 10) -> Iterator[dict] | None:
+    def _call_stream(self, endpoint: str, payload: dict) -> Iterator[dict] | None:
         try:
             result = requests.post(
-                self._API_PATH + endpoint,
+                self._base_url + endpoint,
                 json=payload,
                 stream=True,
-                timeout=timeout,
+                timeout=self._timeout,
             )
         except requests.RequestException:
             return None
