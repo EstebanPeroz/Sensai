@@ -6,10 +6,7 @@ sensai/
 ├── requirements.txt
 ├── config/
 │   ├── settings.toml              # model, active handlers, active tools
-│   ├── personas/                  # one .toml per persona
-│   ├── subjects/                  # prompts per subject/project
-│   ├── guardrails.toml            # filtering rules
-│   └── permissions.toml           # allowed paths for the file_access tool
+│   └──  guardrails.toml            # filtering rules
 ├── docs/
 │   ├── architecture/
 │   └── user_stories/

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import tomllib
-from pathlib import Path
+from importlib import resources
 from typing import TYPE_CHECKING, Literal, overload
 
 import requests
@@ -13,9 +13,8 @@ from sensai.llm.responses import ChatResponse, ShowResponse
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-_SETTINGS_PATH = Path(__file__).resolve().parents[3] / "config" / "settings.toml"
-with _SETTINGS_PATH.open("rb") as _settings_file:
-    _settings = tomllib.load(_settings_file)["adapter"]["ollama"]
+with resources.files("sensai.config").joinpath("settings.toml").open("rb") as f:
+    _settings = tomllib.load(f)["adapter"]["olama"]
 
 
 class OllamaAdapter(InterfaceAdapter):
