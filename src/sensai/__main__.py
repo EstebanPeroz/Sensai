@@ -1,3 +1,5 @@
+import sys
+
 from sensai.main import main
 
-main()
+sys.exit(main())
