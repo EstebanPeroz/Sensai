@@ -20,8 +20,8 @@ class OllamaAdapter(InterfaceAdapter):
     def __init__(self, settings: OllamaSettings) -> None:
         """Init ollama Adapter."""
         super().__init__()
-        self._base_url = settings.base_url.rstrip("/") + "/"
-        self._embedding_model = settings.embedding_model
+        self._base_url: str = settings.base_url.rstrip("/") + "/"
+        self._embedding_model: str = settings.embedding_model
 
     @overload
     def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse] | None: ...
