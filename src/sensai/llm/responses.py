@@ -15,12 +15,12 @@ class ShowResponse:
 class ChatResponse:
     """Response of the Chat to format as adapter."""
 
-    model: str
-    done: bool
-    role: str
-    content: str | None
-    thinking: str | None
-    tool_calls: list[dict] | None
+    model: str = ""
+    done: bool = False
+    role: str = ""
+    content: str | None = None
+    thinking: str | None = None
+    tool_calls: list[dict] | None = None
 
     def __init__(self, payload: dict) -> None:
         """Init from /api/chat response, streamed or not."""
