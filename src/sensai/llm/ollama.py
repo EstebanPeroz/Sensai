@@ -22,7 +22,6 @@ class OllamaAdapter(InterfaceAdapter):
         super().__init__()
         self._base_url = settings.base_url.rstrip("/") + "/"
         self._embedding_model = settings.embedding_model
-        self._timeout = settings.timeout
 
     @overload
     def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse] | None: ...
@@ -33,11 +32,11 @@ class OllamaAdapter(InterfaceAdapter):
         """Send a chat call on the ollama API."""
         payload["stream"] = stream
         if stream:
-            chunks = self._call_stream("api/chat", payload=payload)
+            chunks = self._call_stream("api/chat", payload=payload, timeout=30)
             if chunks is None:
                 return None
             return (ChatResponse(chunk) for chunk in chunks)
-        content = self._call("api/chat", payload=payload)
+        content = self._call("api/chat", payload=payload, timeout=10)
         if content is None:
             return None
         return ChatResponse(content)
@@ -54,6 +53,7 @@ class OllamaAdapter(InterfaceAdapter):
         content = self._call(
             endpoint="api/generate",
             payload={"model": self._embedding_model, "inputs": messages},
+            timeout=5,
         )
 
         if content is None:
@@ -62,7 +62,7 @@ class OllamaAdapter(InterfaceAdapter):
 
     def show(self, model_name: str) -> ShowResponse | None:
         """Get info on a specified model on the ollama API."""
-        content = self._call("api/show", {"model": model_name})
+        content = self._call("api/show", {"model": model_name}, timeout=3)
         if content is None:
             return None
         response: ShowResponse = ShowResponse(model=model_name)
@@ -90,12 +90,12 @@ class OllamaAdapter(InterfaceAdapter):
             return False
         return content.get("done", False)
 
-    def _call(self, endpoint: str, payload: dict) -> dict | None:
+    def _call(self, endpoint: str, payload: dict, *, timeout: float = 10) -> dict | None:
         try:
             result = requests.post(
                 self._base_url + endpoint,
                 json=payload,
-                timeout=self._timeout,
+                timeout=timeout,
             )
         except requests.RequestException:
             return None
@@ -108,13 +108,13 @@ class OllamaAdapter(InterfaceAdapter):
         except requests.exceptions.JSONDecodeError:
             return None
 
-    def _call_stream(self, endpoint: str, payload: dict) -> Iterator[dict] | None:
+    def _call_stream(self, endpoint: str, payload: dict, *, timeout: float = 10) -> Iterator[dict] | None:
         try:
             result = requests.post(
                 self._base_url + endpoint,
                 json=payload,
                 stream=True,
-                timeout=self._timeout,
+                timeout=timeout,
             )
         except requests.RequestException:
             return None

@@ -26,7 +26,6 @@ class OllamaSettings:
 
     base_url: str = "http://localhost:11434/"
     embedding_model: str = "nomic-embed-text"
-    timeout: float = 30.0
 
 
 @dataclass

@@ -17,7 +17,7 @@ class TestPackagedSettings:
 
         assert isinstance(settings, Settings)
         assert settings.llm.model != ""
-        assert settings.ollama.timeout > 0
+        assert settings.ollama.base_url != ""
 
 
 class TestPrecedence:

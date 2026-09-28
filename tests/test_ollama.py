@@ -35,13 +35,12 @@ def mock_response(
 
 
 class TestSettings:
-    def test_uses_configured_base_url_and_timeout(self) -> None:
-        adapter = OllamaAdapter(OllamaSettings(base_url="http://ollama:1234", timeout=5))
+    def test_uses_configured_base_url(self) -> None:
+        adapter = OllamaAdapter(OllamaSettings(base_url="http://ollama:1234"))
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})) as mock_post:
             adapter.show("model")
 
         assert mock_post.call_args.args == ("http://ollama:1234/api/show",)
-        assert mock_post.call_args.kwargs["timeout"] == 5
 
     def test_uses_configured_embedding_model(self) -> None:
         adapter = OllamaAdapter(OllamaSettings(embedding_model="embeddinggemma"))
