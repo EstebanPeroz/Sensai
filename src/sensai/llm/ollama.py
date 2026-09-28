@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import tomllib
+from pathlib import Path
 from typing import TYPE_CHECKING, Literal, overload
 
 import requests
@@ -11,12 +13,16 @@ from sensai.llm.responses import ChatResponse, ShowResponse
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+_SETTINGS_PATH = Path(__file__).resolve().parents[3] / "config" / "settings.toml"
+with _SETTINGS_PATH.open("rb") as _settings_file:
+    _settings = tomllib.load(_settings_file)["adapter"]["ollama"]
+
 
 class OllamaAdapter(InterfaceAdapter):
     """Ollama API wrapper to call needed endpoints."""
 
-    _Embedding_model = ""
-    _API_PATH = "http://localhost:11434/"
+    _Embedding_model = _settings["embedding_model"]
+    _API_PATH = _settings["API_path"]
 
     def __init__(self) -> None:
         """Init ollama Adapter."""
