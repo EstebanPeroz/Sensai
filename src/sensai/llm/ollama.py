@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 with resources.files("sensai.config").joinpath("settings.toml").open("rb") as f:
-    _settings = tomllib.load(f)["adapter"]["olama"]
+    _settings = tomllib.load(f)["adapter"]["ollama"]
 
 
 class OllamaAdapter(InterfaceAdapter):
