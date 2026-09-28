@@ -16,7 +16,6 @@ class OllamaAdapter(InterfaceAdapter):
     """Ollama API wrapper to call needed endpoints."""
 
     _Embedding_model = ""
-    _Current_model = ""
     _API_PATH = "http://localhost:11434/"
 
     def __init__(self) -> None:
