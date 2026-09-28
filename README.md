@@ -88,8 +88,7 @@ versions.
 ├── src/
 │   └── sensai/               # the package
 │       ├── __init__.py
-│       ├── __main__.py       # `python -m sensai`
-│       └── main.py           # entry point: main()
+│       └── main.py           # entry point and composition root: main()
 ├── tests/                    # pytest test suite
 └── docs/
 ```

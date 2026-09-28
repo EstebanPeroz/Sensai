@@ -12,7 +12,7 @@ sensai/
 │   └── user_stories/
 ├── tests/
 └── sensai/
-    ├── __main__.py                # composition root: builds and injects everything
+    ├── main.py                    # composition root: builds and injects everything
     │
     ├── core/                      # Mediator
     │   ├── core.py                # receives every module as a dependency
