@@ -1,20 +1,29 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, overload
 
 if TYPE_CHECKING:
-    import requests
+    from collections.abc import Iterator
 
-    from sensai.llm.responses import ShowResponse
+    from sensai.llm.responses import ChatResponse, ShowResponse
 
 
 class InterfaceAdapter(ABC):
     """Interface Used to communicate with different llm API."""
 
+    @overload
+    def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse] | None: ...
+    @overload
+    def chat(self, payload: dict, *, stream: Literal[False]) -> ChatResponse | None: ...
+
     @abstractmethod
-    def chat(self, payload: dict, *, stream: bool) -> requests.Response:
-        """Send a chat call."""
+    def chat(self, payload: dict, *, stream: bool) -> ChatResponse | Iterator[ChatResponse] | None:
+        """Send a chat call.
+
+        When stream is True, returns an iterator yielding one ChatResponse per
+        chunk (the last one has done=True) instead of a single ChatResponse.
+        """
 
     @abstractmethod
     def embedding(self, message: str) -> list:
