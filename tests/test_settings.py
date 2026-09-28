@@ -17,7 +17,7 @@ class TestPackagedSettings:
 
         assert isinstance(settings, Settings)
         assert settings.llm.model != ""
-        assert settings.ollama.base_url != ""
+        assert settings.llm.ollama.base_url != ""
 
 
 class TestPrecedence:
@@ -25,7 +25,7 @@ class TestPrecedence:
         settings = load_settings(write_config(tmp_path, '[llm]\nmodel = "llama3.2"\n'))
 
         assert settings.llm.model == "llama3.2"
-        assert settings.ollama == OllamaSettings()
+        assert settings.llm.ollama == OllamaSettings()
 
     def test_empty_file_gives_defaults(self, tmp_path: Path) -> None:
         assert load_settings(write_config(tmp_path, "")) == Settings()
@@ -37,6 +37,8 @@ class TestValidation:
         [
             '[llm]\nmodle = "x"\n',
             'llm = "x"\n',
+            '[ollama]\nbase_url = "x"\n',
+            '[llm]\nollama = "x"\n',
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str) -> None:

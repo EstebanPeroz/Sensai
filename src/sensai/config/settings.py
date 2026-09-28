@@ -3,7 +3,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from importlib import resources
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -11,13 +11,6 @@ if TYPE_CHECKING:
 
 class ConfigError(Exception):
     """Raised when the settings cannot be loaded or are invalid."""
-
-
-@dataclass
-class LLMSettings:
-    """Backend-agnostic model settings."""
-
-    model: str = "qwen2.5:1.5b"
 
 
 @dataclass
@@ -29,11 +22,18 @@ class OllamaSettings:
 
 
 @dataclass
+class LLMSettings:
+    """Model settings and the backend connection."""
+
+    model: str = "qwen2.5:1.5b"
+    ollama: OllamaSettings = field(default_factory=OllamaSettings)
+
+
+@dataclass
 class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
     llm: LLMSettings = field(default_factory=LLMSettings)
-    ollama: OllamaSettings = field(default_factory=OllamaSettings)
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -45,10 +45,9 @@ def load_settings(path: Path | None = None) -> Settings:
     try:
         with source.open("rb") as f:
             data = tomllib.load(f)
-        return Settings(
-            llm=LLMSettings(**data.get("llm", {})),
-            ollama=OllamaSettings(**data.get("ollama", {})),
-        )
+        llm = _pop_table(data, "llm")
+        ollama = OllamaSettings(**_pop_table(llm, "ollama"))
+        return Settings(llm=LLMSettings(**llm, ollama=ollama), **data)
     except FileNotFoundError:
         msg = f"config file not found: {source}"
     except IsADirectoryError:
@@ -58,3 +57,11 @@ def load_settings(path: Path | None = None) -> Settings:
     except TypeError as err:
         msg = f"invalid settings in {source}: {err}"
     raise ConfigError(msg)
+
+
+def _pop_table(parent: dict[str, Any], key: str) -> dict[str, Any]:
+    table = parent.pop(key, {})
+    if not isinstance(table, dict):
+        msg = f"{key} must be a table"
+        raise TypeError(msg)
+    return table
