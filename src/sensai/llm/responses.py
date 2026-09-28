@@ -22,10 +22,17 @@ class ChatResponse:
     thinking: str | None = None
     tool_calls: list[dict] | None = None
 
+    error: str | None = None
+
     def __init__(self, payload: dict) -> None:
         """Init from /api/chat response, streamed or not."""
-        self.model = payload.get("model", "")
         self.done = payload.get("done", True)
+        self.error = payload.get("error")
+        if self.error is not None:
+            return
+
+        self.model = payload.get("model", "")
+
         message: dict = payload.get("message", {})
         if message == {}:
             return
