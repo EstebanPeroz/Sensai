@@ -59,3 +59,16 @@ class Persona:
     def show(self) -> list:
         """Show all the data."""
         return [self.name, self.version, self.description]
+
+    def apply_to_payload(self, messages: list[dict], extra_params: dict | None = None) -> dict:
+        """Construct a complete API payload containing the system prompt and options."""
+        full_messages = [
+            {"role": "system", "content": self.system_prompt},
+            *messages,
+        ]
+        payload = {
+            "messages": full_messages,
+        }
+        if extra_params:
+            payload.update(extra_params)
+        return payload
