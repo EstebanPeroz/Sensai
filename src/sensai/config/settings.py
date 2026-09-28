@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pathlib import Path
 
+_DEFAULT_MODEL = "qwen2.5:1.5b"
+
 
 class ConfigError(Exception):
     """Raised when the settings cannot be loaded or are invalid."""
@@ -20,13 +22,38 @@ class OllamaSettings:
     base_url: str = "http://localhost:11434/"
     embedding_model: str = "nomic-embed-text"
 
+    def __post_init__(self) -> None:
+        """Check the value types, which come unchecked from the settings file."""
+        _check_name(self.base_url, "llm.ollama.base_url")
+        _check_name(self.embedding_model, "llm.ollama.embedding_model")
+
 
 @dataclass
 class LLMSettings:
-    """Model settings and the backend connection."""
+    """Model settings: the supported models, the active one, and the backend connection.
 
-    model: str = "qwen2.5:1.5b"
+    The first supported model is the active one until another is selected.
+    """
+
+    models: list[str] = field(default_factory=lambda: [_DEFAULT_MODEL])
     ollama: OllamaSettings = field(default_factory=OllamaSettings)
+    model: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Check the value types, then activate the first supported model."""
+        if not isinstance(self.models, list) or not self.models:
+            msg = "llm.models must be a non-empty list"
+            raise TypeError(msg)
+        for model in self.models:
+            _check_name(model, "each llm.models entry")
+        self.model = self.models[0]
+
+    def select_model(self, model: str) -> None:
+        """Make model the active one, provided it is a supported model."""
+        if model not in self.models:
+            msg = f"unknown model {model!r}, available models: {', '.join(self.models)}"
+            raise ConfigError(msg)
+        self.model = model
 
 
 @dataclass
@@ -45,17 +72,23 @@ def load_settings(path: Path | None = None) -> Settings:
     try:
         with source.open("rb") as f:
             data = tomllib.load(f)
-        llm = _pop_table(data, "llm")
-        ollama = OllamaSettings(**_pop_table(llm, "ollama"))
-        return Settings(llm=LLMSettings(**llm, ollama=ollama), **data)
     except FileNotFoundError:
         msg = f"config file not found: {source}"
     except IsADirectoryError:
         msg = f"config path is a directory: {source}"
+    except OSError as err:
+        msg = f"cannot read config file {source}: {err.strerror}"
+    except UnicodeDecodeError:
+        msg = f"config file is not valid UTF-8: {source}"
     except tomllib.TOMLDecodeError as err:
         msg = f"invalid TOML in {source}: {err}"
-    except TypeError as err:
-        msg = f"invalid settings in {source}: {err}"
+    else:
+        try:
+            llm = _pop_table(data, "llm")
+            ollama = OllamaSettings(**_pop_table(llm, "ollama"))
+            return Settings(llm=LLMSettings(**llm, ollama=ollama), **data)
+        except TypeError as err:
+            msg = f"invalid settings in {source}: {err}"
     raise ConfigError(msg)
 
 
@@ -65,3 +98,9 @@ def _pop_table(parent: dict[str, Any], key: str) -> dict[str, Any]:
         msg = f"{key} must be a table"
         raise TypeError(msg)
     return table
+
+
+def _check_name(value: object, name: str) -> None:
+    if not isinstance(value, str) or not value:
+        msg = f"{name} must be a non-empty string"
+        raise TypeError(msg)

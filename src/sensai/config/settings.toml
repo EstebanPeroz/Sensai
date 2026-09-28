@@ -1,5 +1,5 @@
 [llm]
-model = "qwen2.5:1.5b"
+models = ["qwen2.5:1.5b"]
 
 [llm.ollama]
 base_url = "http://localhost:11434/"

@@ -20,7 +20,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         metavar="PATH",
         help="settings file to use instead of settings.toml",
     )
-    parser.add_argument("--model", help="overrides the settings file")
+    parser.add_argument("--model", help="overrides the settings file, must be one of llm.models")
     return parser.parse_args(argv)
 
 
@@ -28,7 +28,7 @@ def build_settings(args: argparse.Namespace) -> Settings:
     """Load the settings file and apply the command line overrides on top of it."""
     settings = load_settings(args.config)
     if args.model is not None:
-        settings.llm.model = args.model
+        settings.llm.select_model(args.model)
     return settings
 
 

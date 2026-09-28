@@ -5,6 +5,12 @@ import pytest
 from sensai.main import build_settings, main, parse_args
 
 
+def write_config(tmp_path: Path) -> Path:
+    path = tmp_path / "settings.toml"
+    path.write_text('[llm]\nmodels = ["llama3.2", "mistral"]\n')
+    return path
+
+
 class TestBuildSettings:
     def test_defaults_to_packaged_settings(self) -> None:
         settings = build_settings(parse_args([]))
@@ -12,18 +18,12 @@ class TestBuildSettings:
         assert settings.llm.model == "qwen2.5:1.5b"
 
     def test_model_argument_overrides_config_file(self, tmp_path: Path) -> None:
-        path = tmp_path / "settings.toml"
-        path.write_text('[llm]\nmodel = "llama3.2"\n')
-
-        settings = build_settings(parse_args(["--config", str(path), "--model", "mistral"]))
+        settings = build_settings(parse_args(["--config", str(write_config(tmp_path)), "--model", "mistral"]))
 
         assert settings.llm.model == "mistral"
 
     def test_config_argument_is_used(self, tmp_path: Path) -> None:
-        path = tmp_path / "settings.toml"
-        path.write_text('[llm]\nmodel = "llama3.2"\n')
-
-        settings = build_settings(parse_args(["--config", str(path)]))
+        settings = build_settings(parse_args(["--config", str(write_config(tmp_path))]))
 
         assert settings.llm.model == "llama3.2"
 
@@ -38,3 +38,9 @@ class TestMain:
         err = capsys.readouterr().err
         assert err.startswith("sensai: error: config file not found")
         assert "Traceback" not in err
+
+    def test_reports_unsupported_model(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        assert main(["--config", str(write_config(tmp_path)), "--model", "qwen3"]) == 2
+
+        err = capsys.readouterr().err
+        assert err == "sensai: error: unknown model 'qwen3', available models: llama3.2, mistral\n"
