@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 from __future__ import annotations
 
 import argparse
@@ -41,7 +40,3 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"sensai: error: {err}", file=sys.stderr)
         return 2
     return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
