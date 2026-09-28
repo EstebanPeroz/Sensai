@@ -67,7 +67,7 @@ class OllamaAdapter(InterfaceAdapter):
 
     def show(self, model_name: str) -> ShowResponse | None:
         """Get info on a specified model on the ollama API."""
-        content = self._call("/api/show", {"model": model_name}, timeout=3)
+        content = self._call("api/show", {"model": model_name}, timeout=3)
         if content is None:
             return None
         response: ShowResponse = ShowResponse(model=model_name)
