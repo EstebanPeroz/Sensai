@@ -50,7 +50,3 @@ class UIAdapter(ABC):
     @abstractmethod
     def send_user_input(self, response: str) -> bool:
         """Send a user conversation input to the UI."""
-
-    @abstractmethod
-    def send_ai_error(self, response: str) -> bool:
-        """Send a ai error to the UI."""

@@ -80,7 +80,6 @@ class ChatApp(App):
         """Init the textual."""
         super().__init__()
         self._event_queue = event_queue
-        self._last_response_text = ""
         self.ready = threading.Event()
         self._list = ListConv()
 
@@ -93,20 +92,23 @@ class ChatApp(App):
         """Signal that the app has finished mounting and is safe to talk to."""
         self.ready.set()
 
-    def add_ai_response(self, text: ChatResponse) -> None:
+    def add_ai_response(self, resp: ChatResponse) -> None:
         """Append streamed text to the last chat entry, or start a new one."""
+        if resp.error is not None:
+            self._add_ai_error(resp.error)
+            return
         chat = self.query_one("#chat", ListView)
 
-        if text.content is not None:
-            content = text.content
+        if resp.content is not None:
+            content = resp.content
             mode = "content"
-        elif text.thinking is not None:
-            content = fx.grey(text.thinking)
+        elif resp.thinking is not None:
+            content = fx.grey(resp.thinking)
             mode = "thinking"
         else:
             return
 
-        if self._list.empty() or self._list.last_same(text) is False:
+        if self._list.empty() or self._list.last_same(resp) is False:
             content = fx.bold("* " + mode + ": ") + content
             data = {"role": "assistant", "mode": mode, "content": content}
             self._list.append(data)
@@ -116,19 +118,14 @@ class ChatApp(App):
             last_item = chat.children[-1]
             label = last_item.query_one(Label)
             label.update(self._list.last_content())
-        self.follow_scrolling()
-
-    def add_ai_error(self, error: str) -> None:
-        chat = self.query_one("#chat", ListView)
-        self._list.append({"role": "assistant", "mode": "error", "content": error})
-        chat.append(ListItem(HorizontalGroup(Label(fx.bold(fx.red("* error: " + error))))))
+        self._follow_scrolling()
 
     def add_user_input(self, user: str) -> None:
         """TMP."""
         chat = self.query_one("#chat", ListView)
         self._list.append({"role": "user", "mode": "message", "content": user})
         chat.append(ListItem(HorizontalGroup(Label(fx.bold("* user: ") + user))))
-        self.follow_scrolling()
+        self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle a user submitting the input widget."""
@@ -141,9 +138,14 @@ class ChatApp(App):
         event.content = content
         self._event_queue.put_nowait(event)
 
-    def follow_scrolling(self) -> None:
+    def _follow_scrolling(self) -> None:
         """TMP."""
         chat = self.query_one("#chat", ListView)
 
         if chat.is_vertical_scroll_end:
             chat.scroll_end(animate=False)
+
+    def _add_ai_error(self, error: str) -> None:
+        chat = self.query_one("#chat", ListView)
+        self._list.append({"role": "assistant", "mode": "error", "content": error})
+        chat.append(ListItem(HorizontalGroup(Label(fx.bold(fx.red("* error: " + error))))))
