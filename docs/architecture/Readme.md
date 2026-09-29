@@ -19,10 +19,9 @@ sensai/
     │   ├── reasoning_loop.py      # drives the chain of tool calls
     │   └── events.py              # EventBus, emitter for the Observer side
     │
-    ├── ux/
-    │   ├── model.py                # interface
+    ├── ui/
+    │   ├── adapter.py                # interface
     │   ├── tui/
-    │   ├── api/
     │   └── web/
     │
     ├── pipeline/                  # Chain of Responsibility
