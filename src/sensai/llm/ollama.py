@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Literal, overload
 
 import requests
 
-from sensai.llm.adapter import InterfaceAdapter
+from sensai.llm.adapter import ProviderAdapter
 from sensai.llm.responses import ChatResponse, ShowResponse
 
 if TYPE_CHECKING:
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from sensai.config.settings import OllamaSettings
 
 
-class OllamaAdapter(InterfaceAdapter):
+class OllamaAdapter(ProviderAdapter):
     """Ollama API wrapper to call needed endpoints."""
 
     def __init__(self, settings: OllamaSettings) -> None:

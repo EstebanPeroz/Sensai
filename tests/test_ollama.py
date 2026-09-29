@@ -88,7 +88,7 @@ class TestChatStreaming:
             assert result is not None
             chunks = list(result)
 
-        assert [chunk.content for chunk in chunks] == ["The ", "sky", ""]
+        assert [chunk.content for chunk in chunks] == ["The ", "sky", None]
         assert [chunk.done for chunk in chunks] == [False, False, True]
         assert mock_post.call_args.kwargs["stream"] is True
         assert mock_post.call_args.kwargs["json"]["stream"] is True
