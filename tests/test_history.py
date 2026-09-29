@@ -1,6 +1,6 @@
 from sensai.llm.message import Message, Role
 from sensai.memory.history import InMemoryHistory
-from sensai.memory.repository import HistoryRepository
+from sensai.memory.history_repository import HistoryRepository
 
 
 def make_history() -> HistoryRepository:
