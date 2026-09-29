@@ -12,6 +12,7 @@ sensai/
 │   └── user_stories/
 ├── tests/
 └── sensai/
+    ├── __main__.py                # `python -m sensai`, delegates to main.py
     ├── main.py                    # composition root: builds and injects everything
     │
     ├── core/                      # Mediator
