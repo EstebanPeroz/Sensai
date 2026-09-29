@@ -41,6 +41,7 @@ sensai/
     ├── llm/                       # Adapter
     │   ├── adapter.py              # LLMAdapter interface
     │   ├── ollama.py               # HTTP client, streaming
+    │   ├── registry.py             # ProviderRegistry: one adapter per configured provider
     │   ├── persona.py
     │   └── structured_output.py    # decorator around the adapter
     │
@@ -94,7 +95,10 @@ sensai/
 
 - **`llm/` — Adapter.** `adapter.py` is the `LLMAdapter` interface;
   `ollama.py` is the (only, per the brief's constraint) concrete adapter,
-  talking to the Ollama HTTP API with streaming. `structured_output.py`
+  talking to the Ollama HTTP API with streaming. `registry.py` builds one
+  adapter per provider configured in `settings.toml`, fetches the available
+  models from their APIs and selects the model to use (the one asked for, or
+  the default model of the first provider). `structured_output.py`
   wraps an adapter to enforce a schema on its output (decorator pattern).
   `persona.py` injects persona system prompts ahead of the adapter call.
 
