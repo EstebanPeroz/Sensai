@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Literal, overload
 
 import requests
 
-from sensai.llm.adapter import InterfaceAdapter
+from sensai.llm.adapter import ProviderAdapter
 from sensai.llm.responses import ChatResponse, ShowResponse
 
 if TYPE_CHECKING:
@@ -17,7 +17,7 @@ with resources.files("sensai.config").joinpath("settings.toml").open("rb") as f:
     _settings = tomllib.load(f)["adapter"]["ollama"]
 
 
-class OllamaAdapter(InterfaceAdapter):
+class OllamaAdapter(ProviderAdapter):
     """Ollama API wrapper to call needed endpoints."""
 
     _Embedding_model = _settings["embedding_model"]
