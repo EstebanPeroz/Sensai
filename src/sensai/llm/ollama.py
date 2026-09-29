@@ -50,8 +50,8 @@ class OllamaAdapter(InterfaceAdapter):
     def embeddings(self, messages: list[str], model: str) -> list[list]:
         """Send messages to embed with model and receive a list of vector for each message."""
         content = self._call(
-            endpoint="api/generate",
-            payload={"model": model, "inputs": messages},
+            endpoint="api/embed",
+            payload={"model": model, "input": messages},
             timeout=5,
         )
 

@@ -142,11 +142,12 @@ class TestChatStreaming:
 
 
 class TestEmbedding:
-    def test_uses_given_model(self, adapter: OllamaAdapter) -> None:
+    def test_calls_embed_endpoint_with_given_model(self, adapter: OllamaAdapter) -> None:
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})) as mock_post:
             adapter.embeddings(["a"], "embeddinggemma")
 
-        assert mock_post.call_args.kwargs["json"]["model"] == "embeddinggemma"
+        assert mock_post.call_args.args == (_API_PATH + "api/embed",)
+        assert mock_post.call_args.kwargs["json"] == {"model": "embeddinggemma", "input": ["a"]}
 
     def test_embedding_returns_first_vector(self, adapter: OllamaAdapter) -> None:
         with patch(
