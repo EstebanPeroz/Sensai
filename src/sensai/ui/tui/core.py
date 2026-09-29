@@ -35,8 +35,15 @@ class UITextualAdapter(UIAdapter):
         self.app.run()
 
     def close(self) -> bool:
-        """Stop the UI."""
-        self.app.call_from_thread(self.app.exit)
+        """Stop the UI.
+
+        `call_from_thread` raises RuntimeError when called from the app's own
+        thread, so exit directly in that case instead of going through it.
+        """
+        try:
+            self.app.call_from_thread(self.app.exit)
+        except RuntimeError:
+            self.app.exit()
         return True
 
     def wait_event(self, *, timeout: float | None = None) -> bool:
