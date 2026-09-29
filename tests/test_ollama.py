@@ -172,6 +172,38 @@ class TestEmbedding:
             assert adapter.embeddings(["a", "b"], "embeddinggemma") == []
 
 
+class TestAvailableModels:
+    def test_lists_installed_models(self, adapter: OllamaAdapter) -> None:
+        tags = {"models": [{"name": "qwen2.5:1.5b"}, {"name": "llama3.2:latest"}]}
+        with patch("sensai.llm.ollama.requests.get", return_value=mock_response(json_data=tags)) as mock_get:
+            assert adapter.available_models() == ["qwen2.5:1.5b", "llama3.2:latest"]
+
+        assert mock_get.call_args.args == (_API_PATH + "api/tags",)
+
+    def test_returns_empty_list_when_no_model_is_installed(self, adapter: OllamaAdapter) -> None:
+        with patch("sensai.llm.ollama.requests.get", return_value=mock_response(json_data={"models": []})):
+            assert adapter.available_models() == []
+
+    def test_returns_empty_list_on_call_failure(self, adapter: OllamaAdapter) -> None:
+        with patch("sensai.llm.ollama.requests.get", side_effect=requests.RequestException):
+            assert adapter.available_models() == []
+
+    def test_returns_empty_list_on_non_ok_status(self, adapter: OllamaAdapter) -> None:
+        with patch("sensai.llm.ollama.requests.get", return_value=mock_response(ok=False)):
+            assert adapter.available_models() == []
+
+
+class TestGetDefaultModel:
+    def test_returns_first_installed_model(self, adapter: OllamaAdapter) -> None:
+        tags = {"models": [{"name": "qwen2.5:1.5b"}, {"name": "llama3.2:latest"}]}
+        with patch("sensai.llm.ollama.requests.get", return_value=mock_response(json_data=tags)):
+            assert adapter.get_default_model() == "qwen2.5:1.5b"
+
+    def test_returns_none_when_no_model_is_installed(self, adapter: OllamaAdapter) -> None:
+        with patch("sensai.llm.ollama.requests.get", side_effect=requests.RequestException):
+            assert adapter.get_default_model() is None
+
+
 class TestShow:
     def test_returns_none_when_model_not_found(self, adapter: OllamaAdapter) -> None:
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(ok=False)):

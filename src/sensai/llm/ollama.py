@@ -59,6 +59,20 @@ class OllamaAdapter(InterfaceAdapter):
             return []
         return content.get("embeddings", [])
 
+    def available_models(self) -> list[str]:
+        """List the models installed on the Ollama server."""
+        content = self._get("api/tags", timeout=3)
+        if content is None:
+            return []
+        return [model["name"] for model in content.get("models", []) if "name" in model]
+
+    def get_default_model(self) -> str | None:
+        """Return the first model installed on the Ollama server, if any."""
+        models = self.available_models()
+        if not models:
+            return None
+        return models[0]
+
     def show(self, model_name: str) -> ShowResponse | None:
         """Get info on a specified model on the ollama API."""
         content = self._call("api/show", {"model": model_name}, timeout=3)
@@ -98,7 +112,17 @@ class OllamaAdapter(InterfaceAdapter):
             )
         except requests.RequestException:
             return None
+        return self._json(result)
 
+    def _get(self, endpoint: str, *, timeout: float = 10) -> dict | None:
+        try:
+            result = requests.get(self._base_url + endpoint, timeout=timeout)
+        except requests.RequestException:
+            return None
+        return self._json(result)
+
+    @staticmethod
+    def _json(result: requests.Response) -> dict | None:
         if not result.ok:
             return None
 

@@ -34,6 +34,14 @@ class InterfaceAdapter(ABC):
         """Send messages to embed with model and receive a list of vector for each message."""
 
     @abstractmethod
+    def available_models(self) -> list[str]:
+        """List the models the provider can run."""
+
+    @abstractmethod
+    def get_default_model(self) -> str | None:
+        """Return the model to use when none is selected, or None when the provider has no model."""
+
+    @abstractmethod
     def show(self, model_name: str) -> ShowResponse | None:
         """Get info on a specified model."""
 
