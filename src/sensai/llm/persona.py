@@ -37,11 +37,17 @@ class Persona:
 
     def get_system_prompt_from_file(self) -> str:
         """Retrieve the system prompt from the loaded data."""
-        return self._config_data.get("system_prompt", "")
+        config_data = self._config_data.get("system_prompt", "")
+        if not config_data:
+            raise PersonaNotFoundError(self.registry_name)
+        return config_data
 
     def get_description_from_file(self) -> str:
         """Retrieve the description from the loaded data."""
-        return self._config_data.get("description", "")
+        description = self._config_data.get("description", "")
+        if not description:
+            raise PersonaNotFoundError(self.registry_name)
+        return description
 
     def get_name_from_file(self) -> str:
         """Retrieve the capitalized name from the loaded data."""
