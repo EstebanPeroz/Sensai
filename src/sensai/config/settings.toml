@@ -1,5 +1,5 @@
 [llm]
-models = ["qwen2.5:1.5b"]
+# model = "qwen2.5:1.5b"  # defaults to the first model of the first provider
 embedding_model = "nomic-embed-text"
 
 [llm.ollama]

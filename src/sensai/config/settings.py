@@ -9,8 +9,6 @@ from urllib.parse import urlsplit
 if TYPE_CHECKING:
     from pathlib import Path
 
-_DEFAULT_MODEL = "qwen2.5:1.5b"
-
 
 class ConfigError(Exception):
     """Raised when the settings cannot be loaded or are invalid."""
@@ -43,34 +41,23 @@ PROVIDERS: tuple[type[ProviderSettings], ...] = (OllamaSettings,)
 
 @dataclass
 class LLMSettings:
-    """Model settings: the supported models, the active one, the embedding model, and the configured providers.
+    """Model settings: the requested model, the embedding model, and the configured providers.
 
-    The first supported model is the active one until another is selected.
+    The available models are not listed here: they are fetched from the providers by the ProviderRegistry,
+    which also falls back to a provider default model when no model is requested.
     The embedding model does not depend on the provider, so it is shared by every provider.
     """
 
-    models: list[str] = field(default_factory=lambda: [_DEFAULT_MODEL])
+    model: str | None = None
     embedding_model: str | None = None
     providers: list[ProviderSettings] = field(default_factory=list)
-    model: str = field(init=False)
 
     def __post_init__(self) -> None:
-        """Check the value types, then activate the first supported model."""
-        if not isinstance(self.models, list) or not self.models:
-            msg = "llm.models must be a non-empty list"
-            raise TypeError(msg)
-        for model in self.models:
-            _check_name(model, "each llm.models entry")
+        """Check the value types, which come unchecked from the settings file."""
+        if self.model is not None:
+            _check_name(self.model, "llm.model")
         if self.embedding_model is not None:
             _check_name(self.embedding_model, "llm.embedding_model")
-        self.model = self.models[0]
-
-    def select_model(self, model: str) -> None:
-        """Make model the active one, provided it is a supported model."""
-        if model not in self.models:
-            msg = f"unknown model {model!r}, available models: {', '.join(self.models)}"
-            raise ConfigError(msg)
-        self.model = model
 
 
 @dataclass

@@ -16,7 +16,7 @@ class TestPackagedSettings:
         settings = load_settings()
 
         assert isinstance(settings, Settings)
-        assert settings.llm.model in settings.llm.models
+        assert settings.llm.model is None
         assert settings.llm.providers == [OllamaSettings()]
 
 
@@ -45,12 +45,13 @@ class TestProviders:
         assert len(names) == len(set(names))
 
 
-class TestModels:
-    def test_first_model_is_active(self, tmp_path: Path) -> None:
-        settings = load_settings(write_config(tmp_path, '[llm]\nmodels = ["llama3.2", "mistral"]\n'))
+class TestModel:
+    def test_is_read_from_llm_table(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, '[llm]\nmodel = "llama3.2"\n')).llm.model == "llama3.2"
 
-        assert settings.llm.model == "llama3.2"
-        assert settings.llm.models == ["llama3.2", "mistral"]
+    def test_models_are_not_listed_in_settings(self, tmp_path: Path) -> None:
+        with pytest.raises(ConfigError, match="unexpected keyword argument 'models'"):
+            load_settings(write_config(tmp_path, '[llm]\nmodels = ["llama3.2"]\n'))
 
 
 class TestEmbeddingModel:
@@ -63,22 +64,6 @@ class TestEmbeddingModel:
         assert load_settings().llm.embedding_model is not None
 
 
-class TestSelectModel:
-    def test_selects_supported_model(self) -> None:
-        llm = LLMSettings(models=["llama3.2", "mistral"])
-
-        llm.select_model("mistral")
-
-        assert llm.model == "mistral"
-
-    def test_rejects_unsupported_model(self) -> None:
-        llm = LLMSettings(models=["llama3.2", "mistral"])
-
-        with pytest.raises(ConfigError, match=r"unknown model 'qwen3', available models: llama3\.2, mistral"):
-            llm.select_model("qwen3")
-        assert llm.model == "llama3.2"
-
-
 class TestValidation:
     @pytest.mark.parametrize(
         ("content", "reason"),
@@ -87,13 +72,10 @@ class TestValidation:
             ('[ollama]\nbase_url = "x"\n', "unexpected keyword argument 'ollama'"),
             ('[llm.ollama]\nurl = "x"\n', "unexpected keyword argument 'url'"),
             ('[llm.mistral]\napi_key = "x"\n', "unexpected keyword argument 'mistral'"),
-            ('[llm]\nmodel = "llama3.2"\n', "unexpected keyword argument 'model'"),
             ('llm = "x"\n', "llm must be a table"),
             ('[llm]\nollama = "x"\n', "ollama must be a table"),
-            ('[llm]\nmodels = "llama3.2"\n', "llm.models must be a non-empty list"),
-            ("[llm]\nmodels = []\n", "llm.models must be a non-empty list"),
-            ('[llm]\nmodels = ["llama3.2", 1]\n', "each llm.models entry must be a non-empty string"),
-            ('[llm]\nmodels = ["llama3.2", ""]\n', "each llm.models entry must be a non-empty string"),
+            ("[llm]\nmodel = 1\n", "llm.model must be a non-empty string"),
+            ('[llm]\nmodel = ""\n', "llm.model must be a non-empty string"),
             ('[llm.ollama]\nbase_url = ["a"]\n', "llm.ollama.base_url must be a non-empty string"),
             ('[llm.ollama]\nembedding_model = "x"\n', "unexpected keyword argument 'embedding_model'"),
             ('[llm]\nembedding_model = ""\n', "llm.embedding_model must be a non-empty string"),
