@@ -7,21 +7,26 @@ if TYPE_CHECKING:
 
 
 class EventType(Enum):
-    """class representing what type of event is sent from UI."""
+    """Kind of event sent by a UI: raw user text, or an issued command."""
 
     UserContent = 1
     Command = 2
 
 
 class Event:
-    """Event sent by a UI."""
+    """Data sent by a UI when the user performs an action, such as submitting text or issuing a command."""
 
     type: EventType | None = None
     content: str = ""
 
 
 class UIAdapter(ABC):
-    """Adapter to use to make a valid UI support."""
+    """Base class a concrete UI implementation must subclass to be driven by the rest of the application.
+
+    Decouples the application logic from any specific UI framework: the
+    application pushes AI responses/user input to the adapter and pulls
+    user-triggered events from it, without knowing how the UI is implemented.
+    """
 
     @abstractmethod
     def open(self) -> bool:
@@ -37,16 +42,19 @@ class UIAdapter(ABC):
 
     @abstractmethod
     def wait_event(self, *, timeout: float | None = None) -> bool:
-        """Wait the UI as long that no event is made."""
+        """Block until an event is available in the queue, or until `timeout` seconds elapse.
+
+        Returns True if an event became available, False on timeout.
+        """
 
     @abstractmethod
     def get_event(self) -> Event | None:
-        """Get the first event in the event queue."""
+        """Pop and return the oldest pending event, or None if the queue is empty."""
 
     @abstractmethod
     def send_ai_response(self, response: ChatResponse) -> bool:
-        """Send a ai response to the UI."""
+        """Forward an AI response to the UI for display. Returns whether it was delivered."""
 
     @abstractmethod
     def send_user_input(self, response: str) -> bool:
-        """Send a user conversation input to the UI."""
+        """Forward a user's conversation input to the UI for display. Returns whether it was delivered."""

@@ -9,16 +9,21 @@ if TYPE_CHECKING:
 
 
 class EventQueue:
-    """TMP."""
+    """Thread-safe FIFO queue of UI events.
+
+    Used to hand events (e.g. user input) from the thread running the UI
+    to the worker thread consuming them, without either thread blocking
+    the other beyond what's needed to acquire the lock.
+    """
 
     def __init__(self) -> None:
-        """TMP."""
+        """Initialize an empty queue with its lock and wait condition."""
         self._queue = deque()
         self._lock = threading.Lock()
         self._not_empty = threading.Condition(self._lock)
 
     def put(self, event: Event) -> None:
-        """TMP."""
+        """Add an event to the queue and wake any thread waiting in `wait_event`."""
         with self._not_empty:
             self._queue.append(event)
             self._not_empty.notify()

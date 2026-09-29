@@ -10,13 +10,19 @@ if TYPE_CHECKING:
 
 
 class UITextualAdapter(ui.UIAdapter):
-    """Adapter to use to make a valid UI support."""
+    """UIAdapter implementation backed by the Textual `ChatApp`.
+
+    Bridges the Textual app, which owns the main thread and its own event
+    loop, with the rest of the application running on a worker thread:
+    calls into the app are marshalled via `call_from_thread`, and user
+    input flows back through a shared `EventQueue`.
+    """
 
     app: ChatApp
     _event_queue: ui.EventQueue
 
     def __init__(self) -> None:
-        """Init the textual."""
+        """Create the shared event queue and the underlying ChatApp instance."""
         super().__init__()
         self._event_queue = ui.EventQueue()
         self.app = ChatApp(self._event_queue)

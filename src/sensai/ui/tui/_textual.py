@@ -15,37 +15,52 @@ if TYPE_CHECKING:
 
 
 class ListConv:
-    """TMP."""
+    """In-memory history of chat entries backing the chat `ListView`.
+
+    Each entry records its role ("user"/"assistant"), rendering `mode`
+    ("message"/"content"/"thinking"/"error") and accumulated text, so the
+    UI can decide whether new streamed content should be appended to the
+    last list item or start a new one.
+    """
 
     _list_conv: list[dict[str, str]]
 
     def __init__(self) -> None:
-        """TMP."""
+        """Initialize an empty conversation history."""
         self._list_conv = []
 
     def last_same(self, mode: str) -> bool:
-        """TMP."""
+        """Check whether the last entry is an assistant entry in the given rendering `mode`.
+
+        Used to decide whether new content should be merged into the last
+        list item instead of starting a new one.
+        """
         last_mode = self._list_conv[-1]["mode"]
 
         return self._list_conv[-1]["role"] == "assistant" and (last_mode == mode)
 
     def empty(self) -> bool:
-        """TMP."""
+        """Return True if no entries have been recorded yet."""
         return len(self._list_conv) == 0
 
     def append(self, data: dict) -> None:
-        """TMP."""
+        """Record a new entry at the end of the conversation history."""
         self._list_conv.append(data)
 
     def last(self) -> dict | None:
-        """TMP."""
+        """Return the most recently recorded entry, or None if the history is empty."""
         if len(self._list_conv) != 0:
             return self._list_conv[-1]
         return None
 
 
 class ChatApp(App):
-    """Init the textual."""
+    """Textual application implementing the chat UI.
+
+    Renders the conversation as a scrolling list, streams AI responses into
+    it, and forwards submitted user input to the shared `EventQueue` for the
+    application's worker thread to consume.
+    """
 
     CSS = """
     ListView#chat {
@@ -68,14 +83,14 @@ class ChatApp(App):
     ready: threading.Event
 
     def __init__(self, event_queue: ui.EventQueue) -> None:
-        """Init the textual."""
+        """Store the shared event queue and initialize conversation state."""
         super().__init__()
         self._event_queue = event_queue
         self.ready = threading.Event()
         self._list = ListConv()
 
     def compose(self) -> ComposeResult:
-        """Init the textual."""
+        """Build the widget tree: a scrolling chat list and a text input for messages."""
         yield ListView(id="chat")
         yield Input(id="input", placeholder="Type a message...")
 
@@ -102,7 +117,7 @@ class ChatApp(App):
                 self._display_response("thinking", fx.grey(resp.thinking))
 
     def add_user_input(self, user: str) -> None:
-        """TMP."""
+        """Append the user's submitted message as a new entry in the chat."""
         chat = self.query_one("#chat", ListView)
         self._list.append({"role": "user", "mode": "message", "content": user})
         chat.append(ListItem(HorizontalGroup(Label(fx.bold("* user: ") + user))))
@@ -120,7 +135,12 @@ class ChatApp(App):
         self._event_queue.put(event)
 
     def _display_response(self, mode: str, content: str) -> None:
-        """Tmp."""
+        """Render a chunk of an AI response in the chat.
+
+        Appends to the last list item if it continues the same assistant
+        `mode` (e.g. streamed "content" or "thinking" text), otherwise
+        starts a new labeled list item.
+        """
         chat = self.query_one("#chat", ListView)
 
         if self._list.empty() or self._list.last_same(mode) is False:
@@ -140,7 +160,7 @@ class ChatApp(App):
         self._follow_scrolling()
 
     def _follow_scrolling(self) -> None:
-        """TMP."""
+        """Auto-scroll the chat list to the bottom, but only if the user was already at the end."""
         chat = self.query_one("#chat", ListView)
 
         if chat.is_vertical_scroll_end:
