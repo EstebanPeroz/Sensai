@@ -71,11 +71,21 @@ class TestValidation:
             ('[llm]\nmodels = ["llama3.2", 1]\n', "each llm.models entry must be a non-empty string"),
             ('[llm]\nmodels = ["llama3.2", ""]\n', "each llm.models entry must be a non-empty string"),
             ('[llm.ollama]\nbase_url = ["a"]\n', "llm.ollama.base_url must be a non-empty string"),
+            ('[llm.ollama]\nbase_url = "http://"\n', "llm.ollama.base_url must be an http\\(s\\) URL with a host"),
+            ('[llm.ollama]\nbase_url = "localhost:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
+            ('[llm.ollama]\nbase_url = "ftp://ollama:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
+            ('[llm.ollama]\nbase_url = "http://ollama:port"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:
         with pytest.raises(ConfigError, match=f"invalid settings in .*{reason}"):
             load_settings(write_config(tmp_path, content))
+
+
+class TestBaseUrl:
+    @pytest.mark.parametrize("url", ["http://localhost:11434/", "https://ollama.example.com", "http://127.0.0.1"])
+    def test_accepts_http_urls(self, url: str) -> None:
+        assert OllamaSettings(base_url=url).base_url == url
 
 
 class TestFileErrors:

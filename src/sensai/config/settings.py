@@ -4,6 +4,7 @@ import tomllib
 from dataclasses import dataclass, field
 from importlib import resources
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -25,6 +26,7 @@ class OllamaSettings:
     def __post_init__(self) -> None:
         """Check the value types, which come unchecked from the settings file."""
         _check_name(self.base_url, "llm.ollama.base_url")
+        _check_url(self.base_url, "llm.ollama.base_url")
         _check_name(self.embedding_model, "llm.ollama.embedding_model")
 
 
@@ -87,7 +89,7 @@ def load_settings(path: Path | None = None) -> Settings:
             llm = _pop_table(data, "llm")
             ollama = OllamaSettings(**_pop_table(llm, "ollama"))
             return Settings(llm=LLMSettings(**llm, ollama=ollama), **data)
-        except TypeError as err:
+        except (TypeError, ValueError) as err:
             msg = f"invalid settings in {source}: {err}"
     raise ConfigError(msg)
 
@@ -104,3 +106,14 @@ def _check_name(value: object, name: str) -> None:
     if not isinstance(value, str) or not value:
         msg = f"{name} must be a non-empty string"
         raise TypeError(msg)
+
+
+def _check_url(value: str, name: str) -> None:
+    msg = f"{name} must be an http(s) URL with a host, got {value!r}"
+    parts = urlsplit(value)
+    try:
+        _ = parts.port  # raises ValueError on an invalid port
+    except ValueError:
+        raise ValueError(msg) from None
+    if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ValueError(msg)
