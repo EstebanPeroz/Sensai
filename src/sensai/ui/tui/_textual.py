@@ -8,6 +8,7 @@ from textual.containers import HorizontalGroup
 from textual.widgets import Input, Label, ListItem, ListView
 
 from sensai.ui.adapter import Event, EventType
+from sensai.ui.tui import _effect
 
 if TYPE_CHECKING:
     import queue
@@ -94,31 +95,39 @@ class ChatApp(App):
     def add_ai_response(self, text: ChatResponse) -> None:
         """Append streamed text to the last chat entry, or start a new one."""
         chat = self.query_one("#chat", ListView)
+        at_end = chat.is_vertical_scroll_end
 
         if text.content is not None:
             content = text.content
             mode = "content"
         elif text.thinking is not None:
-            content = "[red]" + text.thinking + "[/red]"
+            content = _effect.red(text.thinking)
             mode = "thinking"
         else:
             return
 
         if self._list.empty() or self._list.last_same(text) is False:
+            content = _effect.bold("* " + mode + ": ") + content
             data = {"role": "assistant", "mode": mode, "content": content}
             self._list.append(data)
-            chat.append(ListItem(HorizontalGroup(Label(self._list.last_content()))))
+            chat.append(ListItem(HorizontalGroup(Label(content))))
         else:
             self._list.append_content_to_last(content)
             last_item = chat.children[-1]
             label = last_item.query_one(Label)
             label.update(self._list.last_content())
 
+        if at_end:
+            chat.scroll_end(animate=False)
+
     def add_user_input(self, user: str) -> None:
         """TMP."""
         chat = self.query_one("#chat", ListView)
+        at_end = chat.is_vertical_scroll_end
         self._list.append({"role": "user", "mode": "message", "content": user})
         chat.append(ListItem(HorizontalGroup(Label("[bold]* user: [/bold]" + user))))
+        if at_end:
+            chat.scroll_end(animate=False)
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle a user submitting the input widget."""

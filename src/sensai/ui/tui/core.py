@@ -4,7 +4,7 @@ import queue
 from typing import TYPE_CHECKING
 
 from sensai.ui.adapter import Event, UIAdapter
-from sensai.ui.tui.textual import ChatApp
+from sensai.ui.tui._textual import ChatApp
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
@@ -39,22 +39,19 @@ class UITextualAdapter(UIAdapter):
         self.app.call_from_thread(self.app.exit)
         return True
 
-    def wait_event(self) -> None:
-        """Wait the UI as long that no event is made."""
-        event = self._event_queue.get()
-        self._event_queue.put_nowait(event)
+    def wait_event(self, *, timeout: float | None = None) -> bool:
+        """Wait for an event. If timeout is None, wait indefinitely."""
+        try:
+            event = self._event_queue.get(timeout=timeout)
+            self._event_queue.put_nowait(event)
+        except queue.Empty:
+            return False
+        return True
 
     def get_event(self) -> Event | None:
         """Get the first event in the event queue."""
         try:
             return self._event_queue.get_nowait()
-        except queue.Empty:
-            return None
-
-    def poll_event(self, timeout: float) -> Event | None:
-        """Wait up to `timeout` seconds for an event, then give up."""
-        try:
-            return self._event_queue.get(timeout=timeout)
         except queue.Empty:
             return None
 

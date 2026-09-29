@@ -36,21 +36,12 @@ class UIAdapter(ABC):
         """Stop the UI."""
 
     @abstractmethod
-    def wait_event(self) -> None:
+    def wait_event(self, *, timeout: float | None = None) -> bool:
         """Wait the UI as long that no event is made."""
 
     @abstractmethod
     def get_event(self) -> Event | None:
         """Get the first event in the event queue."""
-
-    @abstractmethod
-    def poll_event(self, timeout: float) -> Event | None:
-        """Wait up to `timeout` seconds for an event, then give up.
-
-        Unlike `wait_event`, this always returns within `timeout` seconds,
-        which lets a caller check for events on its own cadence instead of
-        being tied to whatever else produces events.
-        """
 
     @abstractmethod
     def send_ai_response(self, response: ChatResponse) -> bool:
