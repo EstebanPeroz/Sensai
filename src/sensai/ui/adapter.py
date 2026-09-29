@@ -24,21 +24,38 @@ class UIAdapter(ABC):
     """Adapter to use to make a valid UI support."""
 
     @abstractmethod
-    def open() -> bool:
-        """Start the UI."""
+    def open(self) -> bool:
+        """Wait until the UI has started and is ready to receive calls."""
 
     @abstractmethod
-    def close() -> bool:
+    def run(self) -> None:
+        """Block running the UI. Must be called from the main thread."""
+
+    @abstractmethod
+    def close(self) -> bool:
         """Stop the UI."""
 
     @abstractmethod
-    def wait_event() -> None:
+    def wait_event(self) -> None:
         """Wait the UI as long that no event is made."""
 
     @abstractmethod
-    def get_event() -> Event | None:
-        """Wait the UI as long that no event is made."""
+    def get_event(self) -> Event | None:
+        """Get the first event in the event queue."""
 
     @abstractmethod
-    def send_ai_response() -> ChatResponse:
+    def poll_event(self, timeout: float) -> Event | None:
+        """Wait up to `timeout` seconds for an event, then give up.
+
+        Unlike `wait_event`, this always returns within `timeout` seconds,
+        which lets a caller check for events on its own cadence instead of
+        being tied to whatever else produces events.
+        """
+
+    @abstractmethod
+    def send_ai_response(self, response: ChatResponse) -> bool:
         """Send a ai response to the UI."""
+
+    @abstractmethod
+    def send_user_input(self, response: str) -> bool:
+        """Send a user conversation input to the UI."""

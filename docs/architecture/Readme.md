@@ -19,7 +19,7 @@ sensai/
     │   ├── reasoning_loop.py      # drives the chain of tool calls
     │   └── events.py              # EventBus, emitter for the Observer side
     │
-    ├── ux/
+    ├── ui/
     │   ├── model.py                # interface
     │   ├── tui/
     │   ├── api/
