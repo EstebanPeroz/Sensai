@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+import queue
+from typing import TYPE_CHECKING
+
+from sensai.ui.adapter import Event, UIAdapter
+from sensai.ui.tui.textual import ChatApp
+
+if TYPE_CHECKING:
+    from sensai.llm.responses import ChatResponse
+
+
+class UITextualAdapter(UIAdapter):
+    """Adapter to use to make a valid UI support."""
+
+    app: ChatApp
+
+    def __init__(self) -> None:
+        """Init the textual."""
+        super().__init__()
+        self._event_queue: queue.Queue[Event] = queue.Queue()
+        self.app = ChatApp(self._event_queue)
+
+    def open(self) -> bool:
+        """Wait until the UI has started and is ready to receive calls."""
+        self.app.ready.wait()
+        return True
+
+    def run(self) -> None:
+        """Block running the UI. Must be called from the main thread.
+
+        Textual installs signal handlers (SIGTSTP/SIGCONT) on startup, which
+        Python only allows from the main thread of the main interpreter.
+        """
+        self.app.run()
+
+    def close(self) -> bool:
+        """Stop the UI."""
+        self.app.call_from_thread(self.app.exit)
+        return True
+
+    def wait_event(self) -> None:
+        """Wait the UI as long that no event is made."""
+        event = self._event_queue.get()
+        self._event_queue.put_nowait(event)
+
+    def get_event(self) -> Event | None:
+        """Get the first event in the event queue."""
+        try:
+            return self._event_queue.get_nowait()
+        except queue.Empty:
+            return None
+
+    def poll_event(self, timeout: float) -> Event | None:
+        """Wait up to `timeout` seconds for an event, then give up."""
+        try:
+            return self._event_queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def send_ai_response(self, response: ChatResponse) -> bool:
+        """Send a ai response to the UI."""
+        try:
+            self.app.call_from_thread(self.app.add_ai_response, response)
+        except RuntimeError:
+            return False
+        return True
+
+    def send_user_input(self, response: str) -> bool:
+        """Send a user conversation input to the UI."""
+        try:
+            self.app.call_from_thread(self.app.add_user_input, response)
+        except RuntimeError:
+            return False
+        return True
