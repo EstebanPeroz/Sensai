@@ -12,7 +12,7 @@ from sensai.ui.tui.core import UITextualAdapter
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from sensai.llm.adapter import InterfaceAdapter
+    from sensai.llm.adapter import ProviderAdapter
     from sensai.llm.responses import ChatResponse
     from sensai.ui.adapter import UIAdapter
 
@@ -40,7 +40,7 @@ def _stream_chunks(
         stream_done.set()
 
 
-def run_chat(ui: UIAdapter, content: str, llm_adapter: InterfaceAdapter, model: str) -> Event | None:
+def run_chat(ui: UIAdapter, content: str, llm_adapter: ProviderAdapter, model: str) -> Event | None:
     """TMP."""
     ui.send_user_input(content)
 
@@ -69,7 +69,7 @@ def run_chat(ui: UIAdapter, content: str, llm_adapter: InterfaceAdapter, model: 
     return None
 
 
-def _core_logic(ui: UIAdapter, llm_adapter: InterfaceAdapter, model: str) -> None:
+def _core_logic(ui: UIAdapter, llm_adapter: ProviderAdapter, model: str) -> None:
     """Run the chat loop on a background thread while the UI owns the main thread."""
     if ui.open() is False:
         return
@@ -92,7 +92,7 @@ def _core_logic(ui: UIAdapter, llm_adapter: InterfaceAdapter, model: str) -> Non
 def main() -> None:
     """Entry point: run the program."""
     ui: UIAdapter = UITextualAdapter()
-    llm_adapter: InterfaceAdapter = OllamaAdapter()
+    llm_adapter: ProviderAdapter = OllamaAdapter()
     model = "qwen3:1.7b"
 
     response = llm_adapter.show(model)
