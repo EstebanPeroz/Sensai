@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse, ShowResponse
 
 
-class LlmAPIAdapter(ABC):
+class ProviderAdapter(ABC):
     """Interface Used to communicate with different llm API."""
 
     @overload
