@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from sensai.config.settings import ConfigError, LLMSettings, OllamaSettings, Settings, load_settings
+from sensai.config.settings import PROVIDERS, ConfigError, LLMSettings, OllamaSettings, Settings, load_settings
 
 
 def write_config(tmp_path: Path, content: str) -> Path:
@@ -17,19 +17,32 @@ class TestPackagedSettings:
 
         assert isinstance(settings, Settings)
         assert settings.llm.model in settings.llm.models
-        assert settings.llm.ollama.base_url != ""
+        assert settings.llm.providers == [OllamaSettings()]
 
 
 class TestPrecedence:
     def test_missing_keys_fall_back_to_defaults(self, tmp_path: Path) -> None:
         settings = load_settings(write_config(tmp_path, '[llm.ollama]\nbase_url = "http://ollama:1234"\n'))
 
-        assert settings.llm.ollama.base_url == "http://ollama:1234"
+        assert settings.llm.providers == [OllamaSettings(base_url="http://ollama:1234")]
         assert settings.llm.embedding_model == LLMSettings().embedding_model
         assert settings.llm.model == LLMSettings().model
 
     def test_empty_file_gives_defaults(self, tmp_path: Path) -> None:
         assert load_settings(write_config(tmp_path, "")) == Settings()
+
+
+class TestProviders:
+    def test_no_provider_table_gives_no_provider(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, '[llm]\nembedding_model = "x"\n')).llm.providers == []
+
+    def test_empty_provider_table_uses_provider_defaults(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "[llm.ollama]\n")).llm.providers == [OllamaSettings()]
+
+    def test_every_supported_provider_has_a_unique_name(self) -> None:
+        names = [provider.name for provider in PROVIDERS]
+
+        assert len(names) == len(set(names))
 
 
 class TestModels:
@@ -73,6 +86,7 @@ class TestValidation:
             ('[llm]\nmodle = "x"\n', "unexpected keyword argument 'modle'"),
             ('[ollama]\nbase_url = "x"\n', "unexpected keyword argument 'ollama'"),
             ('[llm.ollama]\nurl = "x"\n', "unexpected keyword argument 'url'"),
+            ('[llm.mistral]\napi_key = "x"\n', "unexpected keyword argument 'mistral'"),
             ('[llm]\nmodel = "llama3.2"\n', "unexpected keyword argument 'model'"),
             ('llm = "x"\n', "llm must be a table"),
             ('[llm]\nollama = "x"\n', "ollama must be a table"),

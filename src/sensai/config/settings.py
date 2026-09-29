@@ -3,7 +3,7 @@ from __future__ import annotations
 import tomllib
 from dataclasses import dataclass, field
 from importlib import resources
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
@@ -17,8 +17,17 @@ class ConfigError(Exception):
 
 
 @dataclass
-class OllamaSettings:
+class ProviderSettings:
+    """Settings of one LLM provider, read from its [llm.<name>] table."""
+
+    name: ClassVar[str]
+
+
+@dataclass
+class OllamaSettings(ProviderSettings):
     """Connection settings of the Ollama HTTP API."""
+
+    name: ClassVar[str] = "ollama"
 
     base_url: str = "http://localhost:11434/"
 
@@ -28,17 +37,21 @@ class OllamaSettings:
         _check_url(self.base_url, "llm.ollama.base_url")
 
 
+# Every supported provider: its settings are built when its [llm.<name>] table is in the settings file.
+PROVIDERS: tuple[type[ProviderSettings], ...] = (OllamaSettings,)
+
+
 @dataclass
 class LLMSettings:
-    """Model settings: the supported models, the active one, the embedding model, and the backend connection.
+    """Model settings: the supported models, the active one, the embedding model, and the configured providers.
 
     The first supported model is the active one until another is selected.
-    The embedding model does not depend on the backend, so it is shared by every provider.
+    The embedding model does not depend on the provider, so it is shared by every provider.
     """
 
     models: list[str] = field(default_factory=lambda: [_DEFAULT_MODEL])
     embedding_model: str | None = None
-    ollama: OllamaSettings = field(default_factory=OllamaSettings)
+    providers: list[ProviderSettings] = field(default_factory=list)
     model: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -89,8 +102,8 @@ def load_settings(path: Path | None = None) -> Settings:
     else:
         try:
             llm = _pop_table(data, "llm")
-            ollama = OllamaSettings(**_pop_table(llm, "ollama"))
-            return Settings(llm=LLMSettings(**llm, ollama=ollama), **data)
+            providers = [provider(**_pop_table(llm, provider.name)) for provider in PROVIDERS if provider.name in llm]
+            return Settings(llm=LLMSettings(**llm, providers=providers), **data)
         except (TypeError, ValueError) as err:
             msg = f"invalid settings in {source}: {err}"
     raise ConfigError(msg)
