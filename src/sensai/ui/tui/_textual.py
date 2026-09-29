@@ -125,7 +125,7 @@ class ChatApp(App):
         chat = self.query_one("#chat", ListView)
         at_end = chat.is_vertical_scroll_end
         self._list.append({"role": "user", "mode": "message", "content": user})
-        chat.append(ListItem(HorizontalGroup(Label("[bold]* user: [/bold]" + user))))
+        chat.append(ListItem(HorizontalGroup(Label(_effect.bold("* user: ") + user))))
         if at_end:
             chat.scroll_end(animate=False)
 

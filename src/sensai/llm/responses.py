@@ -37,6 +37,6 @@ class ChatResponse:
         if message == {}:
             return
         self.role = message.get("role", "")
-        self.content = message.get("content", "")
-        self.thinking = message.get("thinking", "")
+        self.content = message.get("content") or None
+        self.thinking = message.get("thinking") or None
         self.tool_calls = message.get("tool_calls", [])
