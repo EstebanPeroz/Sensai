@@ -21,7 +21,6 @@ class OllamaAdapter(InterfaceAdapter):
         """Init ollama Adapter."""
         super().__init__()
         self._base_url: str = settings.base_url.rstrip("/") + "/"
-        self._embedding_model: str = settings.embedding_model
 
     @overload
     def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse] | None: ...
@@ -41,18 +40,18 @@ class OllamaAdapter(InterfaceAdapter):
             return None
         return ChatResponse(content)
 
-    def embedding(self, message: str) -> list:
-        """Send a message to embed and receive a list of vector."""
-        content = self.embeddings(messages=[message])
+    def embedding(self, message: str, model: str) -> list:
+        """Send a message to embed with model and receive a list of vector."""
+        content = self.embeddings(messages=[message], model=model)
         if content == []:
             return content
         return content[0]
 
-    def embeddings(self, messages: list[str]) -> list[list]:
-        """Send messages to embed and receive a list of vector for each message."""
+    def embeddings(self, messages: list[str], model: str) -> list[list]:
+        """Send messages to embed with model and receive a list of vector for each message."""
         content = self._call(
             endpoint="api/generate",
-            payload={"model": self._embedding_model, "inputs": messages},
+            payload={"model": model, "inputs": messages},
             timeout=5,
         )
 

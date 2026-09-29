@@ -42,13 +42,6 @@ class TestSettings:
 
         assert mock_post.call_args.args == ("http://ollama:1234/api/show",)
 
-    def test_uses_configured_embedding_model(self) -> None:
-        adapter = OllamaAdapter(OllamaSettings(embedding_model="embeddinggemma"))
-        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})) as mock_post:
-            adapter.embeddings(["a"])
-
-        assert mock_post.call_args.kwargs["json"]["model"] == "embeddinggemma"
-
 
 class TestChatNonStreaming:
     def test_returns_chat_response_on_success(self, adapter: OllamaAdapter) -> None:
@@ -149,27 +142,33 @@ class TestChatStreaming:
 
 
 class TestEmbedding:
+    def test_uses_given_model(self, adapter: OllamaAdapter) -> None:
+        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})) as mock_post:
+            adapter.embeddings(["a"], "embeddinggemma")
+
+        assert mock_post.call_args.kwargs["json"]["model"] == "embeddinggemma"
+
     def test_embedding_returns_first_vector(self, adapter: OllamaAdapter) -> None:
         with patch(
             "sensai.llm.ollama.requests.post",
             return_value=mock_response(json_data={"embeddings": [[0.1, 0.2]]}),
         ):
-            assert adapter.embedding("hello") == [0.1, 0.2]
+            assert adapter.embedding("hello", "embeddinggemma") == [0.1, 0.2]
 
     def test_embedding_returns_empty_list_when_no_embeddings(self, adapter: OllamaAdapter) -> None:
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={"embeddings": []})):
-            assert adapter.embedding("hello") == []
+            assert adapter.embedding("hello", "embeddinggemma") == []
 
     def test_embeddings_returns_vectors(self, adapter: OllamaAdapter) -> None:
         with patch(
             "sensai.llm.ollama.requests.post",
             return_value=mock_response(json_data={"embeddings": [[0.1], [0.2]]}),
         ):
-            assert adapter.embeddings(["a", "b"]) == [[0.1], [0.2]]
+            assert adapter.embeddings(["a", "b"], "embeddinggemma") == [[0.1], [0.2]]
 
     def test_embeddings_returns_empty_list_on_call_failure(self, adapter: OllamaAdapter) -> None:
         with patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException):
-            assert adapter.embeddings(["a", "b"]) == []
+            assert adapter.embeddings(["a", "b"], "embeddinggemma") == []
 
 
 class TestShow:

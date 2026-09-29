@@ -21,23 +21,23 @@ class OllamaSettings:
     """Connection settings of the Ollama HTTP API."""
 
     base_url: str = "http://localhost:11434/"
-    embedding_model: str = "nomic-embed-text"
 
     def __post_init__(self) -> None:
         """Check the value types, which come unchecked from the settings file."""
         _check_name(self.base_url, "llm.ollama.base_url")
         _check_url(self.base_url, "llm.ollama.base_url")
-        _check_name(self.embedding_model, "llm.ollama.embedding_model")
 
 
 @dataclass
 class LLMSettings:
-    """Model settings: the supported models, the active one, and the backend connection.
+    """Model settings: the supported models, the active one, the embedding model, and the backend connection.
 
     The first supported model is the active one until another is selected.
+    The embedding model does not depend on the backend, so it is shared by every provider.
     """
 
     models: list[str] = field(default_factory=lambda: [_DEFAULT_MODEL])
+    embedding_model: str | None = None
     ollama: OllamaSettings = field(default_factory=OllamaSettings)
     model: str = field(init=False)
 
@@ -48,6 +48,8 @@ class LLMSettings:
             raise TypeError(msg)
         for model in self.models:
             _check_name(model, "each llm.models entry")
+        if self.embedding_model is not None:
+            _check_name(self.embedding_model, "llm.embedding_model")
         self.model = self.models[0]
 
     def select_model(self, model: str) -> None:

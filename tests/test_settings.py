@@ -25,7 +25,7 @@ class TestPrecedence:
         settings = load_settings(write_config(tmp_path, '[llm.ollama]\nbase_url = "http://ollama:1234"\n'))
 
         assert settings.llm.ollama.base_url == "http://ollama:1234"
-        assert settings.llm.ollama.embedding_model == OllamaSettings().embedding_model
+        assert settings.llm.embedding_model == LLMSettings().embedding_model
         assert settings.llm.model == LLMSettings().model
 
     def test_empty_file_gives_defaults(self, tmp_path: Path) -> None:
@@ -38,6 +38,16 @@ class TestModels:
 
         assert settings.llm.model == "llama3.2"
         assert settings.llm.models == ["llama3.2", "mistral"]
+
+
+class TestEmbeddingModel:
+    def test_is_read_from_llm_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[llm]\nembedding_model = "embeddinggemma"\n'))
+
+        assert settings.llm.embedding_model == "embeddinggemma"
+
+    def test_packaged_file_sets_it(self) -> None:
+        assert load_settings().llm.embedding_model is not None
 
 
 class TestSelectModel:
@@ -71,6 +81,8 @@ class TestValidation:
             ('[llm]\nmodels = ["llama3.2", 1]\n', "each llm.models entry must be a non-empty string"),
             ('[llm]\nmodels = ["llama3.2", ""]\n', "each llm.models entry must be a non-empty string"),
             ('[llm.ollama]\nbase_url = ["a"]\n', "llm.ollama.base_url must be a non-empty string"),
+            ('[llm.ollama]\nembedding_model = "x"\n', "unexpected keyword argument 'embedding_model'"),
+            ('[llm]\nembedding_model = ""\n', "llm.embedding_model must be a non-empty string"),
             ('[llm.ollama]\nbase_url = "http://"\n', "llm.ollama.base_url must be an http\\(s\\) URL with a host"),
             ('[llm.ollama]\nbase_url = "localhost:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('[llm.ollama]\nbase_url = "ftp://ollama:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),

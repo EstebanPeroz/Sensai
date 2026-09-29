@@ -26,12 +26,12 @@ class InterfaceAdapter(ABC):
         """
 
     @abstractmethod
-    def embedding(self, message: str) -> list:
-        """Send a message to embed to receive a list of vector."""
+    def embedding(self, message: str, model: str) -> list:
+        """Send a message to embed with model to receive a list of vector."""
 
     @abstractmethod
-    def embeddings(self, messages: list[str]) -> list[list]:
-        """Send messages to embed and receive a list of vector for each message."""
+    def embeddings(self, messages: list[str], model: str) -> list[list]:
+        """Send messages to embed with model and receive a list of vector for each message."""
 
     @abstractmethod
     def show(self, model_name: str) -> ShowResponse | None:

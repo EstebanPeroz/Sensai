@@ -1,6 +1,6 @@
 [llm]
 models = ["qwen2.5:1.5b"]
+embedding_model = "nomic-embed-text"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"
-embedding_model = "nomic-embed-text"
