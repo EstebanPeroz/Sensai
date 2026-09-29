@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import queue
 from typing import TYPE_CHECKING
 
 from sensai.ui.adapter import Event, UIAdapter
@@ -50,18 +49,11 @@ class UITextualAdapter(UIAdapter):
 
     def wait_event(self, *, timeout: float | None = None) -> bool:
         """Wait for an event. If timeout is None, wait indefinitely."""
-        try:
-            self._event_queue.wait_event(timeout=timeout)
-        except queue.Empty:
-            return False
-        return True
+        return self._event_queue.wait_event(timeout=timeout)
 
     def get_event(self) -> Event | None:
         """Get the first event in the event queue."""
-        try:
-            return self._event_queue.get_event()
-        except queue.Empty:
-            return None
+        return self._event_queue.get_event()
 
     def send_ai_response(self, response: ChatResponse) -> bool:
         """Send a ai response to the UI."""

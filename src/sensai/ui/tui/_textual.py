@@ -24,14 +24,11 @@ class ListConv:
         """TMP."""
         self._list_conv = []
 
-    def last_same(self, response: ChatResponse) -> bool:
+    def last_same(self, mode: str) -> bool:
         """TMP."""
-        mode = self._list_conv[-1]["mode"]
+        last_mode = self._list_conv[-1]["mode"]
 
-        return self._list_conv[-1]["role"] == "assistant" and (
-            (mode == "thinking" and response.thinking is not None)
-            or (mode == "content" and response.content is not None)
-        )
+        return self._list_conv[-1]["role"] == "assistant" and (last_mode == mode)
 
     def empty(self) -> bool:
         """TMP."""
@@ -41,17 +38,11 @@ class ListConv:
         """TMP."""
         self._list_conv.append(data)
 
-    def append_content_to_last(self, content: str) -> None:
-        """TMP."""
-        if self.empty():
-            return
-        self._list_conv[-1]["content"] += content
-
-    def last_content(self) -> str:
+    def last(self) -> dict | None:
         """TMP."""
         if len(self._list_conv) != 0:
-            return self._list_conv[-1]["content"]
-        return ""
+            return self._list_conv[-1]
+        return None
 
 
 class ChatApp(App):
@@ -94,30 +85,20 @@ class ChatApp(App):
     def add_ai_response(self, resp: ChatResponse) -> None:
         """Append streamed text to the last chat entry, or start a new one."""
         if resp.error is not None:
-            self._add_ai_error(resp.error)
-            return
-        chat = self.query_one("#chat", ListView)
-
-        if resp.content is not None:
-            content = resp.content
-            mode = "content"
-        elif resp.thinking is not None:
-            content = fx.grey(resp.thinking)
-            mode = "thinking"
-        else:
+            self._display_response("error", fx.red(resp.error))
             return
 
-        if self._list.empty() or self._list.last_same(resp) is False:
-            content = fx.bold("* " + mode + ": ") + content
-            data = {"role": "assistant", "mode": mode, "content": content}
-            self._list.append(data)
-            chat.append(ListItem(HorizontalGroup(Label(content))))
+        last = self._list.last()
+        if last is None or last["mode"] == "thinking":
+            if resp.thinking is not None:
+                self._display_response("thinking", fx.grey(resp.thinking))
+            if resp.content is not None:
+                self._display_response("content", resp.content)
         else:
-            self._list.append_content_to_last(content)
-            last_item = chat.children[-1]
-            label = last_item.query_one(Label)
-            label.update(self._list.last_content())
-        self._follow_scrolling()
+            if resp.content is not None:
+                self._display_response("content", resp.content)
+            if resp.thinking is not None:
+                self._display_response("thinking", fx.grey(resp.thinking))
 
     def add_user_input(self, user: str) -> None:
         """TMP."""
@@ -137,14 +118,29 @@ class ChatApp(App):
         event.content = content
         self._event_queue.put(event)
 
+    def _display_response(self, mode: str, content: str) -> None:
+        """Tmp."""
+        chat = self.query_one("#chat", ListView)
+
+        if self._list.empty() or self._list.last_same(mode) is False:
+            content = fx.bold("* " + mode + ": ") + content
+            data = {"role": "assistant", "mode": mode, "content": content}
+            self._list.append(data)
+            chat.append(ListItem(HorizontalGroup(Label(content))))
+        else:
+            last = self._list.last()
+            if last is None:
+                return
+            last["content"] += content
+            last_item = chat.children[-1]
+            label = last_item.query_one(Label)
+            label.update(last["content"])
+
+        self._follow_scrolling()
+
     def _follow_scrolling(self) -> None:
         """TMP."""
         chat = self.query_one("#chat", ListView)
 
         if chat.is_vertical_scroll_end:
             chat.scroll_end(animate=False)
-
-    def _add_ai_error(self, error: str) -> None:
-        chat = self.query_one("#chat", ListView)
-        self._list.append({"role": "assistant", "mode": "error", "content": error})
-        chat.append(ListItem(HorizontalGroup(Label(fx.bold(fx.red("* error: " + error))))))
