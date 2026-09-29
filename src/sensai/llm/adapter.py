@@ -44,3 +44,7 @@ class ProviderAdapter(ABC):
     @abstractmethod
     def unload(self, model_name: str) -> bool:
         """Load a model."""
+
+    @abstractmethod
+    def list(self) -> list[str]:
+        """List of model given by the provider."""
