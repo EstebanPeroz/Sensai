@@ -4,6 +4,7 @@ import queue
 from typing import TYPE_CHECKING
 
 from sensai.ui.adapter import Event, UIAdapter
+from sensai.ui.event_queue import EventQueue
 from sensai.ui.tui._textual import ChatApp
 
 if TYPE_CHECKING:
@@ -14,11 +15,12 @@ class UITextualAdapter(UIAdapter):
     """Adapter to use to make a valid UI support."""
 
     app: ChatApp
+    _event_queue: EventQueue
 
     def __init__(self) -> None:
         """Init the textual."""
         super().__init__()
-        self._event_queue: queue.Queue[Event] = queue.Queue()
+        self._event_queue = EventQueue()
         self.app = ChatApp(self._event_queue)
 
     def open(self) -> bool:
@@ -49,8 +51,7 @@ class UITextualAdapter(UIAdapter):
     def wait_event(self, *, timeout: float | None = None) -> bool:
         """Wait for an event. If timeout is None, wait indefinitely."""
         try:
-            event = self._event_queue.get(timeout=timeout)
-            self._event_queue.put_nowait(event)
+            self._event_queue.wait_event(timeout=timeout)
         except queue.Empty:
             return False
         return True
@@ -58,7 +59,7 @@ class UITextualAdapter(UIAdapter):
     def get_event(self) -> Event | None:
         """Get the first event in the event queue."""
         try:
-            return self._event_queue.get_nowait()
+            return self._event_queue.get_event()
         except queue.Empty:
             return None
 

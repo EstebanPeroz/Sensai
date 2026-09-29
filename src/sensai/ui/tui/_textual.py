@@ -11,9 +11,8 @@ from sensai.ui.adapter import Event, EventType
 from sensai.ui.tui import _effect as fx
 
 if TYPE_CHECKING:
-    import queue
-
     from sensai.llm.responses import ChatResponse
+    from sensai.ui.event_queue import EventQueue
 
 
 class ListConv:
@@ -76,7 +75,7 @@ class ChatApp(App):
 
     _list: ListConv
 
-    def __init__(self, event_queue: queue.Queue[Event]) -> None:
+    def __init__(self, event_queue: EventQueue) -> None:
         """Init the textual."""
         super().__init__()
         self._event_queue = event_queue
@@ -136,7 +135,7 @@ class ChatApp(App):
         event = Event()
         event.type = EventType.UserContent
         event.content = content
-        self._event_queue.put_nowait(event)
+        self._event_queue.put(event)
 
     def _follow_scrolling(self) -> None:
         """TMP."""
