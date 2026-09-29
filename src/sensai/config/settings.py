@@ -96,6 +96,14 @@ def load_settings(path: Path | None = None) -> Settings:
     raise ConfigError(msg)
 
 
+def build_settings(path: Path | None = None, *, model: str | None = None) -> Settings:
+    """Load the settings file and apply the command line overrides on top of it."""
+    settings = load_settings(path)
+    if model is not None:
+        settings.llm.model = model
+    return settings
+
+
 def _pop_table(parent: dict[str, Any], key: str) -> dict[str, Any]:
     table = parent.pop(key, {})
     if not isinstance(table, dict):

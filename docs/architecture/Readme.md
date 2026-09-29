@@ -14,6 +14,7 @@ sensai/
 └── sensai/
     ├── __main__.py                # `python -m sensai`, delegates to main.py
     ├── main.py                    # composition root: builds and injects everything
+    ├── parsing.py                 # command line arguments
     │
     ├── core/                      # Mediator
     │   ├── core.py                # receives every module as a dependency

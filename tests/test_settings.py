@@ -2,7 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from sensai.config.settings import PROVIDERS, ConfigError, LLMSettings, OllamaSettings, Settings, load_settings
+from sensai.config.settings import (
+    PROVIDERS,
+    ConfigError,
+    LLMSettings,
+    OllamaSettings,
+    Settings,
+    build_settings,
+    load_settings,
+)
 
 
 def write_config(tmp_path: Path, content: str) -> Path:
@@ -52,6 +60,21 @@ class TestModel:
     def test_models_are_not_listed_in_settings(self, tmp_path: Path) -> None:
         with pytest.raises(ConfigError, match="unexpected keyword argument 'models'"):
             load_settings(write_config(tmp_path, '[llm]\nmodels = ["llama3.2"]\n'))
+
+
+class TestBuildSettings:
+    def test_defaults_to_packaged_settings(self) -> None:
+        assert build_settings() == load_settings()
+
+    def test_model_argument_overrides_config_file(self, tmp_path: Path) -> None:
+        path = write_config(tmp_path, '[llm]\nmodel = "llama3.2"\n')
+
+        assert build_settings(path, model="mistral").llm.model == "mistral"
+
+    def test_keeps_config_file_model_without_override(self, tmp_path: Path) -> None:
+        path = write_config(tmp_path, '[llm]\nmodel = "llama3.2"\n')
+
+        assert build_settings(path).llm.model == "llama3.2"
 
 
 class TestEmbeddingModel:
