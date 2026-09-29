@@ -20,9 +20,8 @@ sensai/
     │   └── events.py              # EventBus, emitter for the Observer side
     │
     ├── ui/
-    │   ├── model.py                # interface
+    │   ├── adapter.py                # interface
     │   ├── tui/
-    │   ├── api/
     │   └── web/
     │
     ├── pipeline/                  # Chain of Responsibility
