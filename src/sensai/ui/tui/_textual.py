@@ -7,12 +7,11 @@ from textual.app import App, ComposeResult
 from textual.containers import HorizontalGroup
 from textual.widgets import Input, Label, ListItem, ListView
 
-from sensai.ui.adapter import Event, EventType
-from sensai.ui.tui import _effect as fx
+import sensai.ui.tui._effect as fx
+from sensai import ui
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
-    from sensai.ui.event_queue import EventQueue
 
 
 class ListConv:
@@ -65,8 +64,10 @@ class ChatApp(App):
     """
 
     _list: ListConv
+    _event_queue: ui.EventQueue
+    ready: threading.Event
 
-    def __init__(self, event_queue: EventQueue) -> None:
+    def __init__(self, event_queue: ui.EventQueue) -> None:
         """Init the textual."""
         super().__init__()
         self._event_queue = event_queue
@@ -113,8 +114,8 @@ class ChatApp(App):
         message.input.clear()
         if not content:
             return
-        event = Event()
-        event.type = EventType.UserContent
+        event = ui.Event()
+        event.type = ui.EventType.UserContent
         event.content = content
         self._event_queue.put(event)
 

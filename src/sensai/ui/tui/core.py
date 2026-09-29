@@ -2,24 +2,23 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sensai.ui.adapter import Event, UIAdapter
-from sensai.ui.event_queue import EventQueue
+from sensai import ui
 from sensai.ui.tui._textual import ChatApp
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
 
 
-class UITextualAdapter(UIAdapter):
+class UITextualAdapter(ui.UIAdapter):
     """Adapter to use to make a valid UI support."""
 
     app: ChatApp
-    _event_queue: EventQueue
+    _event_queue: ui.EventQueue
 
     def __init__(self) -> None:
         """Init the textual."""
         super().__init__()
-        self._event_queue = EventQueue()
+        self._event_queue = ui.EventQueue()
         self.app = ChatApp(self._event_queue)
 
     def open(self) -> bool:
@@ -51,7 +50,7 @@ class UITextualAdapter(UIAdapter):
         """Wait for an event. If timeout is None, wait indefinitely."""
         return self._event_queue.wait_event(timeout=timeout)
 
-    def get_event(self) -> Event | None:
+    def get_event(self) -> ui.Event | None:
         """Get the first event in the event queue."""
         return self._event_queue.get_event()
 
