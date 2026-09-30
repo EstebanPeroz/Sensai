@@ -15,14 +15,14 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 with resources.files("sensai.config").joinpath("settings.toml").open("rb") as f:
-    _settings = tomllib.load(f)["adapter"]["ollama"]
+    _settings = tomllib.load(f)["llm"]
 
 
 class OllamaAdapter(ProviderAdapter):
     """Ollama API wrapper to call needed endpoints."""
 
     _Embedding_model = _settings["embedding_model"]
-    _API_PATH = _settings["API_path"]
+    _API_PATH = _settings["ollama"]["base_url"]
 
     def __init__(self) -> None:
         """Init ollama Adapter."""
