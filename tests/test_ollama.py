@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from sensai.llm.error import JsonError, RequestCallError, RequestStatusError
 from sensai.llm.ollama import OllamaAdapter
 from sensai.llm.responses import ChatResponse, ShowResponse
 
@@ -19,12 +20,14 @@ def adapter() -> OllamaAdapter:
 def mock_response(
     *,
     ok: bool = True,
+    status_code: int = 200,
     json_data: dict | None = None,
     json_error: bool = False,
     lines: list[str] | None = None,
 ) -> MagicMock:
     response = MagicMock(spec=requests.Response)
     response.ok = ok
+    response.status_code = status_code
     if json_error:
         response.json.side_effect = requests.exceptions.JSONDecodeError("Expecting value", "", 0)
     else:
@@ -51,17 +54,26 @@ class TestChatNonStreaming:
         assert mock_post.call_args.args == (_API_PATH + "api/chat",)
         assert mock_post.call_args.kwargs["json"]["stream"] is False
 
-    def test_returns_none_on_request_exception(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException):
-            assert adapter.chat({"model": "x", "messages": []}, stream=False) is None
+    def test_raises_request_call_error_on_request_exception(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException),
+            pytest.raises(RequestCallError),
+        ):
+            adapter.chat({"model": "x", "messages": []}, stream=False)
 
-    def test_returns_none_on_non_ok_status(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(ok=False)):
-            assert adapter.chat({"model": "x", "messages": []}, stream=False) is None
+    def test_raises_request_status_error_on_non_ok_status(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", return_value=mock_response(ok=False, status_code=500)),
+            pytest.raises(RequestStatusError),
+        ):
+            adapter.chat({"model": "x", "messages": []}, stream=False)
 
-    def test_returns_none_on_invalid_json(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_error=True)):
-            assert adapter.chat({"model": "x", "messages": []}, stream=False) is None
+    def test_raises_json_error_on_invalid_json(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_error=True)),
+            pytest.raises(JsonError),
+        ):
+            adapter.chat({"model": "x", "messages": []}, stream=False)
 
 
 class TestChatStreaming:
@@ -75,7 +87,6 @@ class TestChatStreaming:
         ]
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(lines=lines)) as mock_post:
             result = adapter.chat({"model": "m", "messages": []}, stream=True)
-            assert result is not None
             chunks = list(result)
 
         assert [chunk.content for chunk in chunks] == ["The ", "sky", None]
@@ -83,20 +94,25 @@ class TestChatStreaming:
         assert mock_post.call_args.kwargs["stream"] is True
         assert mock_post.call_args.kwargs["json"]["stream"] is True
 
-    def test_returns_none_on_request_exception(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException):
-            assert adapter.chat({"model": "x", "messages": []}, stream=True) is None
+    def test_raises_request_call_error_on_request_exception(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException),
+            pytest.raises(RequestCallError),
+        ):
+            adapter.chat({"model": "x", "messages": []}, stream=True)
 
-    def test_returns_none_on_non_ok_status(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(ok=False)):
-            assert adapter.chat({"model": "x", "messages": []}, stream=True) is None
+    def test_raises_request_status_error_on_non_ok_status(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", return_value=mock_response(ok=False, status_code=404)),
+            pytest.raises(RequestStatusError),
+        ):
+            adapter.chat({"model": "x", "messages": []}, stream=True)
 
     def test_closes_response_after_full_consumption(self, adapter: OllamaAdapter) -> None:
         lines = [json.dumps({"model": "m", "message": {"role": "assistant", "content": "hi"}, "done": True})]
         response = mock_response(lines=lines)
         with patch("sensai.llm.ollama.requests.post", return_value=response):
             result = adapter.chat({"model": "m", "messages": []}, stream=True)
-            assert result is not None
             list(result)
 
         response.close.assert_called_once()
@@ -109,23 +125,27 @@ class TestChatStreaming:
         response = mock_response(lines=lines)
         with patch("sensai.llm.ollama.requests.post", return_value=response):
             result = adapter.chat({"model": "m", "messages": []}, stream=True)
-            assert result is not None
             next(result)
             result.close()
 
         response.close.assert_called_once()
 
-    def test_closes_response_on_read_error_mid_stream(self, adapter: OllamaAdapter) -> None:
+    def test_raises_request_call_error_on_read_error_mid_stream(self, adapter: OllamaAdapter) -> None:
         def raising_lines(*_args: object, **_kwargs: object) -> Iterator[str]:
             yield json.dumps({"model": "m", "message": {"role": "assistant", "content": "a"}, "done": False})
             raise requests.exceptions.ChunkedEncodingError
+
+        def drain(it: Iterator[ChatResponse], sink: list[ChatResponse]) -> None:
+            for chunk in it:
+                sink.append(chunk)  # noqa: PERF402 -- partial results must survive the raised error
 
         response = mock_response(lines=[])
         response.iter_lines.side_effect = raising_lines
         with patch("sensai.llm.ollama.requests.post", return_value=response):
             result = adapter.chat({"model": "m", "messages": []}, stream=True)
-            assert result is not None
-            chunks = list(result)
+            chunks: list[ChatResponse] = []
+            with pytest.raises(RequestCallError):
+                drain(result, chunks)
 
         assert [chunk.content for chunk in chunks] == ["a"]
         response.close.assert_called_once()
@@ -150,15 +170,21 @@ class TestEmbedding:
         ):
             assert adapter.embeddings(["a", "b"]) == [[0.1], [0.2]]
 
-    def test_embeddings_returns_empty_list_on_call_failure(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException):
-            assert adapter.embeddings(["a", "b"]) == []
+    def test_embeddings_raises_request_call_error_on_call_failure(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException),
+            pytest.raises(RequestCallError),
+        ):
+            adapter.embeddings(["a", "b"])
 
 
 class TestShow:
-    def test_returns_none_when_model_not_found(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(ok=False)):
-            assert adapter.show("missing-model") is None
+    def test_raises_request_status_error_when_model_not_found(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", return_value=mock_response(ok=False, status_code=404)),
+            pytest.raises(RequestStatusError),
+        ):
+            adapter.show("missing-model")
 
     def test_returns_response_with_no_capabilities(self, adapter: OllamaAdapter) -> None:
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})):
@@ -176,7 +202,6 @@ class TestShow:
         ):
             result = adapter.show("model")
 
-        assert result is not None
         assert result.tools is True
         assert result.think is True
 
@@ -190,9 +215,12 @@ class TestLoad:
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={"done": False})):
             assert adapter.load("model") is False
 
-    def test_returns_false_on_call_failure(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException):
-            assert adapter.load("model") is False
+    def test_raises_request_call_error_on_call_failure(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException),
+            pytest.raises(RequestCallError),
+        ):
+            adapter.load("model")
 
 
 class TestUnload:
@@ -204,6 +232,36 @@ class TestUnload:
             assert adapter.unload("model") is True
         assert mock_post.call_args.kwargs["json"]["keep_alive"] == 0
 
-    def test_returns_false_on_call_failure(self, adapter: OllamaAdapter) -> None:
-        with patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException):
-            assert adapter.unload("model") is False
+    def test_raises_request_call_error_on_call_failure(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException),
+            pytest.raises(RequestCallError),
+        ):
+            adapter.unload("model")
+
+
+class TestList:
+    def test_returns_model_names(self, adapter: OllamaAdapter) -> None:
+        with patch(
+            "sensai.llm.ollama.requests.get",
+            return_value=mock_response(json_data={"models": [{"name": "a"}, {"name": "b"}]}),
+        ):
+            assert adapter.list() == ["a", "b"]
+
+    def test_returns_empty_list_when_no_models(self, adapter: OllamaAdapter) -> None:
+        with patch("sensai.llm.ollama.requests.get", return_value=mock_response(json_data={"models": []})):
+            assert adapter.list() == []
+
+    def test_raises_request_call_error_on_call_failure(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.get", side_effect=requests.RequestException),
+            pytest.raises(RequestCallError),
+        ):
+            adapter.list()
+
+    def test_raises_request_status_error_on_non_ok_status(self, adapter: OllamaAdapter) -> None:
+        with (
+            patch("sensai.llm.ollama.requests.get", return_value=mock_response(ok=False, status_code=500)),
+            pytest.raises(RequestStatusError),
+        ):
+            adapter.list()
