@@ -30,14 +30,7 @@ class CommandRegistry:
         """Execute a registered command with the given arguments."""
         if command_name not in self._commands:
             raise UnknownCommandError(command_name)
-        command = self._commands[command_name]
-        command.execute(*args)
-
-    def help(self) -> None:
-        """Print the available commands."""
-        print("Available commands:")
-        for command in self._commands.values():
-            print(f"- {command.name}: {command.help}")
+        self._commands[command_name].execute(*args)
 
     def commands(self) -> list[Command]:
         """Return a list of registered commands."""
