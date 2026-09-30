@@ -5,15 +5,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from sensai.config.settings import OllamaSettings
 from sensai.llm.ollama import OllamaAdapter
 from sensai.llm.responses import ChatResponse, ShowResponse
 
 _API_PATH = "http://localhost:11434/"
+_EMBEDDING_MODEL = "nomic-embed-text"
 
 
 @pytest.fixture
 def adapter() -> OllamaAdapter:
-    return OllamaAdapter()
+    return OllamaAdapter(OllamaSettings(), embedding_model=_EMBEDDING_MODEL)
 
 
 def mock_response(
@@ -31,6 +33,16 @@ def mock_response(
         response.json.return_value = json_data
     response.iter_lines.return_value = iter(lines or [])
     return response
+
+
+class TestSettings:
+    @pytest.mark.parametrize("base_url", ["http://ollama:1234", "http://ollama:1234/"])
+    def test_calls_the_configured_base_url(self, base_url: str) -> None:
+        adapter = OllamaAdapter(OllamaSettings(base_url=base_url))
+        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})) as mock_post:
+            adapter.show("model")
+
+        assert mock_post.call_args.args == ("http://ollama:1234/api/show",)
 
 
 class TestChatNonStreaming:
@@ -147,8 +159,15 @@ class TestEmbedding:
         with patch(
             "sensai.llm.ollama.requests.post",
             return_value=mock_response(json_data={"embeddings": [[0.1], [0.2]]}),
-        ):
+        ) as mock_post:
             assert adapter.embeddings(["a", "b"]) == [[0.1], [0.2]]
+        assert mock_post.call_args.kwargs["json"]["model"] == _EMBEDDING_MODEL
+
+    def test_embeddings_returns_empty_list_without_embedding_model(self) -> None:
+        adapter = OllamaAdapter(OllamaSettings())
+        with patch("sensai.llm.ollama.requests.post") as mock_post:
+            assert adapter.embeddings(["a"]) == []
+        mock_post.assert_not_called()
 
     def test_embeddings_returns_empty_list_on_call_failure(self, adapter: OllamaAdapter) -> None:
         with patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException):

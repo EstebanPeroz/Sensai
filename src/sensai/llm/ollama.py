@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import json
-import tomllib
-from importlib import resources
 from typing import TYPE_CHECKING, Literal, overload
 
 import requests
@@ -13,19 +11,17 @@ from sensai.llm.responses import ChatResponse, ShowResponse
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-with resources.files("sensai.config").joinpath("settings.toml").open("rb") as f:
-    _settings = tomllib.load(f)["llm"]
+    from sensai.config.settings import OllamaSettings
 
 
 class OllamaAdapter(ProviderAdapter):
     """Ollama API wrapper to call needed endpoints."""
 
-    _Embedding_model = _settings["embedding_model"]
-    _API_PATH = _settings["ollama"]["base_url"]
-
-    def __init__(self) -> None:
-        """Init ollama Adapter."""
+    def __init__(self, settings: OllamaSettings, embedding_model: str | None = None) -> None:
+        """Init ollama Adapter with its connection settings and the embedding model, if one is configured."""
         super().__init__()
+        self._base_url: str = settings.base_url.rstrip("/") + "/"
+        self._embedding_model = embedding_model
 
     @overload
     def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse] | None: ...
@@ -53,10 +49,12 @@ class OllamaAdapter(ProviderAdapter):
         return content[0]
 
     def embeddings(self, messages: list[str]) -> list[list]:
-        """Send messages to embed and receive a list of vector for each message."""
+        """Send messages to embed and receive a list of vector for each message, none without an embedding model."""
+        if self._embedding_model is None:
+            return []
         content = self._call(
             endpoint="api/generate",
-            payload={"model": self._Embedding_model, "inputs": messages},
+            payload={"model": self._embedding_model, "inputs": messages},
             timeout=5,
         )
 
@@ -97,7 +95,7 @@ class OllamaAdapter(ProviderAdapter):
     def _call(self, endpoint: str, payload: dict, *, timeout: int = 10) -> dict | None:
         try:
             result = requests.post(
-                self._API_PATH + endpoint,
+                self._base_url + endpoint,
                 json=payload,
                 timeout=timeout,
             )
@@ -115,7 +113,7 @@ class OllamaAdapter(ProviderAdapter):
     def _call_stream(self, endpoint: str, payload: dict, *, timeout: int = 10) -> Iterator[dict] | None:
         try:
             result = requests.post(
-                self._API_PATH + endpoint,
+                self._base_url + endpoint,
                 json=payload,
                 stream=True,
                 timeout=timeout,
