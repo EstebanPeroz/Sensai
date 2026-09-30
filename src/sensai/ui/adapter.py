@@ -68,3 +68,7 @@ class UIAdapter(ABC):
     @abstractmethod
     def load_conversation(self, messages: History) -> None:
         """Load conversation history to the ui."""
+
+    @abstractmethod
+    def send_system_message(self, message: str) -> bool:
+        """Forward an application message, such as a command output, to the UI. Returns whether it was delivered."""

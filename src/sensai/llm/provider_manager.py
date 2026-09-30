@@ -48,3 +48,11 @@ class ProviderManager:
     def get_provider(self, model: str) -> ProviderAdapter | None:
         """Return the provider serving `model`, or None if no registered provider exposes it."""
         return self._models.get(model)
+
+    def set_model(self, model: str) -> bool:
+        """Set the model to use. Returns True if successful, False if the model is not available."""
+        provider = self._models.get(model)
+        if provider is not None:
+            provider.load(model)
+            return True
+        return False

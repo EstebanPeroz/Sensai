@@ -30,6 +30,8 @@ def _format(mode: str, text: str) -> str:
     text = escape(text)
     if mode == "message":
         return "> " + text
+    if mode == "system":
+        return fx.bold("* system:") + "\n" + text
     if mode == "thinking":
         return fx.grey("• " + text)
     if mode == "content":
@@ -185,6 +187,12 @@ class ChatApp(App):
             return
 
         chat.append(ChatItem(role_name, mode, user))
+        self._follow_scrolling()
+
+    def add_system_message(self, message: str) -> None:
+        """Append an application message as a new entry in the chat."""
+        chat = self.query_one("#chat", ListView)
+        chat.append(ChatItem("system", "system", message))
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
