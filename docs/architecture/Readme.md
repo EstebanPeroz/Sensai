@@ -61,7 +61,7 @@ sensai/
     │   └── _schedule.py             # schedule a task (time / action)
     │
     └── memory/                    # Repository + Memento
-        ├── repository.py           # interfaces
+        ├── history_repository.py   # conversation history interface
         ├── history.py              # DB-backed conversation history
         ├── profile.py
         ├── vector_index.py
@@ -110,9 +110,11 @@ sensai/
   are user/session-lifecycle actions, tools are things the *model* invokes
   during reasoning.
 
-- **`memory/` — Repository + Memento.** `repository.py` defines storage
-  interfaces; `history.py` (conversation history) and `profile.py` (user
-  profile) are concrete repositories. `vector_index.py` + `ingest.py` back
+- **`memory/` — Repository + Memento.** Each repository has its own
+  storage interface (`history_repository.py` for the conversation history),
+  so the history, user profile and RAG stores stay independent;
+  `history.py` (conversation history) and `profile.py` (user profile) are
+  concrete repositories. `vector_index.py` + `ingest.py` back
   the RAG feature (chunking and embedding on ingest, similarity search at
   query time). `memento.py` captures session snapshots, which is what
   `/branch` (fork a session) and `/export` (serialize a session) operate on.
