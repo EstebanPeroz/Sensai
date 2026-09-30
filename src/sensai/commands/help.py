@@ -21,5 +21,5 @@ class Help(Command):
     def execute(self, *args: str) -> None:
         """Print the available commands."""
         print("Available commands:")
-        for command in self._registry.commands():
+        for command in sorted(self._registry.commands(), key=lambda c: c.name):
             print(f"- {command.name}: {command.help}")
