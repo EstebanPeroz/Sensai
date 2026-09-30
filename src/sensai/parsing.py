@@ -8,14 +8,20 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    """Parse the command line arguments."""
-    parser = argparse.ArgumentParser(prog="sensai", description="Local chatbot backed by Ollama.")
-    parser.add_argument(
-        "--config",
-        type=Path,
-        metavar="PATH",
-        help="settings file to use instead of settings.toml",
-    )
-    parser.add_argument("--model", help="model to use instead of the provider default")
-    return parser.parse_args(argv)
+class Parsing:
+    """Command line arguments parser."""
+
+    def __init__(self) -> None:
+        """Declare the command line arguments."""
+        self._parser = argparse.ArgumentParser(prog="sensai", description="Local chatbot backed by Ollama.")
+        self._parser.add_argument(
+            "--config",
+            type=Path,
+            metavar="PATH",
+            help="settings file to use instead of settings.toml",
+        )
+        self._parser.add_argument("--model", help="model to use instead of the provider default")
+
+    def parse_args(self, argv: Sequence[str] | None = None) -> argparse.Namespace:
+        """Parse the command line arguments."""
+        return self._parser.parse_args(argv)
