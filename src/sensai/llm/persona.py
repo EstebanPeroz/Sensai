@@ -2,67 +2,71 @@ import tomllib
 from pathlib import Path
 
 
-class PersonaNotFoundError(ValueError):
-    """Raised when a persona is not found in the registry."""
+class PersonaError(Exception):
+    """Base class for all persona-related errors."""
 
-    def __init__(self, persona_name: str) -> None:
-        """Initialize the exception with the persona name."""
-        super().__init__(f"Persona '{persona_name}' not found in registry.")
+
+class PersonaNotFoundError(PersonaError):
+    """Raised when a persona name is not in the registry."""
+
+    def __init__(self, persona_name: str, available: list[str]) -> None:
+        """Init persona not found error class."""
+        self.persona_name = persona_name
+        self.available = available
+        names = ", ".join(sorted(available)) or "none"
+        super().__init__(f"Persona '{persona_name}' not found in registry. Available: {names}.")
+
+
+class PersonaConfigError(PersonaError):
+    """Raised when a persona config file is missing, unreadable or invalid."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        """Init personconfig error class."""
+        self.path = path
+        self.reason = reason
+        super().__init__(f"Invalid persona config '{path}': {reason}")
 
 
 class Persona:
-    """Class used to load and create a persona from a config file."""
+    """A persona loaded from a TOML config file."""
 
-    def __init__(self, name: str) -> None:
-        """Initialize a persona from its registry name."""
-        self.registry_name = name.lower()
-        self.file_path = "src.sensai.config." + name + ".toml"
-        self._config_data = self._load_file()
-        self.name = self.get_name_from_file()
-        self.version = self.get_version_from_file()
-        self.description = self.get_description_from_file()
-        self.system_prompt = self.get_system_prompt_from_file()
+    REQUIRED_FIELDS = ("description", "system_prompt", "version")
+
+    def __init__(self, registry_name: str, file_path: str | Path) -> None:
+        """Init the persona class."""
+        self.registry_name = registry_name
+        self.file_path = Path(file_path)
+        data = self._load_file()
+        self._validate(data)
+        self.name = data.get("name", registry_name)
+        self.version = str(data.get("version", "1.0"))
+        self.description = data["description"]
+        self.system_prompt = data["system_prompt"]
 
     def _load_file(self) -> dict:
-        """Help method to load the TOML file data into a dictionary."""
-        file_path = Path(self.file_path)
-        if not file_path.exists():
-            raise PersonaNotFoundError(self.registry_name)
-        with file_path.open("rb") as file:
-            return tomllib.load(file)
+        """Load a file for a new persona."""
+        try:
+            with self.file_path.open("rb") as f:
+                return tomllib.load(f)
+        except FileNotFoundError as err:
+            raise PersonaConfigError(self.file_path, "file not found") from err
+        except OSError as err:
+            raise PersonaConfigError(self.file_path, f"cannot read file ({err.strerror})") from err
+        except tomllib.TOMLDecodeError as err:
+            raise PersonaConfigError(self.file_path, f"invalid TOML ({err})") from err
 
-    def get_version_from_file(self) -> str:
-        """Retrieve the version from the loaded data."""
-        return str(self._config_data.get("version", "1.0"))
-
-    def get_system_prompt_from_file(self) -> str:
-        """Retrieve the system prompt from the loaded data."""
-        config_data = self._config_data.get("system_prompt", "")
-        if not config_data:
-            raise PersonaNotFoundError(self.registry_name)
-        return config_data
-
-    def get_description_from_file(self) -> str:
-        """Retrieve the description from the loaded data."""
-        description = self._config_data.get("description", "")
-        if not description:
-            raise PersonaNotFoundError(self.registry_name)
-        return description
-
-    def get_name_from_file(self) -> str:
-        """Retrieve the capitalized name from the loaded data."""
-        return self._config_data.get("name", self.registry_name)
+    def _validate(self, data: dict) -> None:
+        """Check all necessaries values are here."""
+        invalid = [
+            field for field in self.REQUIRED_FIELDS if not isinstance(data.get(field), str) or not data[field].strip()
+        ]
+        if invalid:
+            raise PersonaConfigError(self.file_path, f"missing or empty field(s): {', '.join(invalid)}")
 
     def show(self) -> list:
-        """Show all the data."""
+        """Show variables."""
         return [self.name, self.version, self.description]
 
     def apply_to_payload(self, messages: list[dict]) -> dict:
-        """Construct a complete API payload containing the system prompt and options."""
-        full_messages = [
-            {"role": "system", "content": self.system_prompt},
-            *messages,
-        ]
-        return {
-            "messages": full_messages,
-        }
+        """Prepare to the paylod, its content."""
+        return {"messages": [{"role": "system", "content": self.system_prompt}, *messages]}
