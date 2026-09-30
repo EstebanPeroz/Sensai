@@ -26,17 +26,20 @@ class ProviderManager:
 
         for name, adapter_cls in PROVIDER_ADAPTERS.items():
             provider_conf = settings.providers.get(name)
-            if provider_conf is not None:
-                self._list.append(adapter_cls(provider_conf))
+            if provider_conf is None:
+                continue
+            provider: ProviderAdapter = adapter_cls(provider_conf)
+            try:
+                self._list.append(provider)
+                for model in provider.list():
+                    self._models[model] = provider
+            except SensaiError:
+                # Add log to fail ollama connection
+                continue
 
         if not self._list:
             msg = f"no configured provider found, expected one of: {list(PROVIDER_ADAPTERS)}"
             raise SensaiError(msg)
-
-        for provider in self._list:
-            models = provider.list()
-            for model in models:
-                self._models[model] = provider
 
     def get_models(self) -> list[str]:
         """List the names of every model available across all registered providers."""

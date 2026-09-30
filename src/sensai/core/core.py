@@ -17,7 +17,7 @@ def _is_quit(event: ui.Event | None) -> bool:
 class Core:
     """Wires a UI to a conversation, dispatching UI events until the user quits."""
 
-    conversation: Conversation
+    conversation: Conversation | None = None
     _provider_manager: ProviderManager
     _ui: ui.UIAdapter
     _settings: Settings
@@ -56,6 +56,10 @@ class Core:
 
     def _launch_conv_chat(self, content: str) -> None:
         """Send `content` through the conversation, reporting any provider error instead of raising."""
+        if self.conversation is None:
+            self._ui.send_user_input("No conversation setted")
+            # replace with log + ui error message
+            return
         try:
             self.conversation.chat(content, self._ui)
         except SensaiError as err:
