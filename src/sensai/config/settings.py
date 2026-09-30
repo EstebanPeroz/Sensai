@@ -48,7 +48,7 @@ class LLMSettings:
     """Settings of the [llm] table: the embedding model, shared by every provider, and the configured providers."""
 
     embedding_model: str | None = None
-    providers: list[ProviderSettings] = field(default_factory=list)
+    providers: dict[str, ProviderSettings] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Check the embedding model, which comes unchecked from the settings file."""
@@ -87,7 +87,11 @@ def load_settings(path: Path | None = None) -> Settings:
     else:
         try:
             llm = _pop_table(data, "llm")
-            providers = [provider(**_pop_table(llm, provider.name)) for provider in PROVIDERS if provider.name in llm]
+            providers: dict[str, ProviderSettings] = {
+                provider.name: provider(**_pop_table(llm, provider.name))
+                for provider in PROVIDERS
+                if provider.name in llm
+            }
             return Settings(llm=LLMSettings(**llm, providers=providers), **data)
         except (TypeError, ValueError) as err:
             msg = f"invalid settings in {source}: {err}"

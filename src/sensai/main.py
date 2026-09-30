@@ -6,9 +6,10 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sensai.config.settings import Settings, load_settings
+from sensai.config.settings import load_settings
 from sensai.core.core import Core
 from sensai.error import SensaiError
+from sensai.parsing import Parsing
 from sensai.ui.tui.core import UITextualAdapter
 
 if TYPE_CHECKING:
@@ -30,22 +31,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def launch_core(ui: UIAdapter, settings: Settings) -> None:
-    """Build and run the Core loop, driven by `ui`. Meant to run off the main thread."""
-    core = Core(ui, settings)
-    core.run()
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point: run the program."""
     ui: UIAdapter = UITextualAdapter()
-    args = parse_args(argv)
+    args = Parsing().parse_args(argv)
     try:
         settings = load_settings(args.config)
+        core = Core(ui, settings)
     except SensaiError as err:
         print(f"{err}", file=sys.stderr)
         return 1
-    driver = threading.Thread(target=launch_core, args=(ui, settings), daemon=True)
+
+    driver = threading.Thread(target=core.run, daemon=True)
     driver.start()
     ui.run()
     return 0

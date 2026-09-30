@@ -5,16 +5,18 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from sensai.config.settings import OllamaSettings
 from sensai.llm.error import JsonError, RequestCallError, RequestStatusError
 from sensai.llm.ollama import OllamaAdapter
 from sensai.llm.responses import ChatResponse, ShowResponse
 
 _API_PATH = "http://localhost:11434/"
+_EMBEDDING_MODEL = "nomic-embed-text"
 
 
 @pytest.fixture
 def adapter() -> OllamaAdapter:
-    return OllamaAdapter()
+    return OllamaAdapter(OllamaSettings())
 
 
 def mock_response(
@@ -34,6 +36,16 @@ def mock_response(
         response.json.return_value = json_data
     response.iter_lines.return_value = iter(lines or [])
     return response
+
+
+class TestSettings:
+    @pytest.mark.parametrize("base_url", ["http://ollama:1234", "http://ollama:1234/"])
+    def test_calls_the_configured_base_url(self, base_url: str) -> None:
+        adapter = OllamaAdapter(OllamaSettings(base_url=base_url))
+        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})) as mock_post:
+            adapter.show("model")
+
+        assert mock_post.call_args.args == ("http://ollama:1234/api/show",)
 
 
 class TestChatNonStreaming:
@@ -157,25 +169,41 @@ class TestEmbedding:
             "sensai.llm.ollama.requests.post",
             return_value=mock_response(json_data={"embeddings": [[0.1, 0.2]]}),
         ):
-            assert adapter.embedding("hello") == [0.1, 0.2]
+            assert adapter.embedding("hello", _EMBEDDING_MODEL) == [0.1, 0.2]
 
     def test_embedding_returns_empty_list_when_no_embeddings(self, adapter: OllamaAdapter) -> None:
         with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={"embeddings": []})):
-            assert adapter.embedding("hello") == []
+            assert adapter.embedding("hello", _EMBEDDING_MODEL) == []
 
     def test_embeddings_returns_vectors(self, adapter: OllamaAdapter) -> None:
         with patch(
             "sensai.llm.ollama.requests.post",
             return_value=mock_response(json_data={"embeddings": [[0.1], [0.2]]}),
-        ):
-            assert adapter.embeddings(["a", "b"]) == [[0.1], [0.2]]
+        ) as mock_post:
+            assert adapter.embeddings(["a", "b"], _EMBEDDING_MODEL) == [[0.1], [0.2]]
+        assert mock_post.call_args.kwargs["json"]["model"] == _EMBEDDING_MODEL
+
+    def test_embeddings_returns_empty_list_when_model_unavailable(self, adapter: OllamaAdapter) -> None:
+        """embeddings() probes the model via show() first, and bails out without embedding if that fails."""
+        with patch(
+            "sensai.llm.ollama.requests.post",
+            return_value=mock_response(ok=False, status_code=404),
+        ) as mock_post:
+            assert adapter.embeddings(["a"], _EMBEDDING_MODEL) == []
+        mock_post.assert_called_once()
+        assert mock_post.call_args.args[0] == _API_PATH + "api/show"
 
     def test_embeddings_raises_request_call_error_on_call_failure(self, adapter: OllamaAdapter) -> None:
+        def side_effect(url: str, **_kwargs: object) -> MagicMock:
+            if url == _API_PATH + "api/show":
+                return mock_response(json_data={})
+            raise requests.RequestException
+
         with (
-            patch("sensai.llm.ollama.requests.post", side_effect=requests.RequestException),
+            patch("sensai.llm.ollama.requests.post", side_effect=side_effect),
             pytest.raises(RequestCallError),
         ):
-            adapter.embeddings(["a", "b"])
+            adapter.embeddings(["a", "b"], _EMBEDDING_MODEL)
 
 
 class TestShow:

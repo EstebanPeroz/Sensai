@@ -1,9 +1,16 @@
 from typing import TYPE_CHECKING
 
+from sensai.error import SensaiError
 from sensai.llm.ollama import OllamaAdapter
 
 if TYPE_CHECKING:
+    from sensai.config.settings import LLMSettings
     from sensai.llm.adapter import ProviderAdapter
+
+
+PROVIDER_ADAPTERS: dict[str, type] = {
+    "ollama": OllamaAdapter,
+}
 
 
 class ProviderManager:
@@ -12,12 +19,19 @@ class ProviderManager:
     _list: list[ProviderAdapter]
     _models: dict[str, ProviderAdapter]
 
-    def __init__(self) -> None:
+    def __init__(self, settings: LLMSettings) -> None:
         """Register the known providers and index every model they each expose."""
         self._list = []
         self._models = {}
 
-        self._list.append(OllamaAdapter())
+        for name, adapter_cls in PROVIDER_ADAPTERS.items():
+            provider_conf = settings.providers.get(name)
+            if provider_conf is not None:
+                self._list.append(adapter_cls(provider_conf))
+
+        if not self._list:
+            msg = f"no configured provider found, expected one of: {list(PROVIDER_ADAPTERS)}"
+            raise SensaiError(msg)
 
         for provider in self._list:
             models = provider.list()
