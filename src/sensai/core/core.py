@@ -1,9 +1,13 @@
 import threading
+from typing import TYPE_CHECKING
 
 from sensai import ui
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.provider_manager import ProviderManager
+
+if TYPE_CHECKING:
+    from sensai.config.settings import Settings
 
 
 def _is_quit(event: ui.Event | None) -> bool:
@@ -16,11 +20,13 @@ class Core:
     conversation: Conversation
     _provider_manager: ProviderManager
     _ui: ui.UIAdapter
+    _settings: Settings
 
-    def __init__(self, ui: ui.UIAdapter) -> None:
+    def __init__(self, ui: ui.UIAdapter, settings: Settings) -> None:
         """Set up the provider manager and conversation, then wait for `ui` to be ready."""
-        self._provider_manager = ProviderManager()
         self._ui = ui
+        self._settings = settings
+        self._provider_manager = ProviderManager()
         base = self._provider_manager.get_base_model()
         if base is not None:
             self.conversation = Conversation(base[1], base[0])

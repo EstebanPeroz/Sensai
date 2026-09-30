@@ -6,11 +6,13 @@ from importlib import resources
 from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlsplit
 
+from sensai.error import SensaiError
+
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-class ConfigError(Exception):
+class ConfigError(SensaiError):
     """Raised when the settings cannot be loaded or are invalid."""
 
 
@@ -66,8 +68,10 @@ def load_settings(path: Path | None = None) -> Settings:
 
     Without a path, the settings.toml packaged with sensai is used.
     """
-    source = path if path is not None else resources.files("sensai.config").joinpath("settings.toml")
+    source = path
     try:
+        if source is None:
+            source = resources.files("sensai.config").joinpath("settings.toml")
         with source.open("rb") as f:
             data = tomllib.load(f)
     except FileNotFoundError:
