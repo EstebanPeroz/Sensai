@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Literal, overload
 import requests
 
 from sensai.llm.adapter import ProviderAdapter
+from sensai.llm.error import JsonError, RequestCallError, RequestStatusError
 from sensai.llm.responses import ChatResponse, ShowResponse
 
 if TYPE_CHECKING:
@@ -28,21 +29,17 @@ class OllamaAdapter(ProviderAdapter):
         super().__init__()
 
     @overload
-    def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse] | None: ...
+    def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse]: ...
     @overload
-    def chat(self, payload: dict, *, stream: Literal[False]) -> ChatResponse | None: ...
+    def chat(self, payload: dict, *, stream: Literal[False]) -> ChatResponse: ...
 
-    def chat(self, payload: dict, *, stream: bool) -> ChatResponse | Iterator[ChatResponse] | None:
+    def chat(self, payload: dict, *, stream: bool) -> ChatResponse | Iterator[ChatResponse]:
         """Send a chat call on the ollama API."""
         payload["stream"] = stream
         if stream:
-            chunks = self._call_stream("api/chat", payload=payload, timeout=30)
-            if chunks is None:
-                return None
+            chunks = self._post_stream("api/chat", payload=payload, timeout=30)
             return (ChatResponse(chunk) for chunk in chunks)
         content = self._post("api/chat", payload=payload, timeout=10)
-        if content is None:
-            return None
         return ChatResponse(content)
 
     def embedding(self, message: str) -> list:
@@ -60,19 +57,15 @@ class OllamaAdapter(ProviderAdapter):
             timeout=5,
         )
 
-        if content is None:
-            return []
         return content.get("embeddings", [])
 
-    def show(self, model_name: str) -> ShowResponse | None:
+    def show(self, model_name: str) -> ShowResponse:
         """Get info on a specified model on the ollama API."""
         content = self._post("api/show", {"model": model_name}, timeout=3)
-        if content is None:
-            return None
         response: ShowResponse = ShowResponse(model=model_name)
 
-        capabilities = content.get("capabilities", "")
-        if capabilities == "":
+        capabilities: list = content.get("capabilities", [])
+        if capabilities == []:
             return response
         if "tools" in capabilities:
             response.tools = True
@@ -83,23 +76,17 @@ class OllamaAdapter(ProviderAdapter):
     def load(self, model_name: str) -> bool:
         """Load a model with the ollama API."""
         content = self._post("api/generate", {"model": model_name})
-        if content is None:
-            return False
         return content.get("done", False)
 
     def unload(self, model_name: str) -> bool:
         """Load a model with the ollama API."""
         content = self._post("api/generate", {"model": model_name, "keep_alive": 0})
-        if content is None:
-            return False
         return content.get("done", False)
 
     def list(self) -> list[str]:
         """List of model given by the provider."""
         content = self._get("api/tags")
 
-        if content is None:
-            return []
         models_response: list[dict] = content.get("models", [])
         if models_response == []:
             return []
@@ -112,37 +99,37 @@ class OllamaAdapter(ProviderAdapter):
 
         return models
 
-    def _get(self, endpoint: str, *, timeout: int = 10) -> dict | None:
+    def _get(self, endpoint: str, *, timeout: int = 10) -> dict:
         try:
             result = requests.get(
                 self._API_PATH + endpoint,
                 timeout=timeout,
             )
-        except requests.RequestException:
-            return None
+        except requests.RequestException as err:
+            raise RequestCallError(" Get -> " + str(err)) from None
         return self._response_to_json(result)
 
-    def _post(self, endpoint: str, payload: dict, *, timeout: int = 10) -> dict | None:
+    def _post(self, endpoint: str, payload: dict, *, timeout: int = 10) -> dict:
         try:
             result = requests.post(
                 self._API_PATH + endpoint,
                 json=payload,
                 timeout=timeout,
             )
-        except requests.RequestException:
-            return None
+        except requests.RequestException as err:
+            raise RequestCallError(" Post -> " + str(err)) from None
         return self._response_to_json(result)
 
-    def _response_to_json(self, response: requests.Response) -> dict | None:
+    def _response_to_json(self, response: requests.Response) -> dict:
         if not response.ok:
-            return None
+            raise RequestStatusError(response.status_code)
 
         try:
             return response.json()
         except requests.exceptions.JSONDecodeError:
-            return None
+            raise JsonError from None
 
-    def _call_stream(self, endpoint: str, payload: dict, *, timeout: int = 10) -> Iterator[dict] | None:
+    def _post_stream(self, endpoint: str, payload: dict, *, timeout: int = 10) -> Iterator[dict]:
         try:
             result = requests.post(
                 self._API_PATH + endpoint,
@@ -150,11 +137,11 @@ class OllamaAdapter(ProviderAdapter):
                 stream=True,
                 timeout=timeout,
             )
-        except requests.RequestException:
-            return None
+        except requests.RequestException as err:
+            raise RequestCallError(" Post -> " + str(err)) from None
 
         if not result.ok:
-            return None
+            raise RequestStatusError(result.status_code)
 
         return self._iter_json_lines(result)
 
@@ -168,7 +155,7 @@ class OllamaAdapter(ProviderAdapter):
                     yield json.loads(line)
                 except json.JSONDecodeError:
                     continue
-        except requests.RequestException:
-            return
+        except requests.RequestException as err:
+            raise RequestCallError(" fail to get stream chunk" + str(err)) from None
         finally:
             result.close()
