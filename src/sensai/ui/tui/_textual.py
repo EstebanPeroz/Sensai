@@ -123,6 +123,13 @@ class ChatApp(App):
         chat.append(ListItem(HorizontalGroup(Label(fx.bold("* user: ") + user))))
         self._follow_scrolling()
 
+    def add_system_message(self, message: str) -> None:
+        """Append an application message as a new entry in the chat."""
+        chat = self.query_one("#chat", ListView)
+        self._list.append({"role": "system", "mode": "message", "content": message})
+        chat.append(ListItem(HorizontalGroup(Label(fx.bold("* system:\n") + message))))
+        self._follow_scrolling()
+
     def on_input_submitted(self, message: Input.Submitted) -> None:
         """Handle a user submitting the input widget."""
         content = message.value.strip()

@@ -39,3 +39,11 @@ class ProviderManager:
         if provider is not None:
             return model, provider
         return None
+
+    def set_model(self, model: str) -> bool:
+        """Set the model to use. Returns True if successful, False if the model is not available."""
+        provider = self._models.get(model)
+        if provider is not None:
+            provider.load(model)
+            return True
+        return False

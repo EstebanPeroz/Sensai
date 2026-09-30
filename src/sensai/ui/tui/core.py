@@ -75,3 +75,11 @@ class UITextualAdapter(ui.UIAdapter):
         except RuntimeError:
             return False
         return True
+
+    def send_system_message(self, message: str) -> bool:
+        """Send an application message to the UI."""
+        try:
+            self.app.call_from_thread(self.app.add_system_message, message)
+        except RuntimeError:
+            return False
+        return True

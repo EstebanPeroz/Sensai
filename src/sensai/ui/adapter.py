@@ -58,3 +58,7 @@ class UIAdapter(ABC):
     @abstractmethod
     def send_user_input(self, response: str) -> bool:
         """Forward a user's conversation input to the UI for display. Returns whether it was delivered."""
+
+    @abstractmethod
+    def send_system_message(self, message: str) -> bool:
+        """Forward an application message, such as a command output, to the UI. Returns whether it was delivered."""
