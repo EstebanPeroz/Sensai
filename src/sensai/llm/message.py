@@ -11,7 +11,7 @@ class Role(StrEnum):
     TOOL = "tool"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Message:
     """One role-tagged turn of a conversation, mapping 1:1 onto a chat message."""
 

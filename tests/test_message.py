@@ -1,3 +1,5 @@
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from sensai.llm.message import Message, Role
@@ -10,3 +12,9 @@ class TestMessage:
 
     def test_roles_match_chat_endpoint(self) -> None:
         assert [role.value for role in Role] == ["system", "user", "assistant", "tool"]
+
+    def test_is_immutable(self) -> None:
+        message = Message(Role.USER, "hi")
+
+        with pytest.raises(FrozenInstanceError):
+            message.content = "changed"  # type: ignore[misc]

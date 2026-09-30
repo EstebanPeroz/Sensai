@@ -1,31 +1,31 @@
 from sensai.llm.message import Message, Role
-from sensai.memory.history import InMemoryHistory
+from sensai.memory.history import History
 from sensai.memory.history_repository import HistoryRepository
 
 
 def make_history() -> HistoryRepository:
-    return InMemoryHistory()
+    return History()
 
 
-class TestInMemoryHistory:
+class TestHistory:
     def test_starts_empty(self) -> None:
         assert make_history().messages() == []
 
     def test_keeps_messages_in_append_order(self) -> None:
         history = make_history()
-        turns = [
+        history.append(Role.SYSTEM, "be concise")
+        history.append(Role.USER, "hi")
+        history.append(Role.ASSISTANT, "hello")
+
+        assert history.messages() == [
             Message(Role.SYSTEM, "be concise"),
             Message(Role.USER, "hi"),
             Message(Role.ASSISTANT, "hello"),
         ]
-        for turn in turns:
-            history.append(turn)
-
-        assert history.messages() == turns
 
     def test_messages_returns_a_copy(self) -> None:
         history = make_history()
-        history.append(Message(Role.USER, "hi"))
+        history.append(Role.USER, "hi")
 
         history.messages().clear()
 
@@ -33,18 +33,21 @@ class TestInMemoryHistory:
 
     def test_clear_removes_every_message(self) -> None:
         history = make_history()
-        history.append(Message(Role.USER, "hi"))
+        history.append(Role.USER, "hi")
 
         history.clear()
 
         assert history.messages() == []
 
-    def test_messages_map_onto_chat_payload(self) -> None:
+    def test_to_json_maps_onto_chat_payload(self) -> None:
         history = make_history()
-        history.append(Message(Role.USER, "hi"))
-        history.append(Message(Role.ASSISTANT, "hello"))
+        history.append(Role.USER, "hi")
+        history.append(Role.ASSISTANT, "hello")
 
-        assert [message.to_dict() for message in history.messages()] == [
+        assert history.to_json() == [
             {"role": "user", "content": "hi"},
             {"role": "assistant", "content": "hello"},
         ]
+
+    def test_to_json_of_empty_history_is_empty(self) -> None:
+        assert make_history().to_json() == []
