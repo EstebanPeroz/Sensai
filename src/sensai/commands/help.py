@@ -1,6 +1,9 @@
-from typing import override
+from typing import TYPE_CHECKING, override
 
 from sensai.commands.base import Command
+
+if TYPE_CHECKING:
+    from sensai.commands.registry import CommandRegistry
 
 
 class Help(Command):
@@ -8,12 +11,15 @@ class Help(Command):
 
     name = "help"
     help = "Display available commands."
+    _registry: CommandRegistry
 
-    @classmethod
+    def __init__(self, registry: CommandRegistry) -> None:
+        """Initialize the Help command with a command registry."""
+        self._registry = registry
+
     @override
-    def execute(cls, *args: str) -> None:
+    def execute(self, *args: str) -> None:
         """Print the available commands."""
         print("Available commands:")
-        for cls_instance in Command.__subclasses__():
-            help_text = cls_instance.help
-            print(f"- {cls_instance.__name__.lower()}: {help_text}")
+        for command in self._registry.commands():
+            print(f"- {command.name}: {command.help}")
