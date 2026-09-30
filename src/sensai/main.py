@@ -4,7 +4,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from sensai.config.settings import ConfigError, load_settings
-from sensai.parsing import parse_args
+from sensai.parsing import Parsing
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the program."""
-    args = parse_args(argv)
+    args = Parsing().parse_args(argv)
     try:
         load_settings(args.config)
     except ConfigError as err:
