@@ -26,11 +26,11 @@ class ProviderAdapter(ABC):
         """
 
     @abstractmethod
-    def embedding(self, message: str) -> list:
+    def embedding(self, message: str, model: str) -> list:
         """Send a message to embed to receive a list of vector."""
 
     @abstractmethod
-    def embeddings(self, messages: list[str]) -> list[list]:
+    def embeddings(self, messages: list[str], model: str) -> list[list]:
         """Send messages to embed and receive a list of vector for each message."""
 
     @abstractmethod

@@ -23,22 +23,24 @@ class Core:
     _settings: Settings
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings) -> None:
-        """Set up the provider manager and conversation, then wait for `ui` to be ready."""
+        """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
         self._ui = ui
         self._settings = settings
-        self._provider_manager = ProviderManager()
+
+        self._provider_manager = ProviderManager(settings.llm)
         base = self._provider_manager.get_base_model()
         if base is not None:
             self.conversation = Conversation(base[1], base[0])
-        while ui.open() is False:
-            threading.Event().wait(0.1)
-
-    def __del__(self) -> None:
-        """Close the UI when the core is garbage-collected."""
-        self._ui.close()
 
     def run(self) -> None:
-        """Block, dispatching UI events to the conversation until a quit command is received."""
+        """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
+
+        Meant to run off the main thread, since it blocks on `ui` being open, which
+        requires `ui.run()` to be driving the UI's event loop on the main thread.
+        """
+        while self._ui.open() is False:
+            threading.Event().wait(0.1)
+
         event: ui.Event | None = None
         while not _is_quit(event):
             self._ui.wait_event()
@@ -49,6 +51,8 @@ class Core:
                 break
             if event.type == ui.EventType.UserContent:
                 self._launch_conv_chat(event.content)
+
+        self._ui.close()
 
     def _launch_conv_chat(self, content: str) -> None:
         """Send `content` through the conversation, reporting any provider error instead of raising."""
