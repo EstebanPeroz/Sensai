@@ -8,7 +8,6 @@ class Command(ABC):
     name: ClassVar[str]
     help: ClassVar[str]
 
-    @classmethod
     @abstractmethod
-    def execute(cls, *args: str) -> None:
+    def execute(self, *args: str) -> None:
         """Execute the command with the given arguments."""
