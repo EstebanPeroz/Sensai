@@ -7,13 +7,13 @@ if TYPE_CHECKING:
 
 
 class ProviderManager:
-    """TMP."""
+    """Aggregates the registered LLM providers and maps each model name to the provider that serves it."""
 
     _list: list[ProviderAdapter]
     _models: dict[str, ProviderAdapter]
 
     def __init__(self) -> None:
-        """TMP."""
+        """Register the known providers and index every model they each expose."""
         self._list = []
         self._models = {}
 
@@ -25,9 +25,17 @@ class ProviderManager:
                 self._models[model] = provider
 
     def get_models(self) -> list[str]:
-        """TMP."""
+        """List the names of every model available across all registered providers."""
         return list(self._models.keys())
 
     def get_provider(self, model: str) -> ProviderAdapter | None:
-        """TMP."""
+        """Return the provider serving `model`, or None if no registered provider exposes it."""
         return self._models.get(model)
+
+    def get_base_model(self) -> tuple[str, ProviderAdapter] | None:
+        """Return the default model name and its provider, or None if it isn't available."""
+        model = "qwen3:1.7b"
+        provider = self._models.get(model)
+        if provider is not None:
+            return model, provider
+        return None
