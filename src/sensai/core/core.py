@@ -59,5 +59,5 @@ class Core:
         try:
             self.conversation.chat(content, self._ui)
         except SensaiError as err:
-            # log + ui update from err
-            print(err)
+            print(str(err))
+            # replace with log

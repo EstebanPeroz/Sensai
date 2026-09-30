@@ -2,6 +2,8 @@ import threading
 from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
+from sensai.llm.message import Role
+from sensai.memory.history import History
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -14,13 +16,15 @@ if TYPE_CHECKING:
 class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
-    provider: ProviderAdapter
-    model: str
+    _provider: ProviderAdapter
+    _model: str
+    _history: History
 
     def __init__(self, provider: ProviderAdapter, model: str) -> None:
         """Bind the conversation to the `provider` and `model` used to answer it."""
-        self.provider = provider
-        self.model = model
+        self._provider = provider
+        self._model = model
+        self._history = History()
 
     def _stream_chunks(
         self,
@@ -47,9 +51,10 @@ class Conversation:
     def chat(self, user_input: str, ui: UIAdapter) -> None:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
         ui.send_user_input(user_input)
+        self._history.append(Role.USER, user_input)
 
-        chunks = self.provider.chat(
-            {"model": self.model, "messages": [{"role": "user", "content": user_input}]},
+        chunks = self._provider.chat(
+            {"model": self._model, "messages": self._history.to_json()},
             stream=True,
         )
         if chunks is None:
