@@ -44,6 +44,7 @@ class Model(Command):
             self._display_available_models()
             return
         if len(args) == 1:
+            self._ui.send_system_message(f"Setting model to '{args[0]}'...")
             self._set_model(args[0])
             return
         self._ui.send_system_message(f"Invalid number of arguments. Usage: {self.usage}")
