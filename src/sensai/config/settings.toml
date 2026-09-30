@@ -1,3 +1,5 @@
-[adapter.ollama]
+[llm]
 embedding_model = "nomic-embed-text"
-API_path = "http://localhost:11434/"
+
+[llm.ollama]
+base_url = "http://localhost:11434/"
