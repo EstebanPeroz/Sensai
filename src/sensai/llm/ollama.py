@@ -52,7 +52,7 @@ class OllamaAdapter(ProviderAdapter):
         except SensaiError:
             return []
         content = self._post(
-            endpoint="api/generate",
+            endpoint="api/embed",
             payload={"model": model, "input": messages},
             timeout=5,
         )
