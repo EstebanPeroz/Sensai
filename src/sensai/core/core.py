@@ -28,9 +28,6 @@ class Core:
         self._settings = settings
 
         self._provider_manager = ProviderManager(settings.llm)
-        base = self._provider_manager.get_base_model()
-        if base is not None:
-            self.conversation = Conversation(base[1], base[0])
 
     def run(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
@@ -65,3 +62,10 @@ class Core:
         except SensaiError as err:
             print(str(err))
             # replace with log
+
+    def init_conversation(self, model: str | None) -> None:
+        """Set Conversation with given model."""
+        if model is not None:
+            provider = self._provider_manager.get_provider(model)
+            if provider is not None:
+                self.conversation = Conversation(provider, model)

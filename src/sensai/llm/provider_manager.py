@@ -48,11 +48,3 @@ class ProviderManager:
     def get_provider(self, model: str) -> ProviderAdapter | None:
         """Return the provider serving `model`, or None if no registered provider exposes it."""
         return self._models.get(model)
-
-    def get_base_model(self) -> tuple[str, ProviderAdapter] | None:
-        """Return the default model name and its provider, or None if it isn't available."""
-        model = "qwen3:1.7b"
-        provider = self._models.get(model)
-        if provider is not None:
-            return model, provider
-        return None

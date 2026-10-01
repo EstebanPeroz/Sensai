@@ -38,6 +38,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         settings = load_settings(args.config)
         core = Core(ui, settings)
+        core.init_conversation(args.model)
     except SensaiError as err:
         print(f"{err}", file=sys.stderr)
         return 1
@@ -49,4 +50,4 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
