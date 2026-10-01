@@ -47,14 +47,13 @@ class Conversation:
                     break
             self._history.append(Role.ASSISTANT, content)
         except SensaiError as err:
-            print(str(err))
-            # log error implementation
+            ui.send_error(str(err))
         finally:
             stream_done.set()
 
     def chat(self, user_input: str, ui: UIAdapter) -> None:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
-        ui.send_user_input(user_input)
+        ui.send_input(Role.USER, user_input)
         self._history.append(Role.USER, user_input)
 
         chunks = self._provider.chat(

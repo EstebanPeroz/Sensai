@@ -9,9 +9,11 @@ from textual.widgets import Input, Label, ListItem, ListView
 
 import sensai.ui.tui._effect as fx
 from sensai import ui
+from sensai.llm.message import Role
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
+    from sensai.memory.history import History
 
 
 class ChatItem(ListItem):
@@ -101,10 +103,24 @@ class ChatApp(App):
             if resp.thinking is not None:
                 self._display_response("thinking", fx.grey(resp.thinking))
 
-    def add_user_input(self, user: str) -> None:
+    def add_error(self, message: str) -> None:
+        """Append an error message as a new entry in the chat."""
+        self._display_response("error", fx.red(message))
+
+    def add_input(self, role: Role, user: str) -> None:
         """Append the user's submitted message as a new entry in the chat."""
         chat = self.query_one("#chat", ListView)
-        chat.append(ChatItem("user", "message", fx.bold("* user: ") + user))
+        role_name: str = ""
+        if role == Role.USER:
+            role_name = "user"
+            mode = "message"
+        elif role == Role.ASSISTANT:
+            role_name = "assistant"
+            mode = "content"
+        else:
+            return
+
+        chat.append(ChatItem(role_name, mode, fx.bold("* user: ") + user))
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
@@ -144,3 +160,10 @@ class ChatApp(App):
 
         if chat.is_vertical_scroll_end:
             chat.scroll_end(animate=False)
+
+    def load_conversation(self, messages: History) -> None:
+        """Load conversation history to the ui."""
+        chat = self.query_one("#chat", ListView)
+        chat.clear()
+        for message in messages.messages():
+            self.add_input(message.role, message.content)
