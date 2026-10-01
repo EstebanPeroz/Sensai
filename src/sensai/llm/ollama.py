@@ -53,7 +53,7 @@ class OllamaAdapter(ProviderAdapter):
             return []
         content = self._post(
             endpoint="api/generate",
-            payload={"model": model, "inputs": messages},
+            payload={"model": model, "input": messages},
             timeout=5,
         )
 
