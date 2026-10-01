@@ -14,44 +14,31 @@ if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
 
 
-class ListConv:
-    """In-memory history of chat entries backing the chat `ListView`.
+class ChatItem(ListItem):
+    """A chat `ListView` entry tagged with its role and rendering mode.
 
-    Each entry records its role ("user"/"assistant"), rendering `mode`
-    ("message"/"content"/"thinking"/"error") and accumulated text, so the
-    UI can decide whether new streamed content should be appended to the
-    last list item or start a new one.
+    The role ("user"/"assistant"), rendering `mode`
+    ("message"/"content"/"thinking"/"error") and accumulated text live as
+    plain attributes on the widget itself, so the `ListView` is the only
+    source of truth for conversation history. These attributes are never
+    rendered; only the `Label` text is visible.
     """
 
-    _list_conv: list[dict[str, str]]
+    role: str
+    mode: str
+    text: str
 
-    def __init__(self) -> None:
-        """Initialize an empty conversation history."""
-        self._list_conv = []
+    def __init__(self, role: str, mode: str, text: str) -> None:
+        """Create a list item for the given role/mode, rendering `text`."""
+        self.role = role
+        self.mode = mode
+        self.text = text
+        super().__init__(HorizontalGroup(Label(text)))
 
-    def last_same(self, mode: str) -> bool:
-        """Check whether the last entry is an assistant entry in the given rendering `mode`.
-
-        Used to decide whether new content should be merged into the last
-        list item instead of starting a new one.
-        """
-        last_mode = self._list_conv[-1]["mode"]
-
-        return self._list_conv[-1]["role"] == "assistant" and (last_mode == mode)
-
-    def empty(self) -> bool:
-        """Return True if no entries have been recorded yet."""
-        return len(self._list_conv) == 0
-
-    def append(self, data: dict) -> None:
-        """Record a new entry at the end of the conversation history."""
-        self._list_conv.append(data)
-
-    def last(self) -> dict | None:
-        """Return the most recently recorded entry, or None if the history is empty."""
-        if len(self._list_conv) != 0:
-            return self._list_conv[-1]
-        return None
+    def update_text(self, text: str) -> None:
+        """Append to the accumulated text and refresh the rendered label."""
+        self.text += text
+        self.query_one(Label).update(self.text)
 
 
 class ChatApp(App):
@@ -78,7 +65,6 @@ class ChatApp(App):
     }
     """
 
-    _list: ListConv
     _event_queue: ui.EventQueue
     ready: threading.Event
 
@@ -87,7 +73,6 @@ class ChatApp(App):
         super().__init__()
         self._event_queue = event_queue
         self.ready = threading.Event()
-        self._list = ListConv()
 
     def compose(self) -> ComposeResult:
         """Build the widget tree: a scrolling chat list and a text input for messages."""
@@ -104,8 +89,8 @@ class ChatApp(App):
             self._display_response("error", fx.red(resp.error))
             return
 
-        last = self._list.last()
-        if last is None or last["mode"] == "thinking":
+        last = self._last_item()
+        if last is None or last.mode == "thinking":
             if resp.thinking is not None:
                 self._display_response("thinking", fx.grey(resp.thinking))
             if resp.content is not None:
@@ -119,8 +104,7 @@ class ChatApp(App):
     def add_user_input(self, user: str) -> None:
         """Append the user's submitted message as a new entry in the chat."""
         chat = self.query_one("#chat", ListView)
-        self._list.append({"role": "user", "mode": "message", "content": user})
-        chat.append(ListItem(HorizontalGroup(Label(fx.bold("* user: ") + user))))
+        chat.append(ChatItem("user", "message", fx.bold("* user: ") + user))
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
@@ -139,22 +123,20 @@ class ChatApp(App):
         starts a new labeled list item.
         """
         chat = self.query_one("#chat", ListView)
+        last = self._last_item()
 
-        if self._list.empty() or self._list.last_same(mode) is False:
-            content = fx.bold("* " + mode + ": ") + content
-            data = {"role": "assistant", "mode": mode, "content": content}
-            self._list.append(data)
-            chat.append(ListItem(HorizontalGroup(Label(content))))
+        if last is None or not (last.role == "assistant" and last.mode == mode):
+            chat.append(ChatItem("assistant", mode, fx.bold("* " + mode + ": ") + content))
         else:
-            last = self._list.last()
-            if last is None:
-                return
-            last["content"] += content
-            last_item = chat.children[-1]
-            label = last_item.query_one(Label)
-            label.update(last["content"])
+            last.update_text(content)
 
         self._follow_scrolling()
+
+    def _last_item(self) -> ChatItem | None:
+        """Return the most recently appended chat item, or None if the chat is empty."""
+        if len(self.query_one("#chat", ListView).children) == 0:
+            return None
+        return self.query_one("#chat", ListView).children[-1]  # type: ignore[return-value]
 
     def _follow_scrolling(self) -> None:
         """Auto-scroll the chat list to the bottom, but only if the user was already at the end."""
