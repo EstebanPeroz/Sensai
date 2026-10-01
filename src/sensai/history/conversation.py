@@ -35,13 +35,17 @@ class Conversation:
     ) -> None:
         """Forward chunks to the UI until they run out or a stop is requested."""
         try:
+            content: str = ""
             for chunk in chunks:
                 if stop_streaming.is_set():
                     return
+                if chunk.content is not None:
+                    content += chunk.content
                 ui.send_ai_response(chunk)
 
                 if chunk.error is not None:
                     break
+            self._history.append(Role.ASSISTANT, content)
         except SensaiError as err:
             print(str(err))
             # log error implementation
