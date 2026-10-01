@@ -122,6 +122,7 @@ class OllamaAdapter(ProviderAdapter):
 
     def _response_to_json(self, response: requests.Response) -> dict:
         if not response.ok:
+            response.close()
             raise RequestStatusError(response.status_code)
 
         try:
@@ -141,6 +142,7 @@ class OllamaAdapter(ProviderAdapter):
             raise RequestCallError(" Post -> " + str(err)) from None
 
         if not result.ok:
+            result.close()
             raise RequestStatusError(result.status_code)
 
         return self._iter_json_lines(result)
