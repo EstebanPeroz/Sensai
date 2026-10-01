@@ -16,14 +16,36 @@ if TYPE_CHECKING:
     from sensai.memory.history import History
 
 
+USER_PROMPT_BACKGROUND: str = "grey"
+"""Background color used for the "> " user prompt. Change this to restyle it.
+
+Applied as CSS on the `ListItem` (see `ChatApp.CSS`), not as inline markup,
+so it fills the full line width instead of just the text.
+"""
+
+
+def _format(mode: str, text: str) -> str:
+    """Render `text` with the markup appropriate to its rendering `mode`."""
+    if mode == "message":
+        return "> " + text
+    if mode == "thinking":
+        return fx.grey("• " + text)
+    if mode == "content":
+        return fx.white("• " + text)
+    if mode == "error":
+        return fx.red("@ " + text)
+    return text
+
+
 class ChatItem(ListItem):
     """A chat `ListView` entry tagged with its role and rendering mode.
 
     The role ("user"/"assistant"), rendering `mode`
-    ("message"/"content"/"thinking"/"error") and accumulated text live as
-    plain attributes on the widget itself, so the `ListView` is the only
+    ("message"/"content"/"thinking"/"error") and accumulated raw text live
+    as plain attributes on the widget itself, so the `ListView` is the only
     source of truth for conversation history. These attributes are never
-    rendered; only the `Label` text is visible.
+    rendered; only the `Label`, re-rendered through `_format` on every
+    change, is visible.
     """
 
     role: str
@@ -35,12 +57,13 @@ class ChatItem(ListItem):
         self.role = role
         self.mode = mode
         self.text = text
-        super().__init__(HorizontalGroup(Label(text)))
+        classes = "user-message" if mode == "message" else None
+        super().__init__(HorizontalGroup(Label(_format(mode, text))), classes=classes)
 
     def update_text(self, text: str) -> None:
         """Append to the accumulated text and refresh the rendered label."""
         self.text += text
-        self.query_one(Label).update(self.text)
+        self.query_one(Label).update(_format(self.mode, self.text))
 
 
 class ChatApp(App):
@@ -51,20 +74,24 @@ class ChatApp(App):
     application's worker thread to consume.
     """
 
-    CSS = """
-    ListView#chat {
+    CSS = f"""
+    ListView#chat {{
         width: 100%;
-    }
-    ListView#chat > ListItem {
+    }}
+    ListView#chat > ListItem {{
         width: 100%;
-    }
-    ListView#chat > ListItem HorizontalGroup {
-        height: auto;
-    }
-    ListView#chat > ListItem Label {
+    }}
+    ListView#chat > ListItem HorizontalGroup {{
         width: 100%;
         height: auto;
-    }
+    }}
+    ListView#chat > ListItem Label {{
+        width: 100%;
+        height: auto;
+    }}
+    ListView#chat > ListItem.user-message Label {{
+        background: {USER_PROMPT_BACKGROUND};
+    }}
     """
 
     _event_queue: ui.EventQueue
@@ -88,39 +115,36 @@ class ChatApp(App):
     def add_ai_response(self, resp: ChatResponse) -> None:
         """Append streamed text to the last chat entry, or start a new one."""
         if resp.error is not None:
-            self._display_response("error", fx.red(resp.error))
+            self._display_response("error", resp.error)
             return
 
         last = self._last_item()
         if last is None or last.mode == "thinking":
             if resp.thinking is not None:
-                self._display_response("thinking", fx.grey(resp.thinking))
+                self._display_response("thinking", resp.thinking)
             if resp.content is not None:
                 self._display_response("content", resp.content)
         else:
             if resp.content is not None:
                 self._display_response("content", resp.content)
             if resp.thinking is not None:
-                self._display_response("thinking", fx.grey(resp.thinking))
+                self._display_response("thinking", resp.thinking)
 
     def add_error(self, message: str) -> None:
         """Append an error message as a new entry in the chat."""
-        self._display_response("error", fx.red(message))
+        self._display_response("error", message)
 
     def add_input(self, role: Role, user: str) -> None:
-        """Append the user's submitted message as a new entry in the chat."""
+        """Append a conversation message as a new entry in the chat."""
         chat = self.query_one("#chat", ListView)
-        role_name: str = ""
         if role == Role.USER:
-            role_name = "user"
-            mode = "message"
+            role_name, mode = "user", "message"
         elif role == Role.ASSISTANT:
-            role_name = "assistant"
-            mode = "content"
+            role_name, mode = "assistant", "content"
         else:
             return
 
-        chat.append(ChatItem(role_name, mode, fx.bold("* user: ") + user))
+        chat.append(ChatItem(role_name, mode, user))
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
@@ -142,7 +166,7 @@ class ChatApp(App):
         last = self._last_item()
 
         if last is None or not (last.role == "assistant" and last.mode == mode):
-            chat.append(ChatItem("assistant", mode, fx.bold("* " + mode + ": ") + content))
+            chat.append(ChatItem("assistant", mode, content))
         else:
             last.update_text(content)
 
