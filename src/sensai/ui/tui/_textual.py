@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from textual.app import App, ComposeResult
@@ -35,6 +36,20 @@ def _format(mode: str, text: str) -> str:
     if mode == "error":
         return fx.red("@ " + text)
     return text
+
+
+class AppHeader(HorizontalGroup):
+    """Top banner: the "Sensai" brand mark on the left, current directory on the right.
+
+    The right side is its own container (`#header-right`) so further status
+    widgets (model name, connection state, etc.) can be mounted into it
+    later without reworking this layout.
+    """
+
+    def compose(self) -> ComposeResult:
+        """Build the header's left brand and right status sections."""
+        yield Label(fx.bold("Sensai"), id="header-brand")
+        yield HorizontalGroup(Label(str(Path.cwd()), id="header-cwd"), id="header-right")
 
 
 class ChatItem(ListItem):
@@ -75,6 +90,24 @@ class ChatApp(App):
     """
 
     CSS = f"""
+    AppHeader {{
+        height: 5%;
+        width: 100%;
+    }}
+    AppHeader #header-brand {{
+        width: 1fr;
+        height: 100%;
+        content-align: left middle;
+    }}
+    AppHeader #header-right {{
+        width: 1fr;
+        height: 100%;
+        align: right middle;
+    }}
+    AppHeader #header-cwd {{
+        width: auto;
+        height: auto;
+    }}
     ListView#chat {{
         width: 100%;
     }}
@@ -92,6 +125,11 @@ class ChatApp(App):
     ListView#chat > ListItem.user-message Label {{
         background: {USER_PROMPT_BACKGROUND};
     }}
+    Input#input {{
+        height: 3;
+        border: round pink;
+        padding: 0 1;
+    }}
     """
 
     _event_queue: ui.EventQueue
@@ -104,7 +142,8 @@ class ChatApp(App):
         self.ready = threading.Event()
 
     def compose(self) -> ComposeResult:
-        """Build the widget tree: a scrolling chat list and a text input for messages."""
+        """Build the widget tree: a header, a scrolling chat list, and a text input for messages."""
+        yield AppHeader()
         yield ListView(id="chat")
         yield Input(id="input", placeholder="Type a message...")
 
