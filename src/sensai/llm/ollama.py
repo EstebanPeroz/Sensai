@@ -53,8 +53,8 @@ class OllamaAdapter(ProviderAdapter):
         if self._embedding_model is None:
             return []
         content = self._call(
-            endpoint="api/generate",
-            payload={"model": self._embedding_model, "inputs": messages},
+            endpoint="api/embed",
+            payload={"model": self._embedding_model, "input": messages},
             timeout=5,
         )
 

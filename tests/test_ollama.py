@@ -161,7 +161,8 @@ class TestEmbedding:
             return_value=mock_response(json_data={"embeddings": [[0.1], [0.2]]}),
         ) as mock_post:
             assert adapter.embeddings(["a", "b"]) == [[0.1], [0.2]]
-        assert mock_post.call_args.kwargs["json"]["model"] == _EMBEDDING_MODEL
+        assert mock_post.call_args.args == (_API_PATH + "api/embed",)
+        assert mock_post.call_args.kwargs["json"] == {"model": _EMBEDDING_MODEL, "input": ["a", "b"]}
 
     def test_embeddings_returns_empty_list_without_embedding_model(self) -> None:
         adapter = OllamaAdapter(OllamaSettings())
