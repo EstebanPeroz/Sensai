@@ -3,3 +3,8 @@ embedding_model = "nomic-embed-text"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"
+
+[cache]
+redis_url = "redis://localhost:6379/0"
+similarity_threshold = 0.92
+ttl = 86400
