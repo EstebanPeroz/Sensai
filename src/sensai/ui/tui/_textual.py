@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, override
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import HorizontalGroup
 from textual.markup import escape
-from textual.suggester import Suggester
-from textual.widgets import Input, Label, ListItem, ListView
+from textual.widgets import Input, Label, ListItem, ListView, OptionList
 
 import sensai.ui.tui._effect as fx
 from sensai import ui
@@ -49,20 +48,8 @@ def _format(mode: str, text: str) -> str:
     return formatted
 
 
-class CommandSuggester(Suggester):
-    """Suggest the first completion of a command or of its argument, as computed by `complete`."""
-
-    _completions: dict[str, list[str]]
-
-    def __init__(self, completions: dict[str, list[str]]) -> None:
-        """Store the commands and the values of their argument."""
-        super().__init__(case_sensitive=True)
-        self._completions = completions
-
-    async def get_suggestion(self, value: str) -> str | None:
-        """Return the first full line completing `value`, or None."""
-        candidates = complete(value, self._completions)
-        return candidates[0] if candidates else None
+class CompletionList(OptionList, can_focus=False):
+    """Dropdown of the completions of the input, driven from the input so it never takes the focus."""
 
 
 class AppHeader(HorizontalGroup):
@@ -116,7 +103,13 @@ class ChatApp(App):
     application's worker thread to consume.
     """
 
-    BINDINGS: ClassVar[list[BindingType]] = [Binding("tab", "accept_suggestion", show=False, priority=True)]
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("tab", "accept_completion", show=False, priority=True),
+        Binding("up", "move_completion(-1)", show=False, priority=True),
+        Binding("down", "move_completion(1)", show=False, priority=True),
+        Binding("escape", "hide_completions", show=False, priority=True),
+    ]
+    AUTO_FOCUS = "#input"
 
     CSS = f"""
     AppHeader {{
@@ -160,6 +153,11 @@ class ChatApp(App):
     ListView#chat > ListItem.user-message:first-child {{
         margin-top: 0;
     }}
+    CompletionList {{
+        display: none;
+        height: auto;
+        max-height: 8;
+    }}
     Input#input {{
         height: 3;
         border: round pink;
@@ -168,6 +166,7 @@ class ChatApp(App):
     """
 
     _event_queue: ui.EventQueue
+    _completions: dict[str, list[str]]
     ready: threading.Event
 
     def __init__(self, event_queue: ui.EventQueue) -> None:
@@ -175,11 +174,13 @@ class ChatApp(App):
         super().__init__()
         self._event_queue = event_queue
         self.ready = threading.Event()
+        self._completions = {}
 
     def compose(self) -> ComposeResult:
         """Build the widget tree: a header, a scrolling chat list, and a text input for messages."""
         yield AppHeader()
         yield ListView(id="chat")
+        yield CompletionList()
         yield Input(id="input", placeholder="Type a message...")
 
     def on_mount(self) -> None:
@@ -273,9 +274,53 @@ class ChatApp(App):
             self.add_input(message.role, message.content)
 
     def set_completions(self, completions: dict[str, list[str]]) -> None:
-        """Suggest the given commands and their argument values while the user types."""
-        self.query_one("#input", Input).suggester = CommandSuggester(completions)
+        """Store the commands and their argument values offered while the user types."""
+        self._completions = completions
 
-    def action_accept_suggestion(self) -> None:
-        """Accept the input's current suggestion."""
-        self.query_one("#input", Input).action_cursor_right()
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Show the completions of the new input value, or hide the list when there are none."""
+        dropdown = self.query_one(CompletionList)
+        candidates = complete(event.value, self._completions)
+        if candidates in ([], [event.value]):
+            dropdown.display = False
+            return
+        dropdown.set_options(candidates)
+        dropdown.highlighted = 0
+        dropdown.display = True
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        """Accept a completion clicked with the mouse."""
+        self._accept(str(event.option.prompt))
+
+    @override
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Only let the completion keys act while the list is shown, so they keep their usual role otherwise."""
+        if action in {"move_completion", "hide_completions"}:
+            return self.query_one(CompletionList).display
+        return True
+
+    def action_move_completion(self, step: int) -> None:
+        """Move the highlight `step` options down (negative to go up)."""
+        dropdown = self.query_one(CompletionList)
+        if step < 0:
+            dropdown.action_cursor_up()
+        else:
+            dropdown.action_cursor_down()
+
+    def action_hide_completions(self) -> None:
+        """Close the list without changing the input."""
+        self.query_one(CompletionList).display = False
+
+    def action_accept_completion(self) -> None:
+        """Put the highlighted completion in the input."""
+        dropdown = self.query_one(CompletionList)
+        option = dropdown.highlighted_option
+        if dropdown.display and option is not None:
+            self._accept(str(option.prompt))
+
+    def _accept(self, value: str) -> None:
+        """Replace the input with `value`, cursor at the end, and give it back the focus."""
+        field = self.query_one("#input", Input)
+        field.value = value
+        field.cursor_position = len(value)
+        field.focus()
