@@ -26,14 +26,17 @@ class Model(Command):
         if not models:
             self._ui.send_system_message("No models are available.")
             return
-        lines = ["Available models:"]
+        current_model = self._provider_manager.provider().current_model()
+        lines = [f"Current model: {current_model}"]
+        lines.append("Available models:")
         lines.extend(f"- {model}" for model in sorted(models))
         self._ui.send_system_message("\n".join(lines))
 
     def _set_model(self, model_name: str) -> None:
         """Set the model to use."""
+        self._ui.send_system_message(f"Setting model to '{model_name}'...")
         if self._provider_manager.set_model(model_name):
-            self._ui.send_system_message(f"Model set to '{model_name}'.")
+            self._ui.send_system_message(f"Model set to '{model_name}'.", append_response=True)
         else:
             self._ui.send_system_message(f"Model '{model_name}' is not available.")
 
@@ -44,7 +47,6 @@ class Model(Command):
             self._display_available_models()
             return
         if len(args) == 1:
-            self._ui.send_system_message(f"Setting model to '{args[0]}'...")
             self._set_model(args[0])
             return
         self._ui.send_system_message(f"Invalid number of arguments. Usage: {self.usage}")
