@@ -8,9 +8,19 @@ def grey(string: str) -> str:
     return _transform(string, "grey")
 
 
+def white(string: str) -> str:
+    """Wrap `string` in Textual markup so it renders in white (used for assistant content)."""
+    return _transform(string, "white")
+
+
 def bold(string: str) -> str:
     """Wrap `string` in Textual markup so it renders in bold (used for role labels)."""
     return _transform(string, "bold")
+
+
+def background(string: str, color: str) -> str:
+    """Wrap `string` in Textual markup so it renders with `color` as its background."""
+    return _transform(string, "on " + color)
 
 
 def _transform(string: str, version: str) -> str:

@@ -48,8 +48,8 @@ class Core:
     def _launch_conv_chat(self, content: str) -> None:
         """Send `content` through the conversation, reporting any provider error instead of raising."""
         if self.conversation is None:
-            self._ui.send_user_input("No conversation setted")
-            # replace with log + ui error message
+            self._ui.send_error("No conversation setted")
+            # replace with log
             return
         try:
             self.conversation.chat(content, self._ui)

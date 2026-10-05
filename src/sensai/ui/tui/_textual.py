@@ -1,57 +1,85 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from textual.app import App, ComposeResult
 from textual.containers import HorizontalGroup
+from textual.markup import escape
 from textual.widgets import Input, Label, ListItem, ListView
 
 import sensai.ui.tui._effect as fx
 from sensai import ui
+from sensai.llm.message import Role
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
+    from sensai.memory.history import History
 
 
-class ListConv:
-    """In-memory history of chat entries backing the chat `ListView`.
+USER_PROMPT_BACKGROUND: str = "grey"
+"""Background color used for the "> " user prompt. Change this to restyle it.
 
-    Each entry records its role ("user"/"assistant"), rendering `mode`
-    ("message"/"content"/"thinking"/"error") and accumulated text, so the
-    UI can decide whether new streamed content should be appended to the
-    last list item or start a new one.
+Applied as CSS on the `ListItem` (see `ChatApp.CSS`), not as inline markup,
+so it fills the full line width instead of just the text.
+"""
+
+
+def _format(mode: str, text: str) -> str:
+    text = escape(text)
+    if mode == "message":
+        return "> " + text
+    if mode == "thinking":
+        return fx.grey("• " + text)
+    if mode == "content":
+        return fx.white("• " + text)
+    if mode == "error":
+        return fx.red("@ " + text)
+    return text
+
+
+class AppHeader(HorizontalGroup):
+    """Top banner: the "Sensai" brand mark on the left, current directory on the right.
+
+    The right side is its own container (`#header-right`) so further status
+    widgets (model name, connection state, etc.) can be mounted into it
+    later without reworking this layout.
     """
 
-    _list_conv: list[dict[str, str]]
+    def compose(self) -> ComposeResult:
+        """Build the header's left brand and right status sections."""
+        yield Label(fx.bold("Sensai"), id="header-brand")
+        yield HorizontalGroup(Label(str(Path.cwd()), id="header-cwd"), id="header-right")
 
-    def __init__(self) -> None:
-        """Initialize an empty conversation history."""
-        self._list_conv = []
 
-    def last_same(self, mode: str) -> bool:
-        """Check whether the last entry is an assistant entry in the given rendering `mode`.
+class ChatItem(ListItem):
+    """A chat `ListView` entry tagged with its role and rendering mode.
 
-        Used to decide whether new content should be merged into the last
-        list item instead of starting a new one.
-        """
-        last_mode = self._list_conv[-1]["mode"]
+    The role ("user"/"assistant"), rendering `mode`
+    ("message"/"content"/"thinking"/"error") and accumulated raw text live
+    as plain attributes on the widget itself, so the `ListView` is the only
+    source of truth for conversation history. These attributes are never
+    rendered; only the `Label`, re-rendered through `_format` on every
+    change, is visible.
+    """
 
-        return self._list_conv[-1]["role"] == "assistant" and (last_mode == mode)
+    role: str
+    mode: str
+    text: str
 
-    def empty(self) -> bool:
-        """Return True if no entries have been recorded yet."""
-        return len(self._list_conv) == 0
+    def __init__(self, role: str, mode: str, text: str) -> None:
+        """Create a list item for the given role/mode, rendering `text`."""
+        self.role = role
+        self.mode = mode
+        self.text = text
+        classes = "user-message" if mode == "message" else None
+        super().__init__(HorizontalGroup(Label(_format(mode, text))), classes=classes)
 
-    def append(self, data: dict) -> None:
-        """Record a new entry at the end of the conversation history."""
-        self._list_conv.append(data)
-
-    def last(self) -> dict | None:
-        """Return the most recently recorded entry, or None if the history is empty."""
-        if len(self._list_conv) != 0:
-            return self._list_conv[-1]
-        return None
+    def update_text(self, text: str) -> None:
+        """Append to the accumulated text and refresh the rendered label."""
+        self.text += text
+        self.query_one(Label).update(_format(self.mode, self.text))
 
 
 class ChatApp(App):
@@ -62,23 +90,49 @@ class ChatApp(App):
     application's worker thread to consume.
     """
 
-    CSS = """
-    ListView#chat {
+    CSS = f"""
+    AppHeader {{
+        height: 5%;
         width: 100%;
-    }
-    ListView#chat > ListItem {
-        width: 100%;
-    }
-    ListView#chat > ListItem HorizontalGroup {
+    }}
+    AppHeader #header-brand {{
+        width: 1fr;
+        height: 100%;
+        content-align: left middle;
+    }}
+    AppHeader #header-right {{
+        width: 1fr;
+        height: 100%;
+        align: right middle;
+    }}
+    AppHeader #header-cwd {{
+        width: auto;
         height: auto;
-    }
-    ListView#chat > ListItem Label {
+    }}
+    ListView#chat {{
+        width: 100%;
+    }}
+    ListView#chat > ListItem {{
+        width: 100%;
+    }}
+    ListView#chat > ListItem HorizontalGroup {{
         width: 100%;
         height: auto;
-    }
+    }}
+    ListView#chat > ListItem Label {{
+        width: 100%;
+        height: auto;
+    }}
+    ListView#chat > ListItem.user-message Label {{
+        background: {USER_PROMPT_BACKGROUND};
+    }}
+    Input#input {{
+        height: 3;
+        border: round pink;
+        padding: 0 1;
+    }}
     """
 
-    _list: ListConv
     _event_queue: ui.EventQueue
     ready: threading.Event
 
@@ -87,10 +141,10 @@ class ChatApp(App):
         super().__init__()
         self._event_queue = event_queue
         self.ready = threading.Event()
-        self._list = ListConv()
 
     def compose(self) -> ComposeResult:
-        """Build the widget tree: a scrolling chat list and a text input for messages."""
+        """Build the widget tree: a header, a scrolling chat list, and a text input for messages."""
+        yield AppHeader()
         yield ListView(id="chat")
         yield Input(id="input", placeholder="Type a message...")
 
@@ -101,26 +155,36 @@ class ChatApp(App):
     def add_ai_response(self, resp: ChatResponse) -> None:
         """Append streamed text to the last chat entry, or start a new one."""
         if resp.error is not None:
-            self._display_response("error", fx.red(resp.error))
+            self._display_response("error", resp.error)
             return
 
-        last = self._list.last()
-        if last is None or last["mode"] == "thinking":
+        last = self._last_item()
+        if last is None or last.mode == "thinking":
             if resp.thinking is not None:
-                self._display_response("thinking", fx.grey(resp.thinking))
+                self._display_response("thinking", resp.thinking)
             if resp.content is not None:
                 self._display_response("content", resp.content)
         else:
             if resp.content is not None:
                 self._display_response("content", resp.content)
             if resp.thinking is not None:
-                self._display_response("thinking", fx.grey(resp.thinking))
+                self._display_response("thinking", resp.thinking)
 
-    def add_user_input(self, user: str) -> None:
-        """Append the user's submitted message as a new entry in the chat."""
+    def add_error(self, message: str) -> None:
+        """Append an error message as a new entry in the chat."""
+        self._display_response("error", message)
+
+    def add_input(self, role: Role, user: str) -> None:
+        """Append a conversation message as a new entry in the chat."""
         chat = self.query_one("#chat", ListView)
-        self._list.append({"role": "user", "mode": "message", "content": user})
-        chat.append(ListItem(HorizontalGroup(Label(fx.bold("* user: ") + user))))
+        if role == Role.USER:
+            role_name, mode = "user", "message"
+        elif role == Role.ASSISTANT:
+            role_name, mode = "assistant", "content"
+        else:
+            return
+
+        chat.append(ChatItem(role_name, mode, user))
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
@@ -139,22 +203,20 @@ class ChatApp(App):
         starts a new labeled list item.
         """
         chat = self.query_one("#chat", ListView)
+        last = self._last_item()
 
-        if self._list.empty() or self._list.last_same(mode) is False:
-            content = fx.bold("* " + mode + ": ") + content
-            data = {"role": "assistant", "mode": mode, "content": content}
-            self._list.append(data)
-            chat.append(ListItem(HorizontalGroup(Label(content))))
+        if last is None or not (last.role == "assistant" and last.mode == mode):
+            chat.append(ChatItem("assistant", mode, content))
         else:
-            last = self._list.last()
-            if last is None:
-                return
-            last["content"] += content
-            last_item = chat.children[-1]
-            label = last_item.query_one(Label)
-            label.update(last["content"])
+            last.update_text(content)
 
         self._follow_scrolling()
+
+    def _last_item(self) -> ChatItem | None:
+        """Return the most recently appended chat item, or None if the chat is empty."""
+        if len(self.query_one("#chat", ListView).children) == 0:
+            return None
+        return self.query_one("#chat", ListView).children[-1]  # type: ignore[return-value]
 
     def _follow_scrolling(self) -> None:
         """Auto-scroll the chat list to the bottom, but only if the user was already at the end."""
@@ -162,3 +224,10 @@ class ChatApp(App):
 
         if chat.is_vertical_scroll_end:
             chat.scroll_end(animate=False)
+
+    def load_conversation(self, messages: History) -> None:
+        """Load conversation history to the ui."""
+        chat = self.query_one("#chat", ListView)
+        chat.clear()
+        for message in messages.messages():
+            self.add_input(message.role, message.content)
