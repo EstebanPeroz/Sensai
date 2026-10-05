@@ -10,10 +10,6 @@ if TYPE_CHECKING:
     from sensai.config.settings import Settings
 
 
-def _is_quit(event: ui.Event | None) -> bool:
-    return event is not None and event.type is ui.EventType.Command and event.content == "/q"
-
-
 class Core:
     """Wires a UI to a conversation, dispatching UI events until the user quits."""
 
@@ -39,12 +35,12 @@ class Core:
             threading.Event().wait(0.1)
 
         event: ui.Event | None = None
-        while not _is_quit(event):
+        while not self._is_quit(event):
             self._ui.wait_event()
             event = self._ui.get_event()
             if event is None:
                 continue
-            if _is_quit(event):
+            if self._is_quit(event):
                 break
             if event.type == ui.EventType.UserContent:
                 self._launch_conv_chat(event.content)
@@ -69,3 +65,7 @@ class Core:
             provider = self._provider_manager.get_provider(model)
             if provider is not None:
                 self.conversation = Conversation(provider, model)
+
+    @staticmethod
+    def _is_quit(event: ui.Event | None) -> bool:
+        return event is not None and event.type is ui.EventType.Command and event.content == "/q"
