@@ -7,6 +7,7 @@ from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
+from sensai.llm.message import Role
 from sensai.llm.provider_manager import ProviderManager
 
 if TYPE_CHECKING:
@@ -74,6 +75,7 @@ class Core:
             return
         name, *args = parts
         try:
+            self._ui.send_input(Role.USER, content, command=True)
             self._command_registry.execute_command(name, *args)
         except UnknownCommandError as err:
             self._ui.send_system_message(str(err))

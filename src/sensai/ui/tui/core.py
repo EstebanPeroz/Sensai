@@ -78,10 +78,10 @@ class UITextualAdapter(ui.UIAdapter):
             return False
         return True
 
-    def send_input(self, role: Role, response: str) -> bool:
+    def send_input(self, role: Role, response: str, *, command: bool = False) -> bool:
         """Send a user conversation input to the UI."""
         try:
-            self.app.call_from_thread(self.app.add_input, role, response)
+            self.app.call_from_thread(self.app.add_input, role, response, command=command)
         except RuntimeError:
             return False
         return True

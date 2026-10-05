@@ -3,6 +3,8 @@ from typing import override
 from unittest.mock import MagicMock
 
 from sensai.commands.base import Command
+from sensai.llm.message import Role
+from sensai.memory.history import History
 from sensai.ui.adapter import UIAdapter
 
 
@@ -35,8 +37,16 @@ class FakeUI(UIAdapter):
         return True
 
     @override
-    def send_user_input(self, response: str) -> bool:
+    def send_error(self, message: str) -> bool:
         return True
+
+    @override
+    def send_input(self, role: Role, response: str, *, command: bool = False) -> bool:
+        return True
+
+    @override
+    def load_conversation(self, messages: History) -> None:
+        pass
 
     @override
     def send_system_message(self, message: str, *, append_response: bool = False) -> bool:

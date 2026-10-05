@@ -28,17 +28,22 @@ so it fills the full line width instead of just the text.
 
 def _format(mode: str, text: str) -> str:
     text = escape(text)
-    if mode == "message":
-        return "> " + text
-    if mode == "system":
-        return fx.bold("* system:") + "\n" + text
-    if mode == "thinking":
-        return fx.grey("• " + text)
-    if mode == "content":
-        return fx.white("• " + text)
-    if mode == "error":
-        return fx.red("@ " + text)
-    return text
+    match mode:
+        case "message":
+            formatted = "> " + text
+        case "command":
+            formatted = "> " + fx.italic(text)
+        case "system":
+            formatted = fx.italic(fx.bold("* system:")) + "\n" + text
+        case "thinking":
+            formatted = fx.grey("• " + text)
+        case "content":
+            formatted = fx.white("• " + text)
+        case "error":
+            formatted = fx.red("@ " + text)
+        case _:
+            formatted = text
+    return formatted
 
 
 class AppHeader(HorizontalGroup):
@@ -58,8 +63,8 @@ class AppHeader(HorizontalGroup):
 class ChatItem(ListItem):
     """A chat `ListView` entry tagged with its role and rendering mode.
 
-    The role ("user"/"assistant"), rendering `mode`
-    ("message"/"content"/"thinking"/"error") and accumulated raw text live
+    The role ("user"/"assistant"/"system"), rendering `mode`
+    ("message"/"command"/"system"/"content"/"thinking"/"error") and accumulated raw text live
     as plain attributes on the widget itself, so the `ListView` is the only
     source of truth for conversation history. These attributes are never
     rendered; only the `Label`, re-rendered through `_format` on every
@@ -75,7 +80,7 @@ class ChatItem(ListItem):
         self.role = role
         self.mode = mode
         self.text = text
-        classes = "user-message" if mode == "message" else None
+        classes = "user-message" if role == "user" else None
         super().__init__(HorizontalGroup(Label(_format(mode, text))), classes=classes)
 
     def update_text(self, text: str) -> None:
@@ -128,6 +133,12 @@ class ChatApp(App):
     ListView#chat > ListItem.user-message Label {{
         background: {USER_PROMPT_BACKGROUND};
     }}
+    ListView#chat > ListItem.user-message {{
+        margin-top: 1;
+    }}
+    ListView#chat > ListItem.user-message:first-child {{
+        margin-top: 0;
+    }}
     Input#input {{
         height: 3;
         border: round pink;
@@ -176,11 +187,11 @@ class ChatApp(App):
         """Append an error message as a new entry in the chat."""
         self._display_response("error", message)
 
-    def add_input(self, role: Role, user: str) -> None:
-        """Append a conversation message as a new entry in the chat."""
+    def add_input(self, role: Role, user: str, *, command: bool = False) -> None:
+        """Append a conversation message, or a typed `command`, as a new entry in the chat."""
         chat = self.query_one("#chat", ListView)
         if role == Role.USER:
-            role_name, mode = "user", "message"
+            role_name, mode = "user", "command" if command else "message"
         elif role == Role.ASSISTANT:
             role_name, mode = "assistant", "content"
         else:

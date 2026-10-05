@@ -62,7 +62,7 @@ class UIAdapter(ABC):
         """Forward an error message to the UI for display. Returns whether it was delivered."""
 
     @abstractmethod
-    def send_input(self, role: Role, response: str) -> bool:
+    def send_input(self, role: Role, response: str, *, command: bool = False) -> bool:
         """Forward a user's conversation input to the UI for display. Returns whether it was delivered."""
 
     @abstractmethod
