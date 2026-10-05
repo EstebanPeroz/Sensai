@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from textual.app import App, ComposeResult
 from textual.containers import HorizontalGroup
+from textual.markup import escape
 from textual.widgets import Input, Label, ListItem, ListView
 
 import sensai.ui.tui._effect as fx
@@ -27,6 +28,7 @@ so it fills the full line width instead of just the text.
 
 def _format(mode: str, text: str) -> str:
     """Render `text` with the markup appropriate to its rendering `mode`."""
+    text = escape(text)
     if mode == "message":
         return "> " + text
     if mode == "thinking":
