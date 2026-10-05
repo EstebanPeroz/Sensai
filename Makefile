@@ -10,6 +10,9 @@ install:
 run:
 	uv run $(NAME) --model ${MODEL}
 
+help:
+	uv run $(NAME) --help
+
 tests:
 	uv run pytest
 
