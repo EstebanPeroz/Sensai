@@ -59,7 +59,7 @@ class CacheSettings:
     """Settings of the [cache] table: the Redis server backing the semantic cache and when an answer is reused."""
 
     redis_url: str = "redis://localhost:6379/0"
-    similarity_threshold: float = 0.92
+    similarity_threshold: float = 0.95
     ttl: int = 86400
 
     def __post_init__(self) -> None:
