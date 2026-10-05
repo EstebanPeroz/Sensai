@@ -18,6 +18,7 @@ class ProviderManager:
 
     _list: list[ProviderAdapter]
     _models: dict[str, ProviderAdapter]
+    _provider: ProviderAdapter
 
     def __init__(self, settings: LLMSettings) -> None:
         """Register the known providers and index every model they each expose."""
@@ -52,7 +53,11 @@ class ProviderManager:
     def set_model(self, model: str) -> bool:
         """Set the model to use. Returns True if successful, False if the model is not available."""
         provider = self._models.get(model)
-        if provider is not None:
-            provider.load(model)
+        if provider is not None and provider.load(model):
+            self._provider = provider
             return True
         return False
+
+    def provider(self) -> ProviderAdapter:
+        """Return the provider adapter in use."""
+        return self._provider
