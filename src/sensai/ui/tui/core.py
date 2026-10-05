@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 from sensai import ui
 from sensai.ui.tui._textual import ChatApp
@@ -93,10 +93,11 @@ class UITextualAdapter(ui.UIAdapter):
         except RuntimeError:
             return
 
-    def send_system_message(self, message: str) -> bool:
+    @override
+    def send_system_message(self, message: str, *, append_response: bool = False) -> bool:
         """Send an application message to the UI."""
         try:
-            self.app.call_from_thread(self.app.add_system_message, message)
+            self.app.call_from_thread(self.app.add_system_message, message, append_response=append_response)
         except RuntimeError:
             return False
         return True

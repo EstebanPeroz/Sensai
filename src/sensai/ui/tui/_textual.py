@@ -189,10 +189,10 @@ class ChatApp(App):
         chat.append(ChatItem(role_name, mode, user))
         self._follow_scrolling()
 
-    def add_system_message(self, message: str) -> None:
+    def add_system_message(self, message: str, *, append_response: bool) -> None:
         """Append an application message as a new entry in the chat."""
         chat = self.query_one("#chat", ListView)
-        chat.append(ChatItem("system", "system", message))
+        chat.append(ChatItem("system", "text" if append_response else "system", message))
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
