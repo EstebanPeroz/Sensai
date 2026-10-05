@@ -6,7 +6,9 @@ from sensai import ui
 from sensai.ui.tui._textual import ChatApp
 
 if TYPE_CHECKING:
+    from sensai.llm.message import Role
     from sensai.llm.responses import ChatResponse
+    from sensai.memory.history import History
 
 
 class UITextualAdapter(ui.UIAdapter):
@@ -68,10 +70,25 @@ class UITextualAdapter(ui.UIAdapter):
             return False
         return True
 
-    def send_user_input(self, response: str) -> bool:
-        """Send a user conversation input to the UI."""
+    def send_error(self, message: str) -> bool:
+        """Send an error message to the UI."""
         try:
-            self.app.call_from_thread(self.app.add_user_input, response)
+            self.app.call_from_thread(self.app.add_error, message)
         except RuntimeError:
             return False
         return True
+
+    def send_input(self, role: Role, response: str) -> bool:
+        """Send a user conversation input to the UI."""
+        try:
+            self.app.call_from_thread(self.app.add_input, role, response)
+        except RuntimeError:
+            return False
+        return True
+
+    def load_conversation(self, messages: History) -> None:
+        """Load conversation history to the ui."""
+        try:
+            self.app.call_from_thread(self.app.load_conversation, messages)
+        except RuntimeError:
+            return
