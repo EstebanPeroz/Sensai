@@ -101,3 +101,11 @@ class UITextualAdapter(ui.UIAdapter):
         except RuntimeError:
             return False
         return True
+
+    @override
+    def set_commands(self, commands: list[str]) -> bool:
+        try:
+            self.app.call_from_thread(self.app.set_commands, commands)
+        except RuntimeError:
+            return False
+        return True

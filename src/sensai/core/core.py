@@ -47,6 +47,8 @@ class Core:
         """
         self._ui.open()
 
+        self._ui.set_commands([f"/{command.name}" for command in self._command_registry.commands()])
+
         event: ui.Event | None = None
         while not self._is_quit(event):
             self._ui.wait_event()

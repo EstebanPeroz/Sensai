@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import HorizontalGroup
 from textual.markup import escape
+from textual.suggester import SuggestFromList
 from textual.widgets import Input, Label, ListItem, ListView
 
 import sensai.ui.tui._effect as fx
@@ -16,6 +18,8 @@ from sensai.llm.message import Role
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
+
+BINDINGS = [Binding("tab", "accept_suggestion", show=False, priority=True)]
 
 
 USER_PROMPT_BACKGROUND: str = "grey"
@@ -250,3 +254,11 @@ class ChatApp(App):
         chat.clear()
         for message in messages.messages():
             self.add_input(message.role, message.content)
+
+    def set_commands(self, commands: list[str]) -> None:
+        """Suggest the given command names while the user types."""
+        self.query_one("#input", Input).suggester = SuggestFromList(commands, case_sensitive=False)
+
+    def action_accept_suggestion(self) -> None:
+        """Accept the input's current suggestion."""
+        self.query_one("#input", Input).action_cursor_right()

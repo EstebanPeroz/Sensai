@@ -72,3 +72,7 @@ class UIAdapter(ABC):
     @abstractmethod
     def send_system_message(self, message: str, *, append_response: bool = False) -> bool:
         """Forward an application message, such as a command output, to the UI. Returns whether it was delivered."""
+
+    @abstractmethod
+    def set_commands(self, commands: list[str]) -> bool:
+        """Give the UI the available command names, for completion. Returns whether it was delivered."""

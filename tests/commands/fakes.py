@@ -53,6 +53,10 @@ class FakeUI(UIAdapter):
         self.messages.append(message)
         return True
 
+    @override
+    def set_commands(self, commands: list[str]) -> bool:
+        return True
+
 
 class FakeCommand(Command):
     def __init__(self, ui: UIAdapter) -> None:
