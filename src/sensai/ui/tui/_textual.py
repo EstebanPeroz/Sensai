@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from textual.app import App, ComposeResult
-from textual.binding import Binding
+from textual.binding import Binding, BindingType
 from textual.containers import HorizontalGroup
 from textual.markup import escape
 from textual.suggester import SuggestFromList
@@ -18,8 +18,6 @@ from sensai.llm.message import Role
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
-
-BINDINGS = [Binding("tab", "accept_suggestion", show=False, priority=True)]
 
 
 USER_PROMPT_BACKGROUND: str = "grey"
@@ -100,6 +98,8 @@ class ChatApp(App):
     it, and forwards submitted user input to the shared `EventQueue` for the
     application's worker thread to consume.
     """
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("tab", "accept_suggestion", show=False, priority=True)]
 
     CSS = f"""
     AppHeader {{
