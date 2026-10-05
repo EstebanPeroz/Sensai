@@ -53,7 +53,13 @@ class ProviderManager:
     def set_model(self, model: str) -> bool:
         """Set the model to use. Returns True if successful, False if the model is not available."""
         provider = self._models.get(model)
-        if provider is not None and provider.load(model):
+        if provider is None:
+            return False
+        try:
+            loaded = provider.load(model)
+        except SensaiError:
+            return False
+        if loaded:
             self._provider = provider
             return True
         return False
