@@ -8,7 +8,7 @@ from sensai.memory.history import History
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from sensai.llm.adapter import ProviderAdapter
+    from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
     from sensai.ui.adapter import UIAdapter
 
@@ -16,14 +16,12 @@ if TYPE_CHECKING:
 class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
-    _provider: ProviderAdapter
-    _model: str
+    _provider_manager: ProviderManager
     _history: History
 
-    def __init__(self, provider: ProviderAdapter, model: str) -> None:
+    def __init__(self, provider_manager: ProviderManager) -> None:
         """Bind the conversation to the `provider` and `model` used to answer it."""
-        self._provider = provider
-        self._model = model
+        self._provider_manager = provider_manager
         self._history = History()
 
     def _stream_chunks(
@@ -56,8 +54,8 @@ class Conversation:
         ui.send_input(Role.USER, user_input)
         self._history.append(Role.USER, user_input)
 
-        chunks = self._provider.chat(
-            {"model": self._model, "messages": self._history.to_json()},
+        chunks = self._provider_manager.provider().chat(
+            {"model": self._provider_manager.provider().current_model(), "messages": self._history.to_json()},
             stream=True,
         )
         if chunks is None:

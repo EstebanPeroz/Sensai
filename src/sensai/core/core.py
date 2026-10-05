@@ -6,9 +6,12 @@ from sensai.commands.model import Model
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
+from sensai.llm.error import ModelError
 from sensai.llm.provider_manager import ProviderManager
 
 if TYPE_CHECKING:
+    import argparse
+
     from sensai.config.settings import Settings
 
 
@@ -21,12 +24,18 @@ class Core:
     _command_registry: CommandRegistry
     _settings: Settings
 
-    def __init__(self, ui: ui.UIAdapter, settings: Settings) -> None:
+    def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
         self._ui = ui
         self._settings = settings
 
         self._provider_manager = ProviderManager(settings.llm)
+        if not (self._provider_manager.set_model(args.model)):
+            lines = [f"Model '{args.model}' not found in provider manager.", "Available models:"]
+            lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
+            msg = "\n".join(lines)
+            raise ModelError(msg)
+        self.conversation = Conversation(self._provider_manager)
         self._command_registry = self._build_command_registry()
 
     def run(self) -> None:
@@ -80,13 +89,6 @@ class Core:
         except SensaiError as err:
             print(str(err))
             # replace with log
-
-    def init_conversation(self, model: str | None) -> None:
-        """Set Conversation with given model."""
-        if model is not None:
-            provider = self._provider_manager.get_provider(model)
-            if provider is not None:
-                self.conversation = Conversation(provider, model)
 
     @staticmethod
     def _is_quit(event: ui.Event | None) -> bool:
