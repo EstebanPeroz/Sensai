@@ -1,7 +1,5 @@
 from typing import TYPE_CHECKING, Any
 
-from sensai.tools.test import Test
-
 if TYPE_CHECKING:
     from sensai.tools.tool import Tool
 
@@ -11,9 +9,9 @@ class ToolManager:
 
     _tools: list[Tool]
 
-    def __init__(self) -> None:
+    def __init__(self, tools: list[Tool] | None = None) -> None:
         """Tmp."""
-        self._tools: list[Tool] = [Test()]
+        self._tools: list[Tool] = tools or []
 
     def call(self, tool_call: dict[str, Any]) -> dict | None:
         """Call the tool named in an LLM-style function-call payload."""
