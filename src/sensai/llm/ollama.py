@@ -76,12 +76,18 @@ class OllamaAdapter(ProviderAdapter):
     def load(self, model_name: str) -> bool:
         """Load a model with the ollama API."""
         content = self._post("api/generate", {"model": model_name})
-        return content.get("done", False)
+        if content.get("done", False):
+            self._current_model = model_name
+            return True
+        return False
 
     def unload(self, model_name: str) -> bool:
         """Load a model with the ollama API."""
         content = self._post("api/generate", {"model": model_name, "keep_alive": 0})
-        return content.get("done", False)
+        if content.get("done", False):
+            self._current_model = None
+            return True
+        return False
 
     def list(self) -> list[str]:
         """List of model given by the provider."""
