@@ -150,8 +150,9 @@ class OllamaAdapter(ProviderAdapter):
             raise RequestCallError(" Post -> " + str(err)) from None
 
         if not self._response.ok:
+            status_code = self._response.status_code
             self.close_stream_response()
-            raise RequestStatusError(self._response.status_code)
+            raise RequestStatusError(status_code)
 
         return self._iter_json_lines(self._response)
 
