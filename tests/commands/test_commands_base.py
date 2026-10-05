@@ -3,7 +3,7 @@ from typing import override
 import pytest
 
 from sensai.commands.base import Command
-from tests.commands.fakes import FakeUI
+from tests.commands.fakes import FakeUI, MakeFakeCommand
 
 
 class TestCommand:
@@ -45,3 +45,6 @@ class TestCommand:
         Concrete(fake_ui).execute()
 
         assert fake_ui.messages == ["done"]
+
+    def test_has_no_completions_by_default(self, make_fake_command: MakeFakeCommand) -> None:
+        assert make_fake_command("foo").completions() == []

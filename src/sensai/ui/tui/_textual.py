@@ -8,12 +8,13 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import HorizontalGroup
 from textual.markup import escape
-from textual.suggester import SuggestFromList
+from textual.suggester import Suggester
 from textual.widgets import Input, Label, ListItem, ListView
 
 import sensai.ui.tui._effect as fx
 from sensai import ui
 from sensai.llm.message import Role
+from sensai.ui.completion import complete
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
@@ -46,6 +47,22 @@ def _format(mode: str, text: str) -> str:
         case _:
             formatted = text
     return formatted
+
+
+class CommandSuggester(Suggester):
+    """Suggest the first completion of a command or of its argument, as computed by `complete`."""
+
+    _completions: dict[str, list[str]]
+
+    def __init__(self, completions: dict[str, list[str]]) -> None:
+        """Store the commands and the values of their argument."""
+        super().__init__(case_sensitive=True)
+        self._completions = completions
+
+    async def get_suggestion(self, value: str) -> str | None:
+        """Return the first full line completing `value`, or None."""
+        candidates = complete(value, self._completions)
+        return candidates[0] if candidates else None
 
 
 class AppHeader(HorizontalGroup):
@@ -255,9 +272,9 @@ class ChatApp(App):
         for message in messages.messages():
             self.add_input(message.role, message.content)
 
-    def set_commands(self, commands: list[str]) -> None:
-        """Suggest the given command names while the user types."""
-        self.query_one("#input", Input).suggester = SuggestFromList(commands, case_sensitive=False)
+    def set_completions(self, completions: dict[str, list[str]]) -> None:
+        """Suggest the given commands and their argument values while the user types."""
+        self.query_one("#input", Input).suggester = CommandSuggester(completions)
 
     def action_accept_suggestion(self) -> None:
         """Accept the input's current suggestion."""

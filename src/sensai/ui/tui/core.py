@@ -103,9 +103,10 @@ class UITextualAdapter(ui.UIAdapter):
         return True
 
     @override
-    def set_commands(self, commands: list[str]) -> bool:
+    def set_completions(self, completions: dict[str, list[str]]) -> bool:
+        """Give the commands and their argument values to the input for completion."""
         try:
-            self.app.call_from_thread(self.app.set_commands, commands)
+            self.app.call_from_thread(self.app.set_completions, completions)
         except RuntimeError:
             return False
         return True

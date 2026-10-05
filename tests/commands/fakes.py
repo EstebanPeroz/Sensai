@@ -54,7 +54,7 @@ class FakeUI(UIAdapter):
         return True
 
     @override
-    def set_commands(self, commands: list[str]) -> bool:
+    def set_completions(self, completions: dict[str, list[str]]) -> bool:
         return True
 
 

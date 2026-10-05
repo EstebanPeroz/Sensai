@@ -74,5 +74,5 @@ class UIAdapter(ABC):
         """Forward an application message, such as a command output, to the UI. Returns whether it was delivered."""
 
     @abstractmethod
-    def set_commands(self, commands: list[str]) -> bool:
-        """Give the UI the available command names, for completion. Returns whether it was delivered."""
+    def set_completions(self, completions: dict[str, list[str]]) -> bool:
+        """Give the UI each command and the values of its argument, for completion. Returns whether it was delivered."""
