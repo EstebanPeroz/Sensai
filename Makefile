@@ -1,4 +1,5 @@
 NAME := sensai
+MODEL = qwen3:1.7b
 
 all: install
 
@@ -7,7 +8,10 @@ install:
 	uv run pre-commit install
 
 run:
-	uv run $(NAME)
+	uv run $(NAME) --model ${MODEL}
+
+help:
+	uv run $(NAME) --help
 
 tests:
 	uv run pytest

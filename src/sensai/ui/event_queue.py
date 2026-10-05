@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import threading
 from collections import deque
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from sensai.ui.adapter import Event
+from sensai.ui.adapter import Event, EventType
 
 
 class EventQueue:
@@ -22,9 +20,15 @@ class EventQueue:
         self._lock = threading.Lock()
         self._not_empty = threading.Condition(self._lock)
 
-    def put(self, event: Event) -> None:
+    def put(self, content: str) -> None:
         """Add an event to the queue and wake any thread waiting in `wait_event`."""
         with self._not_empty:
+            event = Event()
+            event.content = content
+            if event.content.startswith("/"):
+                event.type = EventType.Command
+            else:
+                event.type = EventType.UserContent
             self._queue.append(event)
             self._not_empty.notify()
 

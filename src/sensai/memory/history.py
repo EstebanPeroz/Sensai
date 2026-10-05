@@ -17,7 +17,7 @@ class History:
 
     def append(self, role: Role, content: str) -> None:
         """Add a message at the end of the history."""
-        self._messages.append(Message(role, content))
+        self._messages.append(Message(role=role, content=content))
 
     def messages(self) -> list[Message]:
         """Return a copy of the messages, oldest first, so callers cannot alter the history."""

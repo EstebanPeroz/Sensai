@@ -25,7 +25,7 @@ class TestPackagedSettings:
 
         assert isinstance(settings, Settings)
         assert settings.llm.embedding_model == "nomic-embed-text"
-        assert settings.llm.providers == [OllamaSettings()]
+        assert settings.llm.providers == {"ollama": OllamaSettings()}
         assert settings.cache == CacheSettings()
 
 
@@ -33,7 +33,7 @@ class TestDefaults:
     def test_missing_keys_fall_back_to_defaults(self, tmp_path: Path) -> None:
         settings = load_settings(write_config(tmp_path, '[llm.ollama]\nbase_url = "http://ollama:1234"\n'))
 
-        assert settings.llm.providers == [OllamaSettings(base_url="http://ollama:1234")]
+        assert settings.llm.providers == {"ollama": OllamaSettings(base_url="http://ollama:1234")}
         assert settings.llm.embedding_model == LLMSettings().embedding_model
 
     def test_empty_file_gives_defaults(self, tmp_path: Path) -> None:
@@ -42,10 +42,10 @@ class TestDefaults:
 
 class TestProviders:
     def test_no_provider_table_gives_no_provider(self, tmp_path: Path) -> None:
-        assert load_settings(write_config(tmp_path, '[llm]\nembedding_model = "x"\n')).llm.providers == []
+        assert load_settings(write_config(tmp_path, '[llm]\nembedding_model = "x"\n')).llm.providers == {}
 
     def test_empty_provider_table_uses_provider_defaults(self, tmp_path: Path) -> None:
-        assert load_settings(write_config(tmp_path, "[llm.ollama]\n")).llm.providers == [OllamaSettings()]
+        assert load_settings(write_config(tmp_path, "[llm.ollama]\n")).llm.providers == {"ollama": OllamaSettings()}
 
     def test_every_supported_provider_has_a_unique_name(self) -> None:
         names = [provider.name for provider in PROVIDERS]

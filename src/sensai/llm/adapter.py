@@ -13,12 +13,12 @@ class ProviderAdapter(ABC):
     """Interface Used to communicate with different llm API."""
 
     @overload
-    def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse] | None: ...
+    def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse]: ...
     @overload
-    def chat(self, payload: dict, *, stream: Literal[False]) -> ChatResponse | None: ...
+    def chat(self, payload: dict, *, stream: Literal[False]) -> ChatResponse: ...
 
     @abstractmethod
-    def chat(self, payload: dict, *, stream: bool) -> ChatResponse | Iterator[ChatResponse] | None:
+    def chat(self, payload: dict, *, stream: bool) -> ChatResponse | Iterator[ChatResponse]:
         """Send a chat call.
 
         When stream is True, returns an iterator yielding one ChatResponse per
@@ -26,15 +26,15 @@ class ProviderAdapter(ABC):
         """
 
     @abstractmethod
-    def embedding(self, message: str) -> list:
+    def embedding(self, message: str, model: str) -> list:
         """Send a message to embed to receive a list of vector."""
 
     @abstractmethod
-    def embeddings(self, messages: list[str]) -> list[list]:
+    def embeddings(self, messages: list[str], model: str) -> list[list]:
         """Send messages to embed and receive a list of vector for each message."""
 
     @abstractmethod
-    def show(self, model_name: str) -> ShowResponse | None:
+    def show(self, model_name: str) -> ShowResponse:
         """Get info on a specified model."""
 
     @abstractmethod
@@ -44,3 +44,7 @@ class ProviderAdapter(ABC):
     @abstractmethod
     def unload(self, model_name: str) -> bool:
         """Load a model."""
+
+    @abstractmethod
+    def list(self) -> list[str]:
+        """List of model given by the provider."""

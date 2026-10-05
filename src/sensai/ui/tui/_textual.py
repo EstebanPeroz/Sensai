@@ -129,10 +129,7 @@ class ChatApp(App):
         message.input.clear()
         if not content:
             return
-        event = ui.Event()
-        event.type = ui.EventType.UserContent
-        event.content = content
-        self._event_queue.put(event)
+        self._event_queue.put(content)
 
     def _display_response(self, mode: str, content: str) -> None:
         """Render a chunk of an AI response in the chat.
