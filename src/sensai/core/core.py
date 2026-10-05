@@ -1,4 +1,3 @@
-import threading
 from typing import TYPE_CHECKING
 
 from sensai import ui
@@ -31,8 +30,7 @@ class Core:
         Meant to run off the main thread, since it blocks on `ui` being open, which
         requires `ui.run()` to be driving the UI's event loop on the main thread.
         """
-        while self._ui.open() is False:
-            threading.Event().wait(0.1)
+        self._ui.open()
 
         event: ui.Event | None = None
         while not self._is_quit(event):
