@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from sensai.memory.semantic_cache_repository import CacheScope
 
 KEY_PREFIX = "sensai:cache:"
+_FIELDS = ("embedding", "context_embedding", "answer")
 
 
 class RedisSemanticCache:
@@ -58,19 +59,19 @@ class RedisSemanticCache:
         best_answer: str | None = None
         best_score = self._threshold
         try:
-            for key in self._client.scan_iter(match=self._scope_prefix(scope) + "*"):
-                stored, stored_context, answer = self._client.hmget(key, ["embedding", "context_embedding", "answer"])
-                if not isinstance(stored, bytes) or not isinstance(answer, bytes):
-                    continue
-                score = _cosine_similarity(embedding, _unpack(stored))
-                if context_embedding or stored_context:
-                    if not context_embedding or not isinstance(stored_context, bytes) or not stored_context:
-                        continue
-                    score = min(score, _cosine_similarity(context_embedding, _unpack(stored_context)))
-                if score >= best_score:
-                    best_answer, best_score = answer.decode(), score
+            entries = self._scope_entries(scope)
         except redis.RedisError:
             return None
+        for stored, stored_context, answer in entries:
+            if not isinstance(stored, bytes) or not isinstance(answer, bytes):
+                continue
+            score = _cosine_similarity(embedding, _unpack(stored))
+            if context_embedding or stored_context:
+                if not context_embedding or not isinstance(stored_context, bytes) or not stored_context:
+                    continue
+                score = min(score, _cosine_similarity(context_embedding, _unpack(stored_context)))
+            if score >= best_score:
+                best_answer, best_score = answer.decode(), score
         return best_answer
 
     def store(self, query: str, scope: CacheScope, answer: str, context: str = "") -> None:
@@ -99,6 +100,13 @@ class RedisSemanticCache:
             keys = list(self._client.scan_iter(match=KEY_PREFIX + "*"))
             if keys:
                 self._client.delete(*keys)
+
+    def _scope_entries(self, scope: CacheScope) -> list[list[bytes | None]]:
+        """Return the fields compared on lookup of every entry of the scope, read in a single round trip."""
+        pipeline = self._client.pipeline(transaction=False)
+        for key in self._client.scan_iter(match=self._scope_prefix(scope) + "*"):
+            pipeline.hmget(key, _FIELDS)
+        return pipeline.execute()
 
     def _embed_query(self, query: str) -> Sequence[float]:
         try:

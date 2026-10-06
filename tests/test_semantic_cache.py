@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import fnmatch
-from typing import Self
+from typing import TYPE_CHECKING
 
 import pytest
 import redis
@@ -10,6 +10,9 @@ from sensai.config.settings import CacheSettings
 from sensai.error import SensaiError
 from sensai.memory.semantic_cache import KEY_PREFIX, RedisSemanticCache
 from sensai.memory.semantic_cache_repository import CacheScope, SemanticCacheRepository
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 SCOPE = CacheScope(model="llama3", persona="analyst")
 
@@ -55,19 +58,34 @@ class FakeRedis:
         for key in keys:
             self.hashes.pop(key, None)
 
-    def pipeline(self) -> Self:
-        return self
+    def pipeline(self, *, transaction: bool = True) -> FakePipeline:  # noqa: ARG002
+        return FakePipeline(self)
+
+
+class FakePipeline:
+    """Queues the commands sent to a FakeRedis, and runs them on execute."""
+
+    def __init__(self, client: FakeRedis) -> None:
+        self._client = client
+        self._commands: list[Callable[[], object]] = []
+
+    def hmget(self, key: str, fields: Sequence[str]) -> None:
+        self._commands.append(lambda: self._client.hmget(key, list(fields)))
 
     def hset(self, key: str, mapping: dict[str, str | bytes]) -> None:
-        self.hashes[key] = {
-            name: value.encode() if isinstance(value, str) else value for name, value in mapping.items()
-        }
+        def run() -> None:
+            self._client.hashes[key] = {
+                name: value.encode() if isinstance(value, str) else value for name, value in mapping.items()
+            }
+
+        self._commands.append(run)
 
     def expire(self, key: str, seconds: int) -> None:
-        self.ttls[key] = seconds
+        self._commands.append(lambda: self._client.ttls.__setitem__(key, seconds))
 
-    def execute(self) -> None:
-        self._check()
+    def execute(self) -> list[object]:
+        self._client._check()  # noqa: SLF001
+        return [command() for command in self._commands]
 
 
 @pytest.fixture
