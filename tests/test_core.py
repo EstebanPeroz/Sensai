@@ -56,6 +56,7 @@ class TestSemanticCache:
         redis_client.ping.side_effect = redis.ConnectionError
 
         assert make_core(provider)._cache is None  # noqa: SLF001
+        redis_client.close.assert_called_once()
 
     def test_is_disabled_without_embedding_model(self, provider: MagicMock, redis_client: MagicMock) -> None:
         assert make_core(provider, embedding_model=None)._cache is None  # noqa: SLF001

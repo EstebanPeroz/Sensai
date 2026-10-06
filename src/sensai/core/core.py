@@ -88,6 +88,7 @@ class Core:
         try:
             client.ping()
         except redis.RedisError:
+            client.close()
             return None
         return RedisSemanticCache(client, self._settings.cache, provider.embedding, embedding_model)
 
