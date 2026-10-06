@@ -3,7 +3,9 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from sensai.llm.message import Role
     from sensai.llm.responses import ChatResponse
+    from sensai.memory.history import History
 
 
 class EventType(Enum):
@@ -56,5 +58,13 @@ class UIAdapter(ABC):
         """Forward an AI response to the UI for display. Returns whether it was delivered."""
 
     @abstractmethod
-    def send_user_input(self, response: str) -> bool:
+    def send_error(self, message: str) -> bool:
+        """Forward an error message to the UI for display. Returns whether it was delivered."""
+
+    @abstractmethod
+    def send_input(self, role: Role, response: str) -> bool:
         """Forward a user's conversation input to the UI for display. Returns whether it was delivered."""
+
+    @abstractmethod
+    def load_conversation(self, messages: History) -> None:
+        """Load conversation history to the ui."""

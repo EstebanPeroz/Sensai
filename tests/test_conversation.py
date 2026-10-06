@@ -12,6 +12,8 @@ from sensai.memory.semantic_cache_repository import CacheScope
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from sensai.llm.message import Role
+
 MODEL = "qwen3:1.7b"
 SCOPE = CacheScope(model=MODEL, persona=DEFAULT_PERSONA)
 
@@ -20,7 +22,10 @@ class FakeUI:
     def __init__(self) -> None:
         self.responses: list[ChatResponse] = []
 
-    def send_user_input(self, _response: str) -> bool:
+    def send_input(self, _role: Role, _response: str) -> bool:
+        return True
+
+    def send_error(self, _message: str) -> bool:
         return True
 
     def send_ai_response(self, response: ChatResponse) -> bool:

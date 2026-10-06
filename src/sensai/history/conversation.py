@@ -63,14 +63,13 @@ class Conversation:
                 query, context = cache_key
                 self._cache.store(query, self._cache_scope, content, context)
         except SensaiError as err:
-            print(str(err))
-            # log error implementation
+            ui.send_error(str(err))
         finally:
             stream_done.set()
 
     def chat(self, user_input: str, ui: UIAdapter) -> None:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
-        ui.send_user_input(user_input)
+        ui.send_input(Role.USER, user_input)
         cache_key = (user_input, self._cache_context()) if self._cache is not None else None
         self._history.append(Role.USER, user_input)
 
