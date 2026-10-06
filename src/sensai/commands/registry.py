@@ -1,10 +1,12 @@
 from typing import TYPE_CHECKING
 
+from sensai.error import SensaiError
+
 if TYPE_CHECKING:
     from sensai.commands.base import Command
 
 
-class UnknownCommandError(Exception):
+class UnknownCommandError(SensaiError):
     """Exception raised when an unknown command is encountered."""
 
     def __init__(self, command_name: str) -> None:
