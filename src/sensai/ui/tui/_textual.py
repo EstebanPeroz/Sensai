@@ -27,6 +27,7 @@ so it fills the full line width instead of just the text.
 
 
 def _format(mode: str, text: str) -> str:
+    """Render `text` with the markup appropriate to its rendering `mode`."""
     text = escape(text)
     if mode == "message":
         return "> " + text

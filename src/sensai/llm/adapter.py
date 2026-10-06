@@ -48,3 +48,7 @@ class ProviderAdapter(ABC):
     @abstractmethod
     def list(self) -> list[str]:
         """List of model given by the provider."""
+
+    @abstractmethod
+    def close_stream_response(self) -> None:
+        """Close a response during streaming."""
