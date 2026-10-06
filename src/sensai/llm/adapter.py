@@ -59,3 +59,7 @@ class ProviderAdapter(ABC):
             msg = "No model is currently loaded."
             raise ModelError(msg)
         return self._current_model
+
+    @abstractmethod
+    def close_stream_response(self) -> None:
+        """Close a response during streaming."""
