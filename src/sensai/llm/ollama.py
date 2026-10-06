@@ -164,7 +164,7 @@ class OllamaAdapter(ProviderAdapter):
                 try:
                     yield json.loads(line)
                 except json.JSONDecodeError:
-                    continue
+                    raise JsonError from None
         except requests.RequestException as err:
             raise RequestCallError(" fail to get stream chunk" + str(err)) from None
         finally:
