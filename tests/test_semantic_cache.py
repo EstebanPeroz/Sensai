@@ -7,6 +7,7 @@ import pytest
 import redis
 
 from sensai.config.settings import CacheSettings
+from sensai.error import SensaiError
 from sensai.memory.semantic_cache import KEY_PREFIX, RedisSemanticCache
 from sensai.memory.semantic_cache_repository import CacheScope, SemanticCacheRepository
 
@@ -17,10 +18,14 @@ EMBEDDINGS = {
     "what's redis?": [0.99, 0.1, 0.0],
     "explain redis": [0.8, 0.6, 0.0],
     "how to cook pasta?": [0.0, 0.0, 1.0],
+    "give me an example": [0.0, 1.0, 0.0],
+    "show me an example": [0.05, 0.99, 0.0],
 }
 
 
-def embed(text: str) -> list[float]:
+def embed(text: str, model: str) -> list[float]:
+    if text == "embedding failure":
+        raise SensaiError(model)
     return EMBEDDINGS.get(text, [])
 
 
@@ -144,6 +149,59 @@ class TestLookup:
 
         assert cache.lookup("what is redis?", SCOPE) is None
 
+    def test_embedding_failure_is_a_miss(self, client: FakeRedis) -> None:
+        assert make_cache(client).lookup("embedding failure", SCOPE) is None
+
+    def test_query_is_embedded_with_the_embedding_model(self, client: FakeRedis) -> None:
+        models: list[str] = []
+        cache = RedisSemanticCache(
+            client,  # type: ignore[arg-type]
+            CacheSettings(),
+            lambda text, model: models.append(model) or embed(text, model),
+            "mxbai-embed-large",
+        )
+
+        cache.lookup("what is redis?", SCOPE)
+
+        assert models == ["mxbai-embed-large"]
+
+
+class TestContext:
+    def test_same_query_after_a_similar_context_hits(self, client: FakeRedis) -> None:
+        cache = make_cache(client)
+        cache.store("give me an example", SCOPE, "SET key value", context="what is redis?")
+
+        assert cache.lookup("show me an example", SCOPE, context="what's redis?") == "SET key value"
+
+    def test_same_query_after_another_context_misses(self, client: FakeRedis) -> None:
+        cache = make_cache(client)
+        cache.store("give me an example", SCOPE, "SET key value", context="what is redis?")
+
+        assert cache.lookup("give me an example", SCOPE, context="how to cook pasta?") is None
+
+    def test_other_query_after_the_same_context_misses(self, client: FakeRedis) -> None:
+        cache = make_cache(client)
+        cache.store("give me an example", SCOPE, "SET key value", context="what is redis?")
+
+        assert cache.lookup("how to cook pasta?", SCOPE, context="what is redis?") is None
+
+    def test_query_without_context_misses_an_entry_with_context(self, client: FakeRedis) -> None:
+        cache = make_cache(client)
+        cache.store("give me an example", SCOPE, "SET key value", context="what is redis?")
+
+        assert cache.lookup("give me an example", SCOPE) is None
+
+    def test_query_with_context_misses_an_entry_without_context(self, client: FakeRedis) -> None:
+        cache = make_cache(client)
+        cache.store("what is redis?", SCOPE, "An in-memory store.")
+
+        assert cache.lookup("what is redis?", SCOPE, context="how to cook pasta?") is None
+
+    def test_context_without_embedding_is_not_stored(self, client: FakeRedis) -> None:
+        make_cache(client).store("what is redis?", SCOPE, "An in-memory store.", context="unknown")
+
+        assert client.hashes == {}
+
 
 class TestStore:
     def test_entry_expires_after_ttl(self, client: FakeRedis) -> None:
@@ -165,6 +223,11 @@ class TestStore:
         client.fail = True
 
         make_cache(client).store("what is redis?", SCOPE, "An in-memory store.")
+
+    def test_embedding_failure_is_not_stored(self, client: FakeRedis) -> None:
+        make_cache(client).store("embedding failure", SCOPE, "answer")
+
+        assert client.hashes == {}
 
 
 class TestClear:

@@ -16,12 +16,12 @@ class CacheScope:
 class SemanticCacheRepository(Protocol):
     """Storage of answers to past queries."""
 
-    def lookup(self, query: str, scope: CacheScope) -> str | None:
-        """Return the cached answer of the most similar query of the scope."""
+    def lookup(self, query: str, scope: CacheScope, context: str = "") -> str | None:
+        """Return the cached answer of the most similar query of the scope, asked after a similar context."""
         ...
 
-    def store(self, query: str, scope: CacheScope, answer: str) -> None:
-        """Cache the answer to a query within its scope."""
+    def store(self, query: str, scope: CacheScope, answer: str, context: str = "") -> None:
+        """Cache the answer to a query asked after the given context, within its scope."""
 
     def clear(self) -> None:
         """Remove every cached answer."""
