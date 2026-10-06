@@ -93,7 +93,6 @@ class TestChatStreaming:
         lines = [
             json.dumps({"model": "m", "message": {"role": "assistant", "content": "The "}, "done": False}),
             "",
-            "not-json",
             json.dumps({"model": "m", "message": {"role": "assistant", "content": "sky"}, "done": False}),
             json.dumps({"model": "m", "message": {"role": "assistant", "content": ""}, "done": True}),
         ]
@@ -105,6 +104,20 @@ class TestChatStreaming:
         assert [chunk.done for chunk in chunks] == [False, False, True]
         assert mock_post.call_args.kwargs["stream"] is True
         assert mock_post.call_args.kwargs["json"]["stream"] is True
+
+    def test_raises_json_error_on_malformed_line(self, adapter: OllamaAdapter) -> None:
+        lines = [
+            json.dumps({"model": "m", "message": {"role": "assistant", "content": "The "}, "done": False}),
+            "not-json",
+        ]
+        response = mock_response(lines=lines)
+        with patch("sensai.llm.ollama.requests.post", return_value=response):
+            result = adapter.chat({"model": "m", "messages": []}, stream=True)
+            assert next(result).content == "The "
+            with pytest.raises(JsonError):
+                next(result)
+
+        response.close.assert_called_once()
 
     def test_raises_request_call_error_on_request_exception(self, adapter: OllamaAdapter) -> None:
         with (
