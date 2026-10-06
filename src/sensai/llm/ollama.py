@@ -82,10 +82,11 @@ class OllamaAdapter(ProviderAdapter):
         return False
 
     def unload(self, model_name: str) -> bool:
-        """Load a model with the ollama API."""
+        """Unload a model with the ollama API."""
         content = self._post("api/generate", {"model": model_name, "keep_alive": 0})
         if content.get("done", False):
-            self._current_model = None
+            if self._current_model == model_name:
+                self._current_model = None
             return True
         return False
 
