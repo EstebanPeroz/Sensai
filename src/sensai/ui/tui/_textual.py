@@ -295,7 +295,7 @@ class ChatApp(App):
     @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Only let the completion keys act while the list is shown, so they keep their usual role otherwise."""
-        if action in {"move_completion", "hide_completions"}:
+        if action in {"accept_completion", "move_completion", "hide_completions"}:
             return self.query_one(CompletionList).display
         return True
 
