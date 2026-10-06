@@ -2,7 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from sensai.config.settings import PROVIDERS, ConfigError, LLMSettings, OllamaSettings, Settings, load_settings
+from sensai.config.settings import (
+    PROVIDERS,
+    CacheSettings,
+    ConfigError,
+    LLMSettings,
+    OllamaSettings,
+    Settings,
+    load_settings,
+)
 
 
 def write_config(tmp_path: Path, content: str) -> Path:
@@ -18,6 +26,7 @@ class TestPackagedSettings:
         assert isinstance(settings, Settings)
         assert settings.llm.embedding_model == "nomic-embed-text"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
+        assert settings.cache == CacheSettings()
 
 
 class TestDefaults:
@@ -68,6 +77,19 @@ class TestValidation:
             ('[llm.ollama]\nbase_url = "localhost:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('[llm.ollama]\nbase_url = "ftp://ollama:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('[llm.ollama]\nbase_url = "http://ollama:port"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
+            ('cache = "x"\n', "cache must be a table"),
+            ('[cache]\nhost = "x"\n', "unexpected keyword argument 'host'"),
+            ('[cache]\nredis_url = ""\n', "cache.redis_url must be a non-empty string"),
+            ('[cache]\nredis_url = "http://localhost:6379"\n', "cache.redis_url must be a redis://"),
+            ('[cache]\nredis_url = "redis://"\n', "cache.redis_url must be a redis://"),
+            ('[cache]\nredis_url = "redis://redis:port"\n', "cache.redis_url must be a redis://"),
+            ('[cache]\nredis_url = "unix://"\n', "cache.redis_url must be a redis://"),
+            ('[cache]\nsimilarity_threshold = "high"\n', "cache.similarity_threshold must be a number"),
+            ("[cache]\nsimilarity_threshold = true\n", "cache.similarity_threshold must be a number"),
+            ("[cache]\nsimilarity_threshold = 0\n", "cache.similarity_threshold must be in"),
+            ("[cache]\nsimilarity_threshold = 1.5\n", "cache.similarity_threshold must be in"),
+            ("[cache]\nttl = 1.5\n", "cache.ttl must be an integer"),
+            ("[cache]\nttl = 0\n", "cache.ttl must be a positive number of seconds"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:
@@ -79,6 +101,24 @@ class TestBaseUrl:
     @pytest.mark.parametrize("url", ["http://localhost:11434/", "https://ollama.example.com", "http://127.0.0.1"])
     def test_accepts_http_urls(self, url: str) -> None:
         assert OllamaSettings(base_url=url).base_url == url
+
+
+class TestCache:
+    def test_is_read_from_cache_table(self, tmp_path: Path) -> None:
+        content = '[cache]\nredis_url = "redis://cache:6380/1"\nsimilarity_threshold = 0.8\nttl = 60\n'
+
+        settings = load_settings(write_config(tmp_path, content))
+
+        assert settings.cache == CacheSettings(redis_url="redis://cache:6380/1", similarity_threshold=0.8, ttl=60)
+
+    def test_missing_table_gives_defaults(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "[llm]\n")).cache == CacheSettings()
+
+    @pytest.mark.parametrize(
+        "url", ["redis://localhost:6379/0", "rediss://user:pass@cache.example.com", "unix:///tmp/r.sock"]
+    )
+    def test_accepts_redis_urls(self, url: str) -> None:
+        assert CacheSettings(redis_url=url).redis_url == url
 
 
 class TestFileErrors:

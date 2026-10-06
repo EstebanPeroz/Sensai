@@ -46,5 +46,11 @@ class ProviderManager:
         return list(self._models.keys())
 
     def get_provider(self, model: str) -> ProviderAdapter | None:
-        """Return the provider serving `model`, or None if no registered provider exposes it."""
-        return self._models.get(model)
+        """Return the provider serving `model`, or None if no registered provider exposes it.
+
+        A model named without a tag is the `latest` one, as providers list it with its tag.
+        """
+        provider = self._models.get(model)
+        if provider is None and ":" not in model:
+            provider = self._models.get(f"{model}:latest")
+        return provider

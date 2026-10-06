@@ -1,12 +1,18 @@
 from typing import TYPE_CHECKING
 
+import redis
+
 from sensai import ui
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.provider_manager import ProviderManager
+from sensai.memory.semantic_cache import RedisSemanticCache
 
 if TYPE_CHECKING:
     from sensai.config.settings import Settings
+    from sensai.memory.semantic_cache_repository import SemanticCacheRepository
+
+REDIS_TIMEOUT = 1
 
 
 class Core:
@@ -14,6 +20,7 @@ class Core:
 
     conversation: Conversation | None = None
     _provider_manager: ProviderManager
+    _cache: SemanticCacheRepository | None
     _ui: ui.UIAdapter
     _settings: Settings
 
@@ -23,6 +30,7 @@ class Core:
         self._settings = settings
 
         self._provider_manager = ProviderManager(settings.llm)
+        self._cache = self._connect_cache()
 
     def run(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
@@ -62,7 +70,27 @@ class Core:
         if model is not None:
             provider = self._provider_manager.get_provider(model)
             if provider is not None:
-                self.conversation = Conversation(provider, model)
+                self.conversation = Conversation(provider, model, self._cache)
+
+    def _connect_cache(self) -> SemanticCacheRepository | None:
+        """Build the semantic cache, or None without an available embedding model or a reachable Redis server."""
+        embedding_model = self._settings.llm.embedding_model
+        if embedding_model is None:
+            return None
+        provider = self._provider_manager.get_provider(embedding_model)
+        if provider is None:
+            return None
+        client = redis.Redis.from_url(
+            self._settings.cache.redis_url,
+            socket_connect_timeout=REDIS_TIMEOUT,
+            socket_timeout=REDIS_TIMEOUT,
+        )
+        try:
+            client.ping()
+        except redis.RedisError:
+            client.close()
+            return None
+        return RedisSemanticCache(client, self._settings.cache, provider.embedding, embedding_model)
 
     @staticmethod
     def _is_quit(event: ui.Event | None) -> bool:
