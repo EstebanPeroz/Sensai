@@ -25,7 +25,7 @@ class History:
 
     def messages(self) -> list[Message]:
         """Return a copy of the messages, oldest first, so callers cannot alter the history."""
-        return self._messages
+        return list(self._messages)
 
     def to_json(self) -> list[dict[str, str]]:
         """Return the messages in the format of the chat payload `messages` list, oldest first."""

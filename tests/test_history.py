@@ -18,9 +18,9 @@ class TestHistory:
         history.append(Role.ASSISTANT, "hello")
 
         assert history.messages() == [
-            Message(Role.SYSTEM, "be concise"),
-            Message(Role.USER, "hi"),
-            Message(Role.ASSISTANT, "hello"),
+            Message(None, Role.SYSTEM, "be concise"),
+            Message(None, Role.USER, "hi"),
+            Message(None, Role.ASSISTANT, "hello"),
         ]
 
     def test_messages_returns_a_copy(self) -> None:
@@ -29,7 +29,7 @@ class TestHistory:
 
         history.messages().clear()
 
-        assert history.messages() == [Message(Role.USER, "hi")]
+        assert history.messages() == [Message(None, Role.USER, "hi")]
 
     def test_clear_removes_every_message(self) -> None:
         history = make_history()
