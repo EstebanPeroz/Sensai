@@ -22,8 +22,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = Parsing().parse_args(argv)
     try:
         settings = load_settings(args.config)
-        core = Core(ui, settings)
-        core.init_conversation(args.model)
+        core = Core(ui, settings, args)
     except SensaiError as err:
         print(f"{err}", file=sys.stderr)
         return 1
