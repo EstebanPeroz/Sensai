@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Literal, overload
 
+from sensai.llm.error import ModelError
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -11,6 +13,8 @@ if TYPE_CHECKING:
 
 class ProviderAdapter(ABC):
     """Interface Used to communicate with different llm API."""
+
+    _current_model: str | None = None
 
     @overload
     def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse]: ...
@@ -48,6 +52,13 @@ class ProviderAdapter(ABC):
     @abstractmethod
     def list(self) -> list[str]:
         """List of model given by the provider."""
+
+    def current_model(self) -> str:
+        """Return the model in use if there is one."""
+        if self._current_model is None:
+            msg = "No model is currently loaded."
+            raise ModelError(msg)
+        return self._current_model
 
     @abstractmethod
     def close_stream_response(self) -> None:

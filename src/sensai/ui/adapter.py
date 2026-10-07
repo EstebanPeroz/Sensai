@@ -62,9 +62,17 @@ class UIAdapter(ABC):
         """Forward an error message to the UI for display. Returns whether it was delivered."""
 
     @abstractmethod
-    def send_input(self, role: Role, response: str) -> bool:
+    def send_input(self, role: Role, response: str, *, command: bool = False) -> bool:
         """Forward a user's conversation input to the UI for display. Returns whether it was delivered."""
 
     @abstractmethod
     def load_conversation(self, messages: History) -> None:
         """Load conversation history to the ui."""
+
+    @abstractmethod
+    def send_system_message(self, message: str, *, append_response: bool = False) -> bool:
+        """Forward an application message, such as a command output, to the UI. Returns whether it was delivered."""
+
+    @abstractmethod
+    def set_completions(self, completions: dict[str, list[str]]) -> bool:
+        """Give the UI each command and the values of its argument, for completion. Returns whether it was delivered."""

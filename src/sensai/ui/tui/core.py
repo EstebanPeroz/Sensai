@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 from sensai import ui
 from sensai.ui.tui._textual import ChatApp
@@ -78,10 +78,10 @@ class UITextualAdapter(ui.UIAdapter):
             return False
         return True
 
-    def send_input(self, role: Role, response: str) -> bool:
+    def send_input(self, role: Role, response: str, *, command: bool = False) -> bool:
         """Send a user conversation input to the UI."""
         try:
-            self.app.call_from_thread(self.app.add_input, role, response)
+            self.app.call_from_thread(self.app.add_input, role, response, command=command)
         except RuntimeError:
             return False
         return True
@@ -92,3 +92,21 @@ class UITextualAdapter(ui.UIAdapter):
             self.app.call_from_thread(self.app.load_conversation, messages)
         except RuntimeError:
             return
+
+    @override
+    def send_system_message(self, message: str, *, append_response: bool = False) -> bool:
+        """Send an application message to the UI."""
+        try:
+            self.app.call_from_thread(self.app.add_system_message, message, append_response=append_response)
+        except RuntimeError:
+            return False
+        return True
+
+    @override
+    def set_completions(self, completions: dict[str, list[str]]) -> bool:
+        """Give the commands and their argument values to the input for completion."""
+        try:
+            self.app.call_from_thread(self.app.set_completions, completions)
+        except RuntimeError:
+            return False
+        return True
