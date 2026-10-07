@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sensai.llm.persona import Persona
 from sensai.memory.persistent_db.adapter import PersistentDatabase
 from sensai.memory.persistent_db.error import DbConnectionError, InvalidInstanceError
-from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable
+from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable, MessageTable
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -22,6 +22,7 @@ class SqlAlchemy(PersistentDatabase):
 
     _engine: Engine
     _conn: Connection
+    _uuid_error_essage: str = "given uuid is invalid"
 
     def __init__(self) -> None:
         """Tmp."""
@@ -94,13 +95,23 @@ class SqlAlchemy(PersistentDatabase):
         with Session(self._engine) as session:
             branch = session.get(BranchTable, uuid)
             if branch is None:
-                msg = "given branch uuid is invalid"
-                raise InvalidInstanceError(msg)
+                raise InvalidInstanceError(self._uuid_error_essage)
             session.delete(branch)
             session.commit()
 
-    def add_message_to_branch(self, branch: UUID, message: Message) -> None:
-        """Append `message` at the end of the branch `branch`."""
+    def add_message_to_branch(self, branch_id: UUID, message: Message) -> None:
+        """Append `message` at the end of the branch `branch_id`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
+        with Session(self._engine) as session:
+            branch = session.get(BranchTable, branch_id)
+            if branch is None:
+                raise InvalidInstanceError(self._uuid_error_essage)
+            session.add(MessageTable(branch_id=branch_id, role=message.role, content=message.content))
+            session.commit()
 
     def change_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.

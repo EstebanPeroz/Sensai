@@ -44,8 +44,8 @@ class PersistentDatabase(ABC):
         """
 
     @abstractmethod
-    def add_message_to_branch(self, branch: UUID, message: Message) -> None:
-        """Append `message` at the end of the branch `branch`."""
+    def add_message_to_branch(self, branch_id: UUID, message: Message) -> None:
+        """Append `message` at the end of the branch `branch_id`."""
 
     @abstractmethod
     def change_branch_persona(self, branch: UUID, persona: UUID) -> bool:
