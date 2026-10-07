@@ -9,7 +9,6 @@ from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
 from sensai.llm.message import Role
 from sensai.llm.provider_manager import ProviderManager
-from sensai.memory.persistent_db.base import get_db
 
 if TYPE_CHECKING:
     import argparse
@@ -66,9 +65,6 @@ class Core:
                 self._launch_command(event.content)
 
         self._ui.close()
-        db = get_db()
-        if db and self.conversation.uuid:
-            db.remove_branch(self.conversation.uuid)
 
     def _build_command_registry(self) -> CommandRegistry:
         """Build a command registry with all available commands."""
@@ -91,7 +87,7 @@ class Core:
     def _launch_conv_chat(self, content: str) -> None:
         """Send `content` through the conversation, reporting any provider error instead of raising."""
         if self.conversation.uuid is None:
-            self.conversation.add_conv_to_db()
+            self.conversation.add_conv_to_db(None, content)
         try:
             self.conversation.chat(content, self._ui)
         except SensaiError as err:

@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sensai.history.conversation import Conversation
-    from sensai.llm.message import Message
+    from sensai.llm.message import Message, Role
     from sensai.llm.persona import Persona
     from sensai.llm.provider_manager import ProviderManager
 
@@ -19,7 +19,7 @@ class PersistentDatabase(ABC):
     # Branch
 
     @abstractmethod
-    def create_branch(self, current_branch: UUID | None = None) -> UUID | None:
+    def create_branch(self, current_branch: UUID | None = None, name: str = "") -> UUID | None:
         """Create a new branch and return its id if success or None if fail."""
 
     @abstractmethod
@@ -45,7 +45,7 @@ class PersistentDatabase(ABC):
         """
 
     @abstractmethod
-    def add_message_to_branch(self, branch_id: UUID, message: Message) -> None:
+    def add_message_to_branch(self, branch_id: UUID, role: Role, content: str) -> UUID | None:
         """Append `message` at the end of the branch `branch_id`."""
 
     @abstractmethod

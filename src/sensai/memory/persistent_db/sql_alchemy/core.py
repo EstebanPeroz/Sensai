@@ -4,7 +4,7 @@ from sqlalchemy import Connection, Engine, create_engine, event, select
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from sensai.llm.message import Message
+from sensai.llm.message import Message, Role
 from sensai.llm.persona import Persona
 from sensai.memory.persistent_db.adapter import PersistentDatabase
 from sensai.memory.persistent_db.error import DbConnectionError, InvalidInstanceError
@@ -45,7 +45,7 @@ class SqlAlchemy(PersistentDatabase):
         dbapi_conn.execute("PRAGMA foreign_keys=ON")
 
     @override
-    def create_branch(self, current_branch: UUID | None = None) -> UUID | None:
+    def create_branch(self, current_branch: UUID | None = None, name: str = "Branch") -> UUID | None:
         """Create a new branch and return its id if success or None if fail.
 
         If `current_branch` is given, the new branch is a deep copy of it
@@ -53,7 +53,7 @@ class SqlAlchemy(PersistentDatabase):
         """
         with Session(self._engine) as session:
             if current_branch is None:
-                branch = BranchTable(name=self._free_name(session, "Branch"), model_name="")
+                branch = BranchTable(name=self._free_name(session, name), model_name="")
             else:
                 source = session.get(BranchTable, current_branch)
                 if source is None:
@@ -119,7 +119,7 @@ class SqlAlchemy(PersistentDatabase):
             session.commit()
 
     @override
-    def add_message_to_branch(self, branch_id: UUID, message: Message) -> None:
+    def add_message_to_branch(self, branch_id: UUID, role: Role, content: str) -> UUID | None:
         """Append `message` at the end of the branch `branch_id`.
 
         Raises:
@@ -130,8 +130,13 @@ class SqlAlchemy(PersistentDatabase):
             branch = session.get(BranchTable, branch_id)
             if branch is None:
                 raise InvalidInstanceError(self._uuid_error_essage)
-            session.add(MessageTable(branch_id=branch_id, role=message.role, content=message.content))
-            session.commit()
+            msg = MessageTable(branch_id=branch_id, role=role, content=content)
+            session.add(msg)
+            try:
+                session.commit()
+            except SQLAlchemyError:
+                return None
+            return msg.id
 
     @override
     def set_branch_model(self, branch: UUID, model: str) -> None:
@@ -175,7 +180,7 @@ class SqlAlchemy(PersistentDatabase):
     @staticmethod
     def _messages_from_branch(branch: BranchTable) -> list[Message]:
         """Convert the stored messages of a branch into Message objects."""
-        return [Message(msg.role, msg.content) for msg in branch.messages]
+        return [Message(msg.id, msg.role, msg.content) for msg in branch.messages]
 
     @override
     def create_persona(self, name: str, description: str, timestamp: datetime, prompt: str) -> Persona | None:

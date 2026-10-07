@@ -27,12 +27,12 @@ class Conversation:
         self._provider_manager = provider_manager
         self.history = History()
 
-    def add_conv_to_db(self, uuid: UUID | None = None) -> None:
+    def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Tmp."""
         db = get_db()
         if db is None:
             return
-        self.uuid = db.create_branch(uuid)
+        self.uuid = db.create_branch(uuid, name)
         if self.uuid:
             db.set_branch_model(self.uuid, self._provider_manager.provider().current_model())
 
