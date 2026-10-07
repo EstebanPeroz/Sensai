@@ -29,7 +29,7 @@ class MessageTable(Base):
     role: Mapped[Role] = mapped_column()
     content: Mapped[str] = mapped_column()
 
-    branch_id: Mapped[UUID] = mapped_column(ForeignKey("branch.id"), index=True)
+    branch_id: Mapped[UUID] = mapped_column(ForeignKey("branch.id", ondelete="CASCADE"), index=True)
     branch: Mapped[BranchTable] = relationship(back_populates="messages")
 
     def copy(self) -> MessageTable:
@@ -51,7 +51,7 @@ class PersonaTable(Base):
     description: Mapped[str] = mapped_column()
     prompt: Mapped[str] = mapped_column()
 
-    branches: Mapped[list[BranchTable]] = relationship(back_populates="persona")
+    branches: Mapped[list[BranchTable]] = relationship(back_populates="persona", passive_deletes=True)
 
 
 class BranchTable(Base):
@@ -61,13 +61,14 @@ class BranchTable(Base):
 
     name: Mapped[str] = mapped_column(unique=True)
     model_name: Mapped[str] = mapped_column(index=True)
-    persona_id: Mapped[UUID | None] = mapped_column(ForeignKey("persona.id"))
+    persona_id: Mapped[UUID | None] = mapped_column(ForeignKey("persona.id", ondelete="SET NULL"))
     persona: Mapped[PersonaTable | None] = relationship(back_populates="branches")
 
     messages: Mapped[list[MessageTable]] = relationship(
         back_populates="branch",
         order_by="MessageTable.created_at",
         cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     def copy(self, name: str) -> BranchTable:

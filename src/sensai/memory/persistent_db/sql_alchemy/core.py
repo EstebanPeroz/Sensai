@@ -1,21 +1,22 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
-from sqlalchemy import Connection, Engine, create_engine, select
+from sqlalchemy import Connection, Engine, create_engine, event, select
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from sensai.llm.message import Message
 from sensai.llm.persona import Persona
-from sensai.llm.provider_manager import ProviderManager
 from sensai.memory.persistent_db.adapter import PersistentDatabase
 from sensai.memory.persistent_db.error import DbConnectionError, InvalidInstanceError
-from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable, MessageTable
+from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable, MessageTable, PersonaTable
 
 if TYPE_CHECKING:
+    import sqlite3
     from datetime import datetime
     from uuid import UUID
 
     from sensai.history.conversation import Conversation
+    from sensai.llm.provider_manager import ProviderManager
 
 
 class SqlAlchemy(PersistentDatabase):
@@ -34,8 +35,14 @@ class SqlAlchemy(PersistentDatabase):
         except ArgumentError:
             msg = "Invalid url to database"
             raise DbConnectionError(msg) from None
+        event.listen(self._engine, "connect", self._enable_foreign_keys)
         self._conn = self._engine.connect()
         Base.metadata.create_all(self._engine)
+
+    @staticmethod
+    def _enable_foreign_keys(dbapi_conn: sqlite3.Connection, _: object) -> None:
+        """Make SQLite enforce foreign keys, which it ignores by default (per connection)."""
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
 
     def create_branch(self, current_branch: UUID | None = None) -> UUID | None:
         """Create a new branch and return its id if success or None if fail.
@@ -69,6 +76,7 @@ class SqlAlchemy(PersistentDatabase):
             n += 1
         return f"{base} {n}"
 
+    @override
     def get_branch_list(self) -> dict[str, UUID]:
         """Return the dict of all branches with name and uuid."""
         branches: dict[str, UUID] = {}
@@ -78,6 +86,7 @@ class SqlAlchemy(PersistentDatabase):
                 branches[branch.name] = branch.id
         return branches
 
+    @override
     def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
         """Replace the conversation info with those of the target.
 
@@ -93,6 +102,7 @@ class SqlAlchemy(PersistentDatabase):
             provider_manager.set_model(source.model_name)
             current.history.replace(self._messages_from_branch(source))
 
+    @override
     def remove_branch(self, uuid: UUID) -> None:
         """Remove the branch related to this uuid.
 
@@ -107,6 +117,7 @@ class SqlAlchemy(PersistentDatabase):
             session.delete(branch)
             session.commit()
 
+    @override
     def add_message_to_branch(self, branch_id: UUID, message: Message) -> None:
         """Append `message` at the end of the branch `branch_id`.
 
@@ -121,6 +132,7 @@ class SqlAlchemy(PersistentDatabase):
             session.add(MessageTable(branch_id=branch_id, role=message.role, content=message.content))
             session.commit()
 
+    @override
     def change_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.
 
@@ -128,8 +140,19 @@ class SqlAlchemy(PersistentDatabase):
         False = Fail
 
         """
-        return False
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            target = session.get(PersonaTable, persona)
+            if source is None or target is None:
+                return False
+            source.persona = target
+            try:
+                session.commit()
+            except SQLAlchemyError:
+                return False
+        return True
 
+    @override
     def get_messages(self, branch: UUID) -> list[Message]:
         """Return every message of the branch `branch`, oldest first."""
         with Session(self._engine) as session:
@@ -143,6 +166,7 @@ class SqlAlchemy(PersistentDatabase):
         """Convert the stored messages of a branch into Message objects."""
         return [Message(msg.role, msg.content) for msg in branch.messages]
 
+    @override
     def create_persona(self, name: str, description: str, timestamp: datetime, prompt: str) -> Persona | None:
         """Create a persona and return its Class Version after adding it to the db.
 
@@ -155,19 +179,32 @@ class SqlAlchemy(PersistentDatabase):
         """
         return None
 
+    @override
     def get_personas(self) -> list[Persona]:
         """Return all personas."""
-        return []
+        personas: list[Persona] = []
+        with Session(self._engine) as session:
+            source = session.scalars(select(PersonaTable)).all()
+            personas.extend(
+                Persona(persona.name, "") for persona in source
+            )  ## Update to use the next persona dataclass
+        return personas
 
+    @override
     def get_persona(self, persona: UUID) -> Persona:
         """Return the persona `persona`.
 
         Raises:
-            KeyError: If no persona has this id.
+            InvalidInstanceError: If no persona has this id.
 
         """
-        return Persona("", "")
+        with Session(self._engine) as session:
+            source = session.get(PersonaTable, persona)
+            if source is None:
+                raise InvalidInstanceError(self._uuid_error_essage)
+            return Persona("...", "...")  ## Update to use the next persona dataclass
 
+    @override
     def update_persona(
         self,
         persona: UUID,
