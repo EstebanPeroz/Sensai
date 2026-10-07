@@ -91,9 +91,7 @@ class SqlAlchemy(PersistentDatabase):
                 return
             current.uuid = source.id
             provider_manager.set_model(source.model_name)
-            current.history.clear()
-            for msg in source.messages:
-                current.history.append(msg.role, msg.content)
+            current.history.replace(self._messages_from_branch(source))
 
     def remove_branch(self, uuid: UUID) -> None:
         """Remove the branch related to this uuid.
@@ -134,7 +132,16 @@ class SqlAlchemy(PersistentDatabase):
 
     def get_messages(self, branch: UUID) -> list[Message]:
         """Return every message of the branch `branch`, oldest first."""
-        return []
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            if source is None:
+                return []
+            return self._messages_from_branch(source)
+
+    @staticmethod
+    def _messages_from_branch(branch: BranchTable) -> list[Message]:
+        """Convert the stored messages of a branch into Message objects."""
+        return [Message(msg.role, msg.content) for msg in branch.messages]
 
     def create_persona(self, name: str, description: str, timestamp: datetime, prompt: str) -> Persona | None:
         """Create a persona and return its Class Version after adding it to the db.

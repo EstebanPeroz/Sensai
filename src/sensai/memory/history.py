@@ -30,3 +30,8 @@ class History:
     def clear(self) -> None:
         """Remove every message from the history."""
         self._messages.clear()
+
+    def replace(self, messages: list[Message]) -> None:
+        """Remove every message from the history."""
+        self.clear()
+        self._messages = messages
