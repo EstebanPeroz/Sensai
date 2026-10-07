@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from sensai.llm.persona import Persona
 from sensai.memory.persistent_db.adapter import PersistentDatabase
-from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.memory.persistent_db.error import DbConnectionError, InvalidInstanceError
 from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable
 
 if TYPE_CHECKING:
@@ -88,9 +88,16 @@ class SqlAlchemy(PersistentDatabase):
         """Remove the branch related to this uuid.
 
         Raises:
-            KeyError: If no branch has this uuid.
+            InvalidInstanceError: If no branch has this uuid.
 
         """
+        with Session(self._engine) as session:
+            branch = session.get(BranchTable, uuid)
+            if branch is None:
+                msg = "given branch uuid is invalid"
+                raise InvalidInstanceError(msg)
+            session.delete(branch)
+            session.commit()
 
     def add_message_to_branch(self, branch: UUID, message: Message) -> None:
         """Append `message` at the end of the branch `branch`."""
