@@ -44,6 +44,7 @@ class SqlAlchemy(PersistentDatabase):
         """Make SQLite enforce foreign keys, which it ignores by default (per connection)."""
         dbapi_conn.execute("PRAGMA foreign_keys=ON")
 
+    @override
     def create_branch(self, current_branch: UUID | None = None) -> UUID | None:
         """Create a new branch and return its id if success or None if fail.
 
@@ -133,7 +134,17 @@ class SqlAlchemy(PersistentDatabase):
             session.commit()
 
     @override
-    def change_branch_persona(self, branch: UUID, persona: UUID) -> bool:
+    def set_branch_model(self, branch: UUID, model: str) -> None:
+        """Tmp."""
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            if source is None:
+                raise InvalidInstanceError(self._uuid_error_essage)
+            source.model_name = model
+            session.commit()
+
+    @override
+    def set_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.
 
         True = Success

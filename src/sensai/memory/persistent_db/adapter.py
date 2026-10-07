@@ -49,7 +49,11 @@ class PersistentDatabase(ABC):
         """Append `message` at the end of the branch `branch_id`."""
 
     @abstractmethod
-    def change_branch_persona(self, branch: UUID, persona: UUID) -> bool:
+    def set_branch_model(self, branch: UUID, model: str) -> None:
+        """Tmp."""
+
+    @abstractmethod
+    def set_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.
 
         True = Success
