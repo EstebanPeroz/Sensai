@@ -4,6 +4,7 @@ from sqlalchemy import Connection, Engine, create_engine, select
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from sensai.llm.message import Message
 from sensai.llm.persona import Persona
 from sensai.llm.provider_manager import ProviderManager
 from sensai.memory.persistent_db.adapter import PersistentDatabase
@@ -15,7 +16,6 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sensai.history.conversation import Conversation
-    from sensai.llm.message import Message
 
 
 class SqlAlchemy(PersistentDatabase):
