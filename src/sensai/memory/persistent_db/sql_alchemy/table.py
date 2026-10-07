@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import copy
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey
+from sqlalchemy import DateTime, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from sensai.llm.message import Role  # noqa: TC001
@@ -22,28 +21,6 @@ class Base(DeclarativeBase):
     )
 
 
-class ToolCallTable(Base):
-    """Base."""
-
-    __tablename__ = "tool_call"
-
-    function_name: Mapped[str] = mapped_column()
-    arguments: Mapped[dict] = mapped_column(JSON)
-
-    message_id: Mapped[UUID] = mapped_column(
-        ForeignKey("message.id", ondelete="CASCADE"),
-        unique=True,
-    )
-    message: Mapped[MessageTable] = relationship(back_populates="tool_call")
-
-    def copy(self) -> ToolCallTable:
-        """Tmp."""
-        new_tool = ToolCallTable()
-        new_tool.arguments = copy.deepcopy(self.arguments)
-        new_tool.function_name = self.function_name
-        return new_tool
-
-
 class MessageTable(Base):
     """Base."""
 
@@ -55,21 +32,12 @@ class MessageTable(Base):
     branch_id: Mapped[UUID] = mapped_column(ForeignKey("branch.id"), index=True)
     branch: Mapped[BranchTable] = relationship(back_populates="messages")
 
-    tool_call: Mapped[ToolCallTable | None] = relationship(
-        back_populates="message",
-        uselist=False,
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-
     def copy(self) -> MessageTable:
         """Tmp."""
         new_message = MessageTable()
         new_message.created_at = self.created_at
         new_message.role = self.role
         new_message.content = self.content
-        if self.tool_call is not None:
-            new_message.tool_call = self.tool_call.copy()
         return new_message
 
 
