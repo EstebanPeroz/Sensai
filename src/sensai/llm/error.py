@@ -27,3 +27,7 @@ class JsonError(SensaiError):
 
 class ModelError(SensaiError):
     """Base class for exceptions related to model operations."""
+
+    def __init__(self, message: str) -> None:
+        """Build the error from the failing model operation and the underlying exception's message."""
+        super().__init__("[ModelError] " + message)
