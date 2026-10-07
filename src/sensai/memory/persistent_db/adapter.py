@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from sensai.history.conversation import Conversation
     from sensai.llm.message import Message
     from sensai.llm.persona import Persona
+    from sensai.llm.provider_manager import ProviderManager
 
 
 class PersistentDatabase(ABC):
@@ -26,7 +27,7 @@ class PersistentDatabase(ABC):
         """Return the dict of all branches with name and uuid."""
 
     @abstractmethod
-    def get_branch(self, current_branch: Conversation, target_branch: UUID) -> None:
+    def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
         """Replace the conversation info with those of the target.
 
         Raises:

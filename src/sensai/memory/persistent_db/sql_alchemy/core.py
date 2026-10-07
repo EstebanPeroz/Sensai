@@ -5,6 +5,7 @@ from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from sensai.llm.persona import Persona
+from sensai.llm.provider_manager import ProviderManager
 from sensai.memory.persistent_db.adapter import PersistentDatabase
 from sensai.memory.persistent_db.error import DbConnectionError, InvalidInstanceError
 from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable, MessageTable
@@ -77,13 +78,22 @@ class SqlAlchemy(PersistentDatabase):
                 branches[branch.name] = branch.id
         return branches
 
-    def get_branch(self, current_branch: Conversation, target_branch: UUID) -> None:
+    def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
         """Replace the conversation info with those of the target.
 
         Raises:
             KeyError: If no branch has this uuid.
 
         """
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, target_branch)
+            if source is None:
+                return
+            current.uuid = source.id
+            provider_manager.set_model(source.model_name)
+            current.history.clear()
+            for msg in source.messages:
+                current.history.append(msg.role, msg.content)
 
     def remove_branch(self, uuid: UUID) -> None:
         """Remove the branch related to this uuid.
