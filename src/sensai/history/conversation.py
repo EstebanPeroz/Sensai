@@ -2,11 +2,13 @@ import threading
 from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
-from sensai.llm.message import Role
+from sensai.llm.message import Message, Role
 from sensai.memory.history import History
+from sensai.memory.persistent_db.base import get_db
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+    from uuid import UUID
 
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
@@ -17,12 +19,35 @@ class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
     _provider_manager: ProviderManager
-    _history: History
+    history: History
+    uuid: UUID | None = None
 
     def __init__(self, provider_manager: ProviderManager) -> None:
         """Bind the conversation to the `provider` and `model` used to answer it."""
         self._provider_manager = provider_manager
-        self._history = History()
+        self.history = History()
+
+    def add_conv_to_db(self, uuid: UUID | None = None) -> None:
+        """Tmp."""
+        db = get_db()
+        if db is None:
+            return
+        self.uuid = db.create_branch(uuid)
+        if self.uuid:
+            db.set_branch_model(self.uuid, self._provider_manager.provider().current_model())
+
+    def add_message(self, role: Role, content: str) -> None:
+        """Tp."""
+        if not self.uuid:
+            return
+        db = get_db()
+        if not db:
+            return
+        uuid = db.add_message_to_branch(self.uuid, role, content)
+        if not uuid:
+            return
+        msg = Message(uuid=uuid, role=role, content=content)
+        self.history.insert(msg)
 
     def _stream_chunks(
         self,
@@ -43,7 +68,7 @@ class Conversation:
 
                 if chunk.error is not None:
                     break
-            self._history.append(Role.ASSISTANT, content)
+            self.add_message(Role.ASSISTANT, content)
         except SensaiError as err:
             ui.send_error(str(err))
         finally:
@@ -52,10 +77,10 @@ class Conversation:
     def chat(self, user_input: str, ui: UIAdapter) -> None:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
         ui.send_input(Role.USER, user_input)
-        self._history.append(Role.USER, user_input)
+        self.add_message(Role.USER, user_input)
 
         chunks = self._provider_manager.provider().chat(
-            {"model": self._provider_manager.provider().current_model(), "messages": self._history.to_json()},
+            {"model": self._provider_manager.provider().current_model(), "messages": self.history.to_json()},
             stream=True,
         )
         if chunks is None:

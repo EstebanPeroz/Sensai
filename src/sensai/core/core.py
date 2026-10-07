@@ -9,6 +9,7 @@ from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
 from sensai.llm.message import Role
 from sensai.llm.provider_manager import ProviderManager
+from sensai.memory.persistent_db.base import get_db
 
 if TYPE_CHECKING:
     import argparse
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 class Core:
     """Wires a UI to a conversation, dispatching UI events until the user quits."""
 
-    conversation: Conversation | None = None
+    conversation: Conversation
     _provider_manager: ProviderManager
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
@@ -65,6 +66,9 @@ class Core:
                 self._launch_command(event.content)
 
         self._ui.close()
+        db = get_db()
+        if db and self.conversation.uuid:
+            db.remove_branch(self.conversation.uuid)
 
     def _build_command_registry(self) -> CommandRegistry:
         """Build a command registry with all available commands."""
@@ -86,10 +90,8 @@ class Core:
 
     def _launch_conv_chat(self, content: str) -> None:
         """Send `content` through the conversation, reporting any provider error instead of raising."""
-        if self.conversation is None:
-            self._ui.send_error("No conversation setted")
-            # replace with log
-            return
+        if self.conversation.uuid is None:
+            self.conversation.add_conv_to_db()
         try:
             self.conversation.chat(content, self._ui)
         except SensaiError as err:
