@@ -84,23 +84,6 @@ Messages do not point back to their branch. The branch owns the list, which give
 the order. Use `get_messages(branch)` to read all the messages of a branch, oldest
 first, and `add_message_to_branch(branch, message)` to add one.
 
-### ToolCall
-
-When the model decides to use a tool, the request it returns is stored as a tool
-call attached to the message that contains it. A single message can carry several
-tool calls. The tool's result is sent back to the model as a separate message with
-role `tool`.
-
-| Field           | Type                  | Description                                  |
-|-----------------|-----------------------|----------------------------------------------|
-| `UUID`          | primary key           | Unique id of the tool call.                  |
-| `MessageID`     | foreign key → Message | Message that requested the tool call.        |
-| `function_name` | `str`                 | Name of the tool/function the model called.  |
-| `arguments`     | JSON                  | Arguments the model passed to the function.  |
-
-The relation goes from the tool call to its message (`ToolCall.MessageID`), so a
-message needs no extra column to support tool calls.
-
 ## Usage notes
 
 - `get_branch` and `remove_branch` raise `KeyError` for an unknown id, while

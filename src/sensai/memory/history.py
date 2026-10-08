@@ -17,7 +17,11 @@ class History:
 
     def append(self, role: Role, content: str) -> None:
         """Add a message at the end of the history."""
-        self._messages.append(Message(role=role, content=content))
+        self._messages.append(Message(uuid=None, role=role, content=content))
+
+    def insert(self, message: Message) -> None:
+        """Add a message at the end of the history."""
+        self._messages.append(message)
 
     def messages(self) -> list[Message]:
         """Return a copy of the messages, oldest first, so callers cannot alter the history."""
@@ -30,3 +34,8 @@ class History:
     def clear(self) -> None:
         """Remove every message from the history."""
         self._messages.clear()
+
+    def replace(self, messages: list[Message]) -> None:
+        """Remove every message from the history."""
+        self.clear()
+        self._messages = messages

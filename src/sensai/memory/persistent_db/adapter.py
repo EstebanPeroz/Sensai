@@ -8,8 +8,9 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sensai.history.conversation import Conversation
-    from sensai.llm.message import Message
+    from sensai.llm.message import Message, Role
     from sensai.llm.persona import Persona
+    from sensai.llm.provider_manager import ProviderManager
 
 
 class PersistentDatabase(ABC):
@@ -18,7 +19,7 @@ class PersistentDatabase(ABC):
     # Branch
 
     @abstractmethod
-    def create_branch(self, current_branch: UUID | None = None) -> UUID | None:
+    def create_branch(self, current_branch: UUID | None = None, name: str = "") -> UUID | None:
         """Create a new branch and return its id if success or None if fail."""
 
     @abstractmethod
@@ -26,7 +27,7 @@ class PersistentDatabase(ABC):
         """Return the dict of all branches with name and uuid."""
 
     @abstractmethod
-    def get_branch(self, current_branch: Conversation, target_branch: UUID) -> None:
+    def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
         """Replace the conversation info with those of the target.
 
         Raises:
@@ -44,11 +45,15 @@ class PersistentDatabase(ABC):
         """
 
     @abstractmethod
-    def add_message_to_branch(self, branch: UUID, message: Message) -> None:
-        """Append `message` at the end of the branch `branch`."""
+    def add_message_to_branch(self, branch_id: UUID, role: Role, content: str) -> UUID | None:
+        """Append `message` at the end of the branch `branch_id`."""
 
     @abstractmethod
-    def change_branch_persona(self, branch: UUID, persona: UUID) -> bool:
+    def set_branch_model(self, branch: UUID, model: str) -> None:
+        """Tmp."""
+
+    @abstractmethod
+    def set_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.
 
         True = Success
