@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from sensai.config.settings import load_settings
 from sensai.core.core import Core
 from sensai.error import SensaiError
+from sensai.memory.persistent_db.base import set_db
 from sensai.parsing import Parsing
 from sensai.ui.tui.core import UITextualAdapter
 
@@ -22,6 +23,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = Parsing().parse_args(argv)
     try:
         settings = load_settings(args.config)
+        set_db(settings.db.persistent)
         core = Core(ui, settings, args)
     except SensaiError as err:
         print(f"{err}", file=sys.stderr)

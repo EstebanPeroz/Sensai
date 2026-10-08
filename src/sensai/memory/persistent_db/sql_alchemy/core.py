@@ -26,12 +26,12 @@ class SqlAlchemy(PersistentDatabase):
     _conn: Connection
     _uuid_error_essage: str = "given uuid is invalid"
 
-    def __init__(self) -> None:
+    def __init__(self, url: str) -> None:
         """Tmp."""
         super().__init__()
 
         try:
-            self._engine = create_engine("sqlite:///test.db")
+            self._engine = create_engine(url)
         except ArgumentError:
             msg = "Invalid url to database"
             raise DbConnectionError(msg) from None
