@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -6,7 +7,9 @@ from sqlalchemy import delete
 from sqlalchemy.exc import ArgumentError, IntegrityError
 from sqlalchemy.orm import Session
 
+from sensai.history.conversation import Conversation
 from sensai.llm.message import Message, Role
+from sensai.llm.provider_manager import ProviderManager
 from sensai.memory.persistent_db.error import DbConnectionError, InvalidInstanceError
 from sensai.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai.memory.persistent_db.sql_alchemy.table import BranchTable, MessageTable, PersonaTable
@@ -33,6 +36,18 @@ class FakeConversation:
         self.replaced = messages
 
 
+def new_branch(db: SqlAlchemy, source: UUID | None = None) -> UUID:
+    branch = db.create_branch(source)
+    assert branch is not None
+    return branch
+
+
+def row[T](session: Session, table: type[T], pk: UUID) -> T:
+    instance = session.get(table, pk)
+    assert instance is not None
+    return instance
+
+
 def fill(db: SqlAlchemy, branch_id: UUID, *contents: str) -> None:
     for i, content in enumerate(contents):
         db.add_message_to_branch(branch_id, Role.USER if i % 2 == 0 else Role.ASSISTANT, content)
@@ -49,12 +64,11 @@ class TestInit:
             assert session.query(BranchTable).count() == 0
             assert session.query(MessageTable).count() == 0
 
-    def test_creates_the_db_file(self, db: SqlAlchemy, tmp_path: Path)   -> None:  # noqa: ARG002
+    def test_creates_the_db_file(self, db: SqlAlchemy, tmp_path: Path) -> None:  # noqa: ARG002
         assert (tmp_path / "test.db").exists()
 
     def test_data_survives_a_new_instance(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
-        assert branch is not None
+        branch = new_branch(db)
         assert SqlAlchemy().get_branch_list() == {"Branch": branch}
 
     def test_invalid_url_raises(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -71,32 +85,32 @@ class TestInit:
 
 class TestCreateBranch:
     def test_new_empty_branch(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
 
         assert branch is not None
         assert db.get_messages(branch) == []
         assert db.get_branch_list() == {"Branch": branch}
 
     def test_new_branches_get_unique_names(self, db: SqlAlchemy) -> None:
-        ids = [db.create_branch() for _ in range(3)]
+        ids = [new_branch(db) for _ in range(3)]
 
         assert len(set(ids)) == 3
         assert list(db.get_branch_list()) == ["Branch", "Branch 2", "Branch 3"]
 
     def test_copy_has_new_id_and_same_messages(self, db: SqlAlchemy) -> None:
-        source = db.create_branch()
+        source = new_branch(db)
         fill(db, source, "a", "b", "c")
 
-        copy = db.create_branch(source)
+        copy = new_branch(db, source)
 
         assert copy is not None
         assert copy != source
         assert turns(db.get_messages(copy)) == turns(db.get_messages(source))
 
     def test_copy_is_independent(self, db: SqlAlchemy) -> None:
-        source = db.create_branch()
+        source = new_branch(db)
         fill(db, source, "a")
-        copy = db.create_branch(source)
+        copy = new_branch(db, source)
 
         fill(db, copy, "only in copy")
         db.remove_branch(source)
@@ -104,41 +118,41 @@ class TestCreateBranch:
         assert [m.content for m in db.get_messages(copy)] == ["a", "only in copy"]
 
     def test_copy_names_do_not_collide(self, db: SqlAlchemy) -> None:
-        source = db.create_branch()
+        source = new_branch(db)
 
-        db.create_branch(source)
-        db.create_branch(source)
+        new_branch(db, source)
+        new_branch(db, source)
 
         assert list(db.get_branch_list()) == ["Branch", "Branch 2", "Branch 3"]
 
     def test_copy_of_a_copy_gets_a_free_name(self, db: SqlAlchemy) -> None:
-        source = db.create_branch()
-        second = db.create_branch(source)
+        source = new_branch(db)
+        second = new_branch(db, source)
 
-        db.create_branch(second)
+        new_branch(db, second)
 
         assert list(db.get_branch_list()) == ["Branch", "Branch 2", "Branch 2 2"]
 
     def test_copy_keeps_model_name(self, db: SqlAlchemy) -> None:
-        source = db.create_branch()
+        source = new_branch(db)
         with Session(db._engine) as session:
-            session.get(BranchTable, source).model_name = "llama"
+            row(session, BranchTable, source).model_name = "llama"
             session.commit()
 
-        copy = db.create_branch(source)
+        copy = new_branch(db, source)
 
         with Session(db._engine) as session:
-            assert session.get(BranchTable, copy).model_name == "llama"
+            assert row(session, BranchTable, copy).model_name == "llama"
 
     def test_copy_message_ids_are_new_and_linked_to_the_copy(self, db: SqlAlchemy) -> None:
-        source = db.create_branch()
+        source = new_branch(db)
         fill(db, source, "a", "b")
 
-        copy = db.create_branch(source)
+        copy = new_branch(db, source)
 
         with Session(db._engine) as session:
-            src_msgs = session.get(BranchTable, source).messages
-            copy_msgs = session.get(BranchTable, copy).messages
+            src_msgs = row(session, BranchTable, source).messages
+            copy_msgs = row(session, BranchTable, copy).messages
             assert len(copy_msgs) == 2
             assert {m.id for m in copy_msgs}.isdisjoint({m.id for m in src_msgs})
             assert all(m.branch_id == copy for m in copy_msgs)
@@ -154,22 +168,22 @@ class TestGetBranchList:
         assert db.get_branch_list() == {}
 
     def test_maps_name_to_id(self, db: SqlAlchemy) -> None:
-        first = db.create_branch()
-        second = db.create_branch()
+        first = new_branch(db)
+        second = new_branch(db)
 
         assert db.get_branch_list() == {"Branch": first, "Branch 2": second}
 
 
 class TestGetBranch:
     def test_loads_uuid_model_and_messages(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         fill(db, branch, "hi", "hello")
         with Session(db._engine) as session:
-            session.get(BranchTable, branch).model_name = "llama"
+            row(session, BranchTable, branch).model_name = "llama"
             session.commit()
         conv, manager = FakeConversation(), FakeProviderManager()
 
-        db.get_branch(conv, branch, manager)
+        db.get_branch(cast(Conversation, conv), branch, cast(ProviderManager, manager))
 
         assert conv.uuid == branch
         assert manager.models == ["llama"]
@@ -179,7 +193,7 @@ class TestGetBranch:
     def test_unknown_branch_leaves_conversation_untouched(self, db: SqlAlchemy) -> None:
         conv, manager = FakeConversation(), FakeProviderManager()
 
-        db.get_branch(conv, uuid4(), manager)
+        db.get_branch(cast(Conversation, conv), uuid4(), cast(ProviderManager, manager))
 
         assert conv.uuid is None
         assert conv.replaced is None
@@ -188,15 +202,15 @@ class TestGetBranch:
 
 class TestRemoveBranch:
     def test_removes_only_that_branch(self, db: SqlAlchemy) -> None:
-        keep = db.create_branch()
-        drop = db.create_branch()
+        keep = new_branch(db)
+        drop = new_branch(db)
 
         db.remove_branch(drop)
 
         assert db.get_branch_list() == {"Branch": keep}
 
     def test_cascades_to_messages(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         fill(db, branch, "a", "b")
 
         db.remove_branch(branch)
@@ -205,9 +219,9 @@ class TestRemoveBranch:
             assert session.query(MessageTable).count() == 0
 
     def test_does_not_touch_other_branch_messages(self, db: SqlAlchemy) -> None:
-        keep = db.create_branch()
+        keep = new_branch(db)
         fill(db, keep, "a")
-        drop = db.create_branch(keep)
+        drop = new_branch(db, keep)
 
         db.remove_branch(drop)
 
@@ -220,22 +234,22 @@ class TestRemoveBranch:
 
 class TestAddMessageToBranch:
     def test_appends_in_order(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
 
         fill(db, branch, "1", "2", "3")
 
         assert [m.content for m in db.get_messages(branch)] == ["1", "2", "3"]
 
     def test_keeps_role(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         for role in Role:
             db.add_message_to_branch(branch, role, role.value)
 
         assert turns(db.get_messages(branch)) == [(role, role.value) for role in Role]
 
     def test_only_goes_to_target_branch(self, db: SqlAlchemy) -> None:
-        a = db.create_branch()
-        b = db.create_branch()
+        a = new_branch(db)
+        b = new_branch(db)
 
         fill(db, a, "x")
 
@@ -251,13 +265,13 @@ class TestAddMessageToBranch:
 
 class TestGetMessages:
     def test_empty_branch(self, db: SqlAlchemy) -> None:
-        assert db.get_messages(db.create_branch()) == []
+        assert db.get_messages(new_branch(db)) == []
 
     def test_unknown_branch_returns_empty(self, db: SqlAlchemy) -> None:
         assert db.get_messages(uuid4()) == []
 
     def test_returns_message_objects_oldest_first(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         fill(db, branch, "first", "second")
 
         messages = db.get_messages(branch)
@@ -275,48 +289,48 @@ def make_persona(db: SqlAlchemy, name: str = "p") -> UUID:
 
 class TestSetBranchPersona:
     def test_sets_the_persona(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         persona = make_persona(db)
 
         assert db.set_branch_persona(branch, persona) is True
 
         with Session(db._engine) as session:
-            assert session.get(BranchTable, branch).persona_id == persona
-            assert [b.id for b in session.get(PersonaTable, persona).branches] == [branch]
+            assert row(session, BranchTable, branch).persona_id == persona
+            assert [b.id for b in row(session, PersonaTable, persona).branches] == [branch]
 
     def test_can_switch_persona(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         first, second = make_persona(db, "a"), make_persona(db, "b")
         db.set_branch_persona(branch, first)
 
         assert db.set_branch_persona(branch, second) is True
 
         with Session(db._engine) as session:
-            assert session.get(BranchTable, branch).persona_id == second
-            assert session.get(PersonaTable, first).branches == []
+            assert row(session, BranchTable, branch).persona_id == second
+            assert row(session, PersonaTable, first).branches == []
 
     def test_unknown_persona_fails_and_changes_nothing(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         persona = make_persona(db)
         db.set_branch_persona(branch, persona)
 
         assert db.set_branch_persona(branch, uuid4()) is False
 
         with Session(db._engine) as session:
-            assert session.get(BranchTable, branch).persona_id == persona
+            assert row(session, BranchTable, branch).persona_id == persona
 
     def test_unknown_branch_fails(self, db: SqlAlchemy) -> None:
         assert db.set_branch_persona(uuid4(), make_persona(db)) is False
 
     def test_copy_keeps_the_persona(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         persona = make_persona(db)
         db.set_branch_persona(branch, persona)
 
-        copy = db.create_branch(branch)
+        copy = new_branch(db, branch)
 
         with Session(db._engine) as session:
-            assert session.get(BranchTable, copy).persona_id == persona
+            assert row(session, BranchTable, copy).persona_id == persona
 
 
 class TestForeignKeys:
@@ -333,19 +347,19 @@ class TestForeignKeys:
                 session.commit()
 
     def test_deleting_a_persona_unsets_it_on_branches(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         persona = make_persona(db)
         db.set_branch_persona(branch, persona)
 
         with Session(db._engine) as session:
-            session.delete(session.get(PersonaTable, persona))
+            session.delete(row(session, PersonaTable, persona))
             session.commit()
 
         with Session(db._engine) as session:
-            assert session.get(BranchTable, branch).persona_id is None
+            assert row(session, BranchTable, branch).persona_id is None
 
     def test_database_cascades_branch_delete_to_messages(self, db: SqlAlchemy) -> None:
-        branch = db.create_branch()
+        branch = new_branch(db)
         fill(db, branch, "a", "b")
 
         with Session(db._engine) as session:
