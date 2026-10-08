@@ -2,7 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from sensai.config.settings import PROVIDERS, ConfigError, LLMSettings, OllamaSettings, Settings, load_settings
+from sensai.config.settings import (
+    PROVIDERS,
+    ConfigError,
+    LLMSettings,
+    OllamaSettings,
+    Settings,
+    WebSettings,
+    load_settings,
+)
 
 
 def write_config(tmp_path: Path, content: str) -> Path:
@@ -18,6 +26,7 @@ class TestPackagedSettings:
         assert isinstance(settings, Settings)
         assert settings.llm.embedding_model == "nomic-embed-text"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
+        assert settings.web == WebSettings()
 
 
 class TestDefaults:
@@ -51,6 +60,13 @@ class TestEmbeddingModel:
         assert settings.llm.embedding_model == "embeddinggemma"
 
 
+class TestWeb:
+    def test_is_read_from_web_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[web]\napi_base_url = "https://example.com"\ntimeout = 3\n'))
+
+        assert settings.web == WebSettings(api_base_url="https://example.com", timeout=3)
+
+
 class TestValidation:
     @pytest.mark.parametrize(
         ("content", "reason"),
@@ -68,6 +84,12 @@ class TestValidation:
             ('[llm.ollama]\nbase_url = "localhost:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('[llm.ollama]\nbase_url = "ftp://ollama:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('[llm.ollama]\nbase_url = "http://ollama:port"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
+            ('web = "x"\n', "web must be a table"),
+            ('[web]\napi_key = "x"\n', "unexpected keyword argument 'api_key'"),
+            ('[web]\napi_base_url = "ollama.com"\n', "web.api_base_url must be an http\\(s\\) URL"),
+            ("[web]\ntimeout = 0\n", "web.timeout must be a positive number"),
+            ('[web]\ntimeout = "10"\n', "web.timeout must be a positive number"),
+            ("[web]\ntimeout = true\n", "web.timeout must be a positive number"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:
