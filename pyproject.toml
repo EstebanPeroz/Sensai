@@ -63,6 +63,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"tests/persistent_db/**"= ["SLF001"]
 "tests/**" = [
     "S101",
     "INP001",
