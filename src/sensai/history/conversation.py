@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
 from sensai.memory.history import History
-from sensai.memory.persistent_db.base import get_db
+from sensai.memory.persistent_db import get_db
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -36,18 +36,25 @@ class Conversation:
         if self.uuid:
             db.set_branch_model(self.uuid, self._provider_manager.provider().current_model())
 
-    def add_message(self, role: Role, content: str) -> None:
+    def add_message(self, role: Role, content: str, ui: UIAdapter) -> bool:
         """Tp."""
-        if not self.uuid:
-            return
         db = get_db()
-        if not db:
-            return
-        uuid = db.add_message_to_branch(self.uuid, role, content)
+        if not self.uuid or not db:
+            ui.send_system_message("Failed to add message")
+            return False
+
+        try:
+            uuid = db.add_message_to_branch(self.uuid, role, content)
+        except SensaiError as err:
+            ui.send_system_message(err.message)
+            return False
+
         if not uuid:
-            return
-        msg = Message(uuid=uuid, role=role, content=content)
-        self.history.insert(msg)
+            ui.send_system_message("Failed to add message")
+            return False
+
+        self.history.insert(Message(uuid=uuid, role=role, content=content))
+        return True
 
     def _stream_chunks(
         self,
@@ -68,7 +75,7 @@ class Conversation:
 
                 if chunk.error is not None:
                     break
-            self.add_message(Role.ASSISTANT, content)
+            self.add_message(Role.ASSISTANT, content, ui)
         except SensaiError as err:
             ui.send_error(str(err))
         finally:
@@ -77,7 +84,8 @@ class Conversation:
     def chat(self, user_input: str, ui: UIAdapter) -> None:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
         ui.send_input(Role.USER, user_input)
-        self.add_message(Role.USER, user_input)
+        if self.add_message(Role.USER, user_input, ui) is False:
+            return
 
         chunks = self._provider_manager.provider().chat(
             {"model": self._provider_manager.provider().current_model(), "messages": self.history.to_json()},
