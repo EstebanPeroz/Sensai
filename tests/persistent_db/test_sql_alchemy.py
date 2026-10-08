@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import delete
-from sqlalchemy.exc import ArgumentError, IntegrityError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from sensai.history.conversation import Conversation
@@ -67,20 +67,13 @@ class TestInit:
     def test_creates_the_db_file(self, db: SqlAlchemy, tmp_path: Path) -> None:  # noqa: ARG002
         assert (tmp_path / "test.db").exists()
 
-    def test_data_survives_a_new_instance(self, db: SqlAlchemy) -> None:
+    def test_data_survives_a_new_instance(self, db: SqlAlchemy, db_url: str) -> None:
         branch = new_branch(db)
-        assert SqlAlchemy().get_branch_list() == {"Branch": branch}
+        assert SqlAlchemy(db_url).get_branch_list() == {"Branch": branch}
 
-    def test_invalid_url_raises(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        monkeypatch.chdir(tmp_path)
-
-        def boom(*_a: object, **_k: object) -> None:
-            msg = "bad"
-            raise ArgumentError(msg)
-
-        monkeypatch.setattr("sensai.memory.persistent_db.sql_alchemy.core.create_engine", boom)
+    def test_invalid_url_raises(self) -> None:
         with pytest.raises(DbConnectionError):
-            SqlAlchemy()
+            SqlAlchemy("not a url")
 
 
 class TestCreateBranch:
