@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from sensai.llm.message import Message, Role
 from sensai.llm.persona import Persona
 from sensai.memory.persistent_db.adapter import PersistentDatabase
-from sensai.memory.persistent_db.error import DbConnectionError, InvalidInstanceError
+from sensai.memory.persistent_db.error import DatabaseError, DbConnectionError, InvalidInstanceError
 from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable, MessageTable, PersonaTable
 
 if TYPE_CHECKING:
@@ -25,6 +25,7 @@ class SqlAlchemy(PersistentDatabase):
     _engine: Engine
     _conn: Connection
     _uuid_error_essage: str = "given uuid is invalid"
+    _update_error_message: str = "the update could not be stored"
 
     def __init__(self, url: str) -> None:
         """Tmp."""
@@ -192,19 +193,35 @@ class SqlAlchemy(PersistentDatabase):
             timestamp: Creation time of the persona.
             prompt: System prompt applied when the persona is active.
 
+        Returns:
+            The stored persona, or None if it could not be stored, which a name
+            another persona already uses is enough to cause (names are unique).
+
+        Raises:
+            InvalidPersonaError: If a field is missing or empty, before anything is stored.
+
         """
-        return None
+        draft = Persona(None, name, description, prompt)
+        with Session(self._engine) as session:
+            source = PersonaTable(
+                name=draft.name,
+                description=draft.description,
+                prompt=draft.prompt,
+                created_at=timestamp,
+            )
+            session.add(source)
+            try:
+                session.commit()
+            except SQLAlchemyError:
+                return None
+            return self._persona_from_row(source)
 
     @override
     def get_personas(self) -> list[Persona]:
-        """Return all personas."""
-        personas: list[Persona] = []
+        """Return all personas ."""
         with Session(self._engine) as session:
             source = session.scalars(select(PersonaTable)).all()
-            personas.extend(
-                Persona(persona.name, "") for persona in source
-            )  ## Update to use the next persona dataclass
-        return personas
+            return [self._persona_from_row(persona) for persona in source]
 
     @override
     def get_persona(self, persona: UUID) -> Persona:
@@ -218,7 +235,7 @@ class SqlAlchemy(PersistentDatabase):
             source = session.get(PersonaTable, persona)
             if source is None:
                 raise InvalidInstanceError(self._uuid_error_essage)
-            return Persona("...", "...")  ## Update to use the next persona dataclass
+            return self._persona_from_row(source)
 
     @override
     def update_persona(
@@ -232,6 +249,34 @@ class SqlAlchemy(PersistentDatabase):
         """Update the persona `persona`; fields left to `None` are unchanged.
 
         Raises:
-            KeyError: If no persona has this id.
+            InvalidInstanceError: If no persona has this id.
+            InvalidPersonaError: If a field is given but empty, before anything is stored.
+            DatabaseError: If the update could not be stored, which a `name` another
+                persona already uses is enough to cause (names are unique).
 
         """
+        with Session(self._engine) as session:
+            source = session.get(PersonaTable, persona)
+            if source is None:
+                raise InvalidInstanceError(self._uuid_error_essage)
+            Persona(  # the fields the update would leave behind, checked before they are written
+                source.id,
+                source.name if name is None else name,
+                source.description if description is None else description,
+                source.prompt if prompt is None else prompt,
+            )
+            if name is not None:
+                source.name = name
+            if description is not None:
+                source.description = description
+            if prompt is not None:
+                source.prompt = prompt
+            try:
+                session.commit()
+            except SQLAlchemyError:
+                raise DatabaseError(self._update_error_message) from None
+
+    @staticmethod
+    def _persona_from_row(persona: PersonaTable) -> Persona:
+        """Convert a stored persona into a Persona object. Without this method we can'ut use Persona a all."""
+        return Persona(persona.id, persona.name, persona.description, persona.prompt, persona.created_at)
