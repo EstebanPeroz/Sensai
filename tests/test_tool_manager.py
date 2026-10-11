@@ -1,6 +1,3 @@
-import pytest
-
-from sensai.error import SensaiError
 from sensai.tools.tool import Tool, get_parameter
 from sensai.tools.tool_manager import ToolManager
 
@@ -22,8 +19,47 @@ class EchoTool(Tool[str]):
         return get_parameter("city", str, **kwargs)
 
 
+class AddTool(Tool[int]):
+    @property
+    def name(self) -> str:
+        return "add"
+
+    @property
+    def description(self) -> str:
+        return "Add two integers."
+
+    @property
+    def parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
+            "required": ["a", "b"],
+        }
+
+    def run(self, a: int, b: int) -> int:  # type: ignore[override]
+        return a + b
+
+
+class ProfileTool(Tool[dict]):
+    @property
+    def name(self) -> str:
+        return "profile"
+
+    @property
+    def description(self) -> str:
+        return "Return a fixed profile."
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {}}
+
+    def run(self, **kwargs: object) -> dict:
+        del kwargs
+        return {"city": "Paris", "age": 30}
+
+
 def make_manager() -> ToolManager:
-    return ToolManager([EchoTool()])
+    return ToolManager([EchoTool(), AddTool(), ProfileTool()])
 
 
 def make_call(name: str, arguments: dict | None = None) -> dict:
@@ -43,19 +79,94 @@ class TestCall:
 
         assert result == {"role": "tool", "tool_name": "echo", "content": "Paris"}
 
-    def test_unknown_tool_name_returns_none(self) -> None:
-        assert make_manager().call(make_call("does-not-exist")) is None
+    def test_unknown_tool_returns_error_message(self) -> None:
+        result = make_manager().call(make_call("does-not-exist"))
 
-    def test_missing_function_key_returns_empty_dict(self) -> None:
-        assert make_manager().call({"type": "function"}) == {}
+        assert result == {
+            "role": "tool",
+            "tool_name": "does-not-exist",
+            "content": "error: unknown tool 'does-not-exist'",
+        }
 
-    def test_missing_name_returns_empty_dict(self) -> None:
-        assert make_manager().call({"type": "function", "function": {"arguments": {}}}) == {}
+    def test_missing_function_key_returns_error_message(self) -> None:
+        result = make_manager().call({"type": "function"})
 
-    def test_wrong_argument_type_propagates_tool_error(self) -> None:
-        with pytest.raises(SensaiError, match="Parameter 'city' must be str, got int"):
-            make_manager().call(make_call("echo", {"city": 2}))
+        assert result == {
+            "role": "tool",
+            "tool_name": "unknown",
+            "content": "error: malformed tool call, missing function name",
+        }
 
-    def test_missing_argument_propagates_tool_error(self) -> None:
-        with pytest.raises(SensaiError, match="Miss parameter: city"):
-            make_manager().call(make_call("echo"))
+    def test_missing_name_returns_error_message(self) -> None:
+        result = make_manager().call({"type": "function", "function": {"arguments": {}}})
+
+        assert result == {
+            "role": "tool",
+            "tool_name": "unknown",
+            "content": "error: malformed tool call, missing function name",
+        }
+
+    def test_wrong_argument_type_returns_error_message(self) -> None:
+        result = make_manager().call(make_call("echo", {"city": 2}))
+
+        assert result == {
+            "role": "tool",
+            "tool_name": "echo",
+            "content": "error: Parameter 'city' must be str, got int",
+        }
+
+    def test_missing_argument_returns_error_message(self) -> None:
+        result = make_manager().call(make_call("echo"))
+
+        assert result == {"role": "tool", "tool_name": "echo", "content": "error: Miss parameter: city"}
+
+    def test_missing_arguments_are_treated_as_empty(self) -> None:
+        result = make_manager().call({"type": "function", "function": {"name": "echo", "arguments": None}})
+
+        assert result == {"role": "tool", "tool_name": "echo", "content": "error: Miss parameter: city"}
+
+    def test_unexpected_argument_returns_error_message(self) -> None:
+        result = make_manager().call(make_call("add", {"a": 1, "b": 2, "c": 3}))
+
+        assert result["role"] == "tool"
+        assert result["tool_name"] == "add"
+        assert result["content"].startswith("error: ")
+        assert "unexpected keyword argument 'c'" in result["content"]
+
+    def test_number_result_is_converted_to_text(self) -> None:
+        result = make_manager().call(make_call("add", {"a": 1, "b": 2}))
+
+        assert result == {"role": "tool", "tool_name": "add", "content": "3"}
+
+    def test_dict_result_is_converted_to_json_text(self) -> None:
+        result = make_manager().call(make_call("profile"))
+
+        assert result == {"role": "tool", "tool_name": "profile", "content": '{"city": "Paris", "age": 30}'}
+
+
+class TestGetToolCallRules:
+    def test_returns_the_rule_of_every_tool(self) -> None:
+        assert make_manager().get_tool_call_rules() == [
+            EchoTool().tool_rule,
+            AddTool().tool_rule,
+            ProfileTool().tool_rule,
+        ]
+
+    def test_rules_follow_the_chat_endpoint_format(self) -> None:
+        assert ToolManager([EchoTool()]).get_tool_call_rules() == [
+            {
+                "type": "function",
+                "function": {
+                    "name": "echo",
+                    "description": "Return the given city.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"city": {"type": "string"}},
+                        "required": ["city"],
+                    },
+                },
+            },
+        ]
+
+    def test_manager_without_tools_has_no_rules(self) -> None:
+        assert ToolManager().get_tool_call_rules() == []
