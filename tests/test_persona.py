@@ -6,12 +6,24 @@ import pytest
 
 from sensai.error import SensaiError
 from sensai.llm.persona import (
-    DEFAULT_PERSONA,
     DuplicatePersonaError,
     InvalidPersonaError,
     Persona,
     PersonaError,
     PersonaNotRegisteredError,
+)
+
+# The persona a fresh database is seeded with, so the assistant behaves sensibly
+# before anyone creates one (US-24). It replaces config/personas/analyst.toml.
+DEFAULT_PERSONA = Persona(
+    uuid=None,
+    name="Analyst",
+    description="An analytical assistant that evaluates inputs through structured decomposition "
+    "and objective evaluation.",
+    prompt="""You are an expert analyst. When presented with information or a problem:
+1. Deconstruct the context and identify key facts, assumptions, and variables.
+2. Evaluate underlying patterns, logical dependencies, and potential edge cases.
+3. Provide a clear, objective analysis followed by actionable conclusions or recommendations.""",
 )
 
 

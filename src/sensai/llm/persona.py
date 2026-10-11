@@ -82,17 +82,3 @@ class Persona:
     def apply_to_payload(self, messages: list[dict]) -> dict:
         """Return a chat payload fragment where this persona's prompt comes before `messages`."""
         return {"messages": [{"role": "system", "content": self.prompt}, *messages]}
-
-
-# The persona a fresh database is seeded with, so the assistant behaves sensibly
-# before anyone creates one (US-24). It replaces config/personas/analyst.toml.
-DEFAULT_PERSONA = Persona(
-    uuid=None,
-    name="Analyst",
-    description="An analytical assistant that evaluates inputs through structured decomposition "
-    "and objective evaluation.",
-    prompt="""You are an expert analyst. When presented with information or a problem:
-1. Deconstruct the context and identify key facts, assumptions, and variables.
-2. Evaluate underlying patterns, logical dependencies, and potential edge cases.
-3. Provide a clear, objective analysis followed by actionable conclusions or recommendations.""",
-)
