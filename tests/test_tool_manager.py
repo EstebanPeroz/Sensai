@@ -11,8 +11,12 @@ class EchoTool(Tool[str]):
         return "echo"
 
     @property
-    def tool_rule(self) -> dict:
-        return {"type": "function", "function": {"name": self.name}}
+    def description(self) -> str:
+        return "Return the given city."
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}
 
     def run(self, **kwargs: object) -> str:
         return get_parameter("city", str, **kwargs)
