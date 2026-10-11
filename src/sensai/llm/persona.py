@@ -78,7 +78,3 @@ class Persona:
     def show(self) -> dict[str, str]:
         """Return the fields identifying the persona, for display."""
         return {"name": self.name, "description": self.description}
-
-    def apply_to_payload(self, messages: list[dict]) -> dict:
-        """Return a chat payload fragment where this persona's prompt comes before `messages`."""
-        return {"messages": [{"role": "system", "content": self.prompt}, *messages]}
