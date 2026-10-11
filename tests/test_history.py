@@ -51,3 +51,27 @@ class TestHistory:
 
     def test_to_json_of_empty_history_is_empty(self) -> None:
         assert make_history().to_json() == []
+
+    def test_keeps_tool_calls_and_tool_name(self) -> None:
+        tool_calls = [{"type": "function", "function": {"name": "echo", "arguments": {"city": "Paris"}}}]
+        history = make_history()
+        history.append(Role.ASSISTANT, "", tool_calls=tool_calls)
+        history.append(Role.TOOL, "Paris", tool_name="echo")
+
+        assert history.messages() == [
+            Message(Role.ASSISTANT, "", tool_calls=tool_calls),
+            Message(Role.TOOL, "Paris", tool_name="echo"),
+        ]
+
+    def test_to_json_includes_tool_calls_and_tool_name(self) -> None:
+        tool_calls = [{"type": "function", "function": {"name": "echo", "arguments": {"city": "Paris"}}}]
+        history = make_history()
+        history.append(Role.USER, "where am I?")
+        history.append(Role.ASSISTANT, "", tool_calls=tool_calls)
+        history.append(Role.TOOL, "Paris", tool_name="echo")
+
+        assert history.to_json() == [
+            {"role": "user", "content": "where am I?"},
+            {"role": "assistant", "content": "", "tool_calls": tool_calls},
+            {"role": "tool", "content": "Paris", "tool_name": "echo"},
+        ]

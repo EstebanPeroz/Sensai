@@ -18,3 +18,18 @@ class TestMessage:
 
         with pytest.raises(FrozenInstanceError):
             message.content = "changed"  # type: ignore[misc]
+
+    def test_to_dict_includes_tool_calls_of_assistant_message(self) -> None:
+        tool_calls = [{"type": "function", "function": {"name": "echo", "arguments": {"city": "Paris"}}}]
+
+        message = Message(Role.ASSISTANT, "", tool_calls=tool_calls)
+
+        assert message.to_dict() == {"role": "assistant", "content": "", "tool_calls": tool_calls}
+
+    def test_to_dict_includes_tool_name_of_tool_message(self) -> None:
+        message = Message(Role.TOOL, "Paris", tool_name="echo")
+
+        assert message.to_dict() == {"role": "tool", "content": "Paris", "tool_name": "echo"}
+
+    def test_to_dict_omits_empty_tool_calls(self) -> None:
+        assert Message(Role.ASSISTANT, "hello", tool_calls=[]).to_dict() == {"role": "assistant", "content": "hello"}

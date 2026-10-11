@@ -15,15 +15,22 @@ class History:
         """Init an empty history."""
         self._messages: list[Message] = []
 
-    def append(self, role: Role, content: str) -> None:
-        """Add a message at the end of the history."""
-        self._messages.append(Message(role=role, content=content))
+    def append(
+        self,
+        role: Role,
+        content: str,
+        *,
+        tool_calls: list[dict] | None = None,
+        tool_name: str | None = None,
+    ) -> None:
+        """Add a message at the end of the history, with the tool calls it makes or the tool it answers for."""
+        self._messages.append(Message(role=role, content=content, tool_calls=tool_calls, tool_name=tool_name))
 
     def messages(self) -> list[Message]:
         """Return a copy of the messages, oldest first, so callers cannot alter the history."""
         return list(self._messages)
 
-    def to_json(self) -> list[dict[str, str]]:
+    def to_json(self) -> list[dict[str, object]]:
         """Return the messages in the format of the chat payload `messages` list, oldest first."""
         return [message.to_dict() for message in self._messages]
 
