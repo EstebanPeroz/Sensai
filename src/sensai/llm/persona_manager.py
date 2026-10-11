@@ -2,25 +2,26 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from importlib import resources
 from typing import TYPE_CHECKING
 
-from sensai.llm.persona import DuplicatePersonaError, Persona, PersonaNotRegisteredError
+from sensai.llm.persona import (
+    DEFAULT_PERSONA_FILE,
+    DuplicatePersonaError,
+    Persona,
+    PersonaNotRegisteredError,
+)
 from sensai.memory.persistent_db.error import DatabaseError
 
 if TYPE_CHECKING:
+    from pathlib import Path
     from uuid import UUID
 
     from sensai.memory.persistent_db.adapter import PersistentDatabase
 
 
 class PersonaManager:
-    """Name-based access to the personas held by the database, and to the one currently applied.
-
-    The database owns the personas and addresses them by `UUID`; this manager is the
-    user-facing side, where a persona is picked by name, and it remembers which one is
-    applied to the session. A persona is validated before it reaches the database, so
-    an empty field never gets stored.
-    """
+    """Name-based access to the personas held by the database, and to the one currently applied."""
 
     _db: PersistentDatabase
     _active_persona: Persona | None
@@ -32,16 +33,9 @@ class PersonaManager:
         self._db = db
         self._active_persona = None
 
-    def create_persona(self, name: str, description: str, prompt: str) -> Persona:
-        """Store a new persona and return it.
-
-        Raises:
-            InvalidPersonaError: If a field is missing or empty.
-            DuplicatePersonaError: If a persona is already named `name`.
-            DatabaseError: If the persona could not be stored.
-
-        """
-        draft = Persona(uuid=None, name=name, description=description, prompt=prompt)
+    def create_persona_from_file(self, path: str | Path) -> Persona:
+        """Store the persona described by the file at `path` and return  it."""
+        draft = Persona.from_file(path)
         if self._find(draft.name) is not None:
             raise DuplicatePersonaError(draft.name)
         created = self._db.create_persona(draft.name, draft.description, datetime.now(UTC), draft.prompt)
@@ -49,17 +43,18 @@ class PersonaManager:
             raise DatabaseError(self._store_error_message)
         return created
 
+    def create_default_persona(self) -> Persona:
+        """Store the persona packaged with sensai and return it, to seed a fresh database."""
+        source = resources.files("sensai.config").joinpath(DEFAULT_PERSONA_FILE)
+        with resources.as_file(source) as path:
+            return self.create_persona_from_file(path)
+
     def get_personas(self) -> list[Persona]:
         """Return every stored persona."""
         return self._db.get_personas()
 
     def get_persona(self, name: str) -> Persona:
-        """Return the persona named `name`, whatever its case.
-
-        Raises:
-            PersonaNotRegisteredError: If no persona is named `name`.
-
-        """
+        """Return the persona named `name`, whatever its case."""
         persona = self._find(name)
         if persona is None:
             raise PersonaNotRegisteredError(name, [stored.name for stored in self.get_personas()])
@@ -73,15 +68,7 @@ class PersonaManager:
         description: str | None = None,
         prompt: str | None = None,
     ) -> Persona:
-        """Update the persona named `target_name`, leaving out the fields left to `None`, and return it.
-
-        Raises:
-            PersonaNotRegisteredError: If no persona is named `target_name`.
-            InvalidPersonaError: If a field is given but empty.
-            DuplicatePersonaError: If `new_name` is already used by another persona.
-            DatabaseError: If the update could not be stored.
-
-        """
+        """Update the persona named `target_name`, leaving out the fields left to `None`, and return it."""
         target = self.get_persona(target_name)
         draft = replace(
             target,
@@ -100,12 +87,7 @@ class PersonaManager:
         return updated
 
     def activate(self, name: str) -> Persona:
-        """Apply the persona named `name` and return it.
-
-        Raises:
-            PersonaNotRegisteredError: If no persona is named `name`.
-
-        """
+        """Apply the persona named `name` and return it."""
         persona = self.get_persona(name)
         self._active_persona = persona
         return persona
@@ -124,12 +106,7 @@ class PersonaManager:
         return next((persona for persona in self.get_personas() if persona.name.casefold() == key), None)
 
     def _stored_uuid(self, persona: Persona) -> UUID:
-        """Return the id of a persona read from the database, which always has one.
-
-        Raises:
-            DatabaseError: If the record came back without an id.
-
-        """
+        """Return the id of a persona read from the database, which always has one."""
         if persona.uuid is None:
             raise DatabaseError(self._record_error_message)
         return persona.uuid
