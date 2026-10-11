@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 
 class SqlAlchemy(PersistentDatabase):
-    """Tmp."""
+    """`PersistentDatabase` backed by SQLAlchemy (SQLite foreign keys are enforced)."""
 
     _engine: Engine
     _conn: Connection
@@ -28,7 +28,12 @@ class SqlAlchemy(PersistentDatabase):
     _update_error_message: str = "the update could not be stored"
 
     def __init__(self, url: str) -> None:
-        """Tmp."""
+        """Connect to the database at `url` and create the missing tables.
+
+        Raises:
+            DbConnectionError: If `url` is not a valid database url.
+
+        """
         super().__init__()
 
         try:
@@ -90,11 +95,9 @@ class SqlAlchemy(PersistentDatabase):
 
     @override
     def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
-        """Replace the conversation info with those of the target.
+        """Replace the uuid, model and history of `current` with those of the target branch.
 
-        Raises:
-            KeyError: If no branch has this uuid.
-
+        Does nothing if no branch has this uuid.
         """
         with Session(self._engine) as session:
             source = session.get(BranchTable, target_branch)
@@ -121,7 +124,9 @@ class SqlAlchemy(PersistentDatabase):
 
     @override
     def add_message_to_branch(self, branch_id: UUID, role: Role, content: str) -> UUID | None:
-        """Append `message` at the end of the branch `branch_id`.
+        """Append a message made of `role` and `content` at the end of the branch `branch_id`.
+
+        Return the id of the new message, or None if it could not be saved.
 
         Raises:
             InvalidInstanceError: If no branch has this uuid.
@@ -141,7 +146,12 @@ class SqlAlchemy(PersistentDatabase):
 
     @override
     def set_branch_model(self, branch: UUID, model: str) -> None:
-        """Tmp."""
+        """Set the model used by the branch `branch` to `model`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
         with Session(self._engine) as session:
             source = session.get(BranchTable, branch)
             if source is None:
@@ -153,8 +163,8 @@ class SqlAlchemy(PersistentDatabase):
     def set_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.
 
-        True = Success
-        False = Fail
+        Return True on success, False if the branch or the persona does not exist
+        or the change could not be saved.
 
         """
         with Session(self._engine) as session:
@@ -186,6 +196,8 @@ class SqlAlchemy(PersistentDatabase):
     @override
     def create_persona(self, name: str, description: str, timestamp: datetime, prompt: str) -> Persona | None:
         """Create a persona and return its Class Version after adding it to the db.
+
+        Not implemented yet: always returns None.
 
         Args:
             name: Display name of the persona.
@@ -225,7 +237,7 @@ class SqlAlchemy(PersistentDatabase):
 
     @override
     def get_persona(self, persona: UUID) -> Persona:
-        """Return the persona `persona`.
+        """Return the persona `persona` (placeholder values for now).
 
         Raises:
             InvalidInstanceError: If no persona has this id.
@@ -248,12 +260,13 @@ class SqlAlchemy(PersistentDatabase):
     ) -> None:
         """Update the persona `persona`; fields left to `None` are unchanged.
 
+        Not implemented yet: does nothing.
+
         Raises:
             InvalidInstanceError: If no persona has this id.
             InvalidPersonaError: If a field is given but empty, before anything is stored.
             DatabaseError: If the update could not be stored, which a `name` another
                 persona already uses is enough to cause (names are unique).
-
         """
         with Session(self._engine) as session:
             source = session.get(PersonaTable, persona)

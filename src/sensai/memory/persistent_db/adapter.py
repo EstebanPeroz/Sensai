@@ -19,8 +19,14 @@ class PersistentDatabase(ABC):
     # Branch
 
     @abstractmethod
-    def create_branch(self, current_branch: UUID | None = None, name: str = "") -> UUID | None:
-        """Create a new branch and return its id if success or None if fail."""
+    def create_branch(self, current_branch: UUID | None = None, name: str = "Branch") -> UUID | None:
+        """Create a new branch and return its id if success or None if fail.
+
+        If `current_branch` is given, the new branch is a deep copy of it (messages included)
+        and takes its name; otherwise an empty branch named `name` is made. Branch names are
+        unique: a taken name gets a numeric suffix (`name 2`, `name 3`, ...). Returns None
+        if `current_branch` does not exist.
+        """
 
     @abstractmethod
     def get_branch_list(self) -> dict[str, UUID]:
@@ -28,11 +34,9 @@ class PersistentDatabase(ABC):
 
     @abstractmethod
     def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
-        """Replace the conversation info with those of the target.
+        """Replace the uuid, model and history of `current` with those of the target branch.
 
-        Raises:
-            KeyError: If no branch has this uuid.
-
+        Does nothing if no branch has this uuid.
         """
 
     @abstractmethod
@@ -40,24 +44,36 @@ class PersistentDatabase(ABC):
         """Remove the branch related to this uuid.
 
         Raises:
-            KeyError: If no branch has this uuid.
+            InvalidInstanceError: If no branch has this uuid.
 
         """
 
     @abstractmethod
     def add_message_to_branch(self, branch_id: UUID, role: Role, content: str) -> UUID | None:
-        """Append `message` at the end of the branch `branch_id`."""
+        """Append a message made of `role` and `content` at the end of the branch `branch_id`.
+
+        Return the id of the new message, or None if it could not be saved.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
 
     @abstractmethod
     def set_branch_model(self, branch: UUID, model: str) -> None:
-        """Tmp."""
+        """Set the model used by the branch `branch` to `model`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
 
     @abstractmethod
     def set_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.
 
-        True = Success
-        False = Fail
+        Return True on success, False if the branch or the persona does not exist
+        or the change could not be saved.
 
         """
 
@@ -72,6 +88,8 @@ class PersistentDatabase(ABC):
     @abstractmethod
     def create_persona(self, name: str, description: str, timestamp: datetime, prompt: str) -> Persona | None:
         """Create a persona and return its Class Version after adding it to the db.
+
+        Return None if the persona could not be created.
 
         Args:
             name: Display name of the persona.
@@ -90,7 +108,7 @@ class PersistentDatabase(ABC):
         """Return the persona `persona`.
 
         Raises:
-            KeyError: If no persona has this id.
+            InvalidInstanceError: If no persona has this id.
 
         """
 
@@ -106,6 +124,6 @@ class PersistentDatabase(ABC):
         """Update the persona `persona`; fields left to `None` are unchanged.
 
         Raises:
-            KeyError: If no persona has this id.
+            InvalidInstanceError: If no persona has this id.
 
         """

@@ -33,7 +33,7 @@ class MessageTable(Base):
     branch: Mapped[BranchTable] = relationship(back_populates="messages")
 
     def copy(self) -> MessageTable:
-        """Tmp."""
+        """Return an unsaved copy of the message, keeping its creation time."""
         new_message = MessageTable()
         new_message.created_at = self.created_at
         new_message.role = self.role
