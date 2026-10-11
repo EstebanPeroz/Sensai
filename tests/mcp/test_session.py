@@ -3,7 +3,8 @@ from unittest.mock import patch
 import pytest
 
 from sensai.mcp.config import MCPServerConfig
-from sensai.mcp.errors import MCPStartupError
+from sensai.mcp.discovery import MCPToolInfo
+from sensai.mcp.errors import MCPProtocolError, MCPStartupError
 from sensai.mcp.session import MCPServerSession
 
 
@@ -25,9 +26,13 @@ class AsyncContext:
 class FakeClientSession:
     def __init__(self) -> None:
         self.initialized = False
+        self.tools: list[object] = []
 
     async def initialize(self) -> None:
         self.initialized = True
+
+    async def list_tools(self) -> object:
+        return type("ToolList", (), {"tools": self.tools})()
 
 
 @pytest.mark.anyio
@@ -77,3 +82,44 @@ async def test_closes_session_and_server_process() -> None:
 
     assert client_context.closed is True
     assert stdio.closed is True
+
+
+@pytest.mark.anyio
+async def test_lists_tools_from_initialized_session() -> None:
+    stdio = AsyncContext(("read-stream", "write-stream"))
+    client = FakeClientSession()
+    client.tools = [
+        type(
+            "Tool",
+            (),
+            {
+                "name": "echo",
+                "description": "Echo a message",
+                "inputSchema": {"type": "object", "properties": {"message": {"type": "string"}}},
+            },
+        )(),
+    ]
+    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+
+    with (
+        patch("sensai.mcp.session.stdio_client", return_value=stdio),
+        patch("sensai.mcp.session.ClientSession", return_value=AsyncContext(client)),
+    ):
+        await session.start()
+        tools = await session.list_tools()
+
+    assert tools == [
+        MCPToolInfo(
+            name="echo",
+            description="Echo a message",
+            input_schema={"type": "object", "properties": {"message": {"type": "string"}}},
+        ),
+    ]
+
+
+@pytest.mark.anyio
+async def test_rejects_tool_listing_before_startup() -> None:
+    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+
+    with pytest.raises(MCPProtocolError, match="session is not started"):
+        await session.list_tools()

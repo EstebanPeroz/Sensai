@@ -7,7 +7,8 @@ import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from sensai.mcp.errors import MCPShutdownError, MCPStartupError
+from sensai.mcp.discovery import MCPToolInfo
+from sensai.mcp.errors import MCPProtocolError, MCPShutdownError, MCPStartupError
 
 if TYPE_CHECKING:
     from sensai.mcp.config import MCPServerConfig
@@ -59,3 +60,19 @@ class MCPServerSession:
         finally:
             self._exit_stack = None
             self._session = None
+
+    async def list_tools(self) -> list[MCPToolInfo]:
+        """Return the tools advertised by the initialized MCP server."""
+        if self._session is None:
+            msg = "MCP session is not started"
+            raise MCPProtocolError(msg)
+
+        result = await self._session.list_tools()
+        return [
+            MCPToolInfo(
+                name=tool.name,
+                description=tool.description,
+                input_schema=dict(tool.inputSchema),
+            )
+            for tool in result.tools
+        ]
