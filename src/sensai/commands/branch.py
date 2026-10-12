@@ -1,10 +1,8 @@
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, override
 from uuid import UUID
 
 import sensai.memory.persistent_db.error as db_err
-from sensai.commands.base import Command
-from sensai.memory.persistent_db import get_db
+from sensai.commands.base import StateCommand
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -15,12 +13,7 @@ if TYPE_CHECKING:
     from sensai.ui.adapter import UIAdapter
 
 
-@dataclass
-class _BranchCache:
-    branches_id: list[UUID]
-
-
-class Branch(Command):
+class Branch(StateCommand):
     """Branch command class to display or choose available models."""
 
     name = "branch"
@@ -30,17 +23,18 @@ class Branch(Command):
     _subcommands: dict[str, Callable[..., None]]
     _conv: Conversation
     _pm: ProviderManager
-    _db: PersistentDatabase
-    _cache: _BranchCache
+    _cache_id: list[UUID]
 
-    def __init__(self, ui: UIAdapter, conv: Conversation, provider_manager: ProviderManager) -> None:
+    def __init__(
+        self, ui: UIAdapter, db: PersistentDatabase, conv: Conversation, provider_manager: ProviderManager
+    ) -> None:
         """Initialize the Branch command and its subcommand map.
 
         Raise:
             DatabaseError: Failed to get db
 
         """
-        super().__init__(ui)
+        super().__init__(ui, db)
         self._subcommands = {
             "list": self._list,
             "set": self._set,
@@ -50,12 +44,7 @@ class Branch(Command):
         }
         self._conv = conv
         self._pm = provider_manager
-        self._cache = _BranchCache([])
-        db = get_db()
-        if not db:
-            msg = "Fail to access db."
-            raise db_err.DatabaseError(msg)
-        self._db = db
+        self._cache_id = []
 
     def _list(self) -> None:
         """Display the available branches."""
@@ -150,9 +139,9 @@ class Branch(Command):
         return []
 
     def _uuid_completion(self) -> list[str]:
-        if self._cache.branches_id == []:
+        if self._cache_id == []:
             self._fetch_branches()
-        return [str(uuid) for uuid in self._cache.branches_id]
+        return [str(uuid) for uuid in self._cache_id]
 
     @staticmethod
     def _try_parse_uuid(value: str) -> UUID | None:
@@ -162,8 +151,8 @@ class Branch(Command):
             return None
 
     def _fetch_branches(self) -> dict[UUID, str]:
-        self._cache.branches_id.clear()
+        self._cache_id.clear()
         branches: dict[UUID, str] = self._db.get_branches()
         for branch_id in branches:
-            self._cache.branches_id.append(branch_id)
+            self._cache_id.append(branch_id)
         return branches

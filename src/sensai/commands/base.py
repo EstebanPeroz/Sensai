@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
+    from sensai.memory.persistent_db.adapter import PersistentDatabase
     from sensai.ui.adapter import UIAdapter
 
 
@@ -24,3 +25,14 @@ class Command(ABC):
         """Return the values the command's argument can take, for completion."""
         del args
         return []
+
+
+class StateCommand(Command):
+    """Command updating the state of the conversation or interacting with the db."""
+
+    _db: PersistentDatabase
+
+    def __init__(self, ui: UIAdapter, db: PersistentDatabase) -> None:
+        """Initialize the command with the UI it reports to and the db."""
+        super().__init__(ui)
+        self._db = db

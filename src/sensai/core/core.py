@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
+    from sensai.memory.persistent_db.adapter import PersistentDatabase
 
 
 class Core:
@@ -51,7 +52,7 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         self.conversation = Conversation(self._provider_manager, self._persona_manager)
-        self._command_registry = self._build_command_registry()
+        self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
@@ -80,13 +81,13 @@ class Core:
 
         self._ui.close()
 
-    def _build_command_registry(self) -> CommandRegistry:
+    def _build_command_registry(self, db: PersistentDatabase) -> CommandRegistry:
         """Build a command registry with all available commands."""
         registry = CommandRegistry(
             [
                 Model(self._ui, self._provider_manager),
                 PersonaCommand(self._ui, self._persona_manager),
-                Branch(self._ui, self.conversation, self._provider_manager),
+                Branch(self._ui, db, self.conversation, self._provider_manager),
             ]
         )
         registry.register_command(Help(self._ui, registry))

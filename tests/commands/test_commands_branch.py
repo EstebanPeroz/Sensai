@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from sensai.commands.branch import Branch
-from sensai.memory.persistent_db.error import DatabaseError, InvalidInstanceError
+from sensai.memory.persistent_db.error import InvalidInstanceError
 from tests.commands.fakes import FakeUI
 
 CURRENT = uuid4()
@@ -13,10 +13,8 @@ INVALID_UUID = "parameter is not a valid UUID."
 
 
 @pytest.fixture
-def db(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
-    database = MagicMock()
-    monkeypatch.setattr("sensai.commands.branch.get_db", lambda: database)
-    return database
+def db() -> MagicMock:
+    return MagicMock()
 
 
 @pytest.fixture
@@ -38,22 +36,8 @@ def load_conversation(fake_ui: FakeUI) -> MagicMock:
 
 
 @pytest.fixture
-def branch(fake_ui: FakeUI, conv: MagicMock, provider_manager: MagicMock, db: MagicMock) -> Branch:  # noqa: ARG001
-    return Branch(fake_ui, conv, provider_manager)
-
-
-class TestInit:
-    def test_without_database_raises(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        fake_ui: FakeUI,
-        conv: MagicMock,
-        provider_manager: MagicMock,
-    ) -> None:
-        monkeypatch.setattr("sensai.commands.branch.get_db", lambda: None)
-
-        with pytest.raises(DatabaseError):
-            Branch(fake_ui, conv, provider_manager)
+def branch(fake_ui: FakeUI, conv: MagicMock, provider_manager: MagicMock, db: MagicMock) -> Branch:
+    return Branch(fake_ui, db, conv, provider_manager)
 
 
 class TestDispatch:
@@ -97,6 +81,36 @@ class TestDispatch:
 
     def test_completions_are_the_sorted_subcommands(self, branch: Branch) -> None:
         assert branch.completions([]) == ["fork", "list", "remove", "rename", "set"]
+
+
+class TestCompletions:
+    @pytest.mark.parametrize("subcommand", ["set", "remove", "rename"])
+    def test_uuid_subcommands_complete_with_branch_ids(self, branch: Branch, db: MagicMock, subcommand: str) -> None:
+        db.get_branches.return_value = {CURRENT: "Branch", OTHER: "Branch 2"}
+
+        assert branch.completions([subcommand]) == [str(CURRENT), str(OTHER)]
+
+    @pytest.mark.parametrize("subcommand", ["list", "fork", "explode"])
+    def test_other_subcommands_have_no_completion(self, branch: Branch, db: MagicMock, subcommand: str) -> None:
+        assert branch.completions([subcommand]) == []
+        db.get_branches.assert_not_called()
+
+    def test_words_after_the_uuid_have_no_completion(self, branch: Branch, db: MagicMock) -> None:
+        assert branch.completions(["rename", str(OTHER)]) == []
+        db.get_branches.assert_not_called()
+
+    def test_branches_are_fetched_once_while_cached(self, branch: Branch, db: MagicMock) -> None:
+        db.get_branches.return_value = {CURRENT: "Branch"}
+
+        branch.completions(["set"])
+        branch.completions(["remove"])
+
+        db.get_branches.assert_called_once()
+
+    def test_without_branches_returns_nothing(self, branch: Branch, db: MagicMock) -> None:
+        db.get_branches.return_value = {}
+
+        assert branch.completions(["set"]) == []
 
 
 class TestList:
