@@ -20,8 +20,7 @@ class ReAct:
     def generate_answer(self, messages: list[dict]) -> Iterator[ChatResponse]:
         """Stream the answer to `messages`, running the tools the model asks for between two requests.
 
-        The tool calls and their results are appended to `messages`. Once `max_iterations` requests have
-        asked for tools, or when the model cannot use tools, a last request is sent without them.
+        Builds the answer using the ReAct loop.
         """
         provider = self._provider_manager.provider()
         model = provider.current_model()
