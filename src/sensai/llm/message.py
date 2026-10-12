@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 class Role(StrEnum):
@@ -15,6 +19,7 @@ class Role(StrEnum):
 class Message:
     """One role-tagged turn of a conversation, mapping 1:1 onto a chat message."""
 
+    uuid: UUID | None
     role: Role
     content: str
 
