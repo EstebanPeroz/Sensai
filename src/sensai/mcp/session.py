@@ -8,7 +8,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from sensai.mcp.discovery import MCPToolInfo
-from sensai.mcp.errors import MCPProtocolError, MCPShutdownError, MCPStartupError
+from sensai.mcp.errors import MCPCallError, MCPProtocolError, MCPShutdownError, MCPStartupError
 
 if TYPE_CHECKING:
     from sensai.mcp.config import MCPServerConfig
@@ -76,3 +76,25 @@ class MCPServerSession:
             )
             for tool in result.tools
         ]
+
+    async def call_tool(self, name: str, arguments: dict[str, object]) -> str:
+        """Call one MCP tool and return its simple text result."""
+        if self._session is None:
+            msg = "MCP session is not started"
+            raise MCPCallError(msg)
+
+        try:
+            with anyio.fail_after(self._config.call_timeout):
+                result = await self._session.call_tool(name, arguments)
+        except Exception as err:
+            if isinstance(err, MCPCallError):
+                raise
+            raise MCPCallError(str(err)) from err
+
+        if result.isError:
+            msg = "MCP tool returned an error"
+            raise MCPCallError(msg)
+        if len(result.content) != 1 or result.content[0].type != "text":
+            msg = "MCP tool returned a non-text result"
+            raise MCPCallError(msg)
+        return result.content[0].text
