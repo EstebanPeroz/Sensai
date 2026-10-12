@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, override
 from uuid import UUID
 
@@ -14,17 +15,23 @@ if TYPE_CHECKING:
     from sensai.ui.adapter import UIAdapter
 
 
+@dataclass
+class _BranchCache:
+    branches_id: list[UUID]
+
+
 class Branch(Command):
     """Branch command class to display or choose available models."""
 
     name = "branch"
     help = "Update the branch or load them"
-    usage = "/branch list, branch set <uuid>, branch remove <uuid>, branch rename <uuid> <new_name>, branch derive"
+    usage = "/branch list, branch set <uuid>, branch remove <uuid>, branch rename <uuid> <new_name>, branch fork"
 
     _subcommands: dict[str, Callable[..., None]]
     _conv: Conversation
     _pm: ProviderManager
     _db: PersistentDatabase
+    _cache: _BranchCache
 
     def __init__(self, ui: UIAdapter, conv: Conversation, provider_manager: ProviderManager) -> None:
         """Initialize the Branch command and its subcommand map.
@@ -39,10 +46,11 @@ class Branch(Command):
             "set": self._set,
             "remove": self._remove,
             "rename": self._rename,
-            "derive": self._derive,
+            "fork": self._fork,
         }
         self._conv = conv
         self._pm = provider_manager
+        self._cache = _BranchCache([])
         db = get_db()
         if not db:
             msg = "Fail to access db."
@@ -51,7 +59,7 @@ class Branch(Command):
 
     def _list(self) -> None:
         """Display the available branches."""
-        branches: dict[UUID, str] = self._db.get_branches()
+        branches: dict[UUID, str] = self._fetch_branches()
         for i, (branch_id, name) in enumerate(branches.items()):
             self._ui.send_system_message(
                 str(branch_id) + ": " + name,
@@ -104,10 +112,10 @@ class Branch(Command):
             return
         self._ui.send_system_message(f"Branch {uuid} renamed {new_name}")
 
-    def _derive(self) -> None:
+    def _fork(self) -> None:
         """Derive a new branch from the current one."""
         if self._conv.uuid is None:
-            self._ui.send_system_message("You cannot derive without a conversation started/setted")
+            self._ui.send_system_message("You cannot fork without a conversation started/setted")
             return
         uuid: UUID | None = self._db.create_branch(self._conv.uuid)
         if uuid is None:
@@ -132,9 +140,15 @@ class Branch(Command):
             self._ui.send_system_message(f"Invalid arguments for '{name}'. Usage: {self.usage}")
 
     @override
-    def completions(self) -> list[str]:
+    def completions(self, args: list[str]) -> list[str]:
         """Return the available subcommand names."""
-        return sorted(self._subcommands)
+        if len(args) == 0:
+            return sorted(self._subcommands)
+        if args[0] == "list":
+            if self._cache.branches_id == []:
+                self._fetch_branches()
+            return [str(uuid) for uuid in self._cache.branches_id]
+        return []
 
     @staticmethod
     def _try_parse_uuid(value: str) -> UUID | None:
@@ -142,3 +156,10 @@ class Branch(Command):
             return UUID(value)
         except ValueError, TypeError, AttributeError:
             return None
+
+    def _fetch_branches(self) -> dict[UUID, str]:
+        self._cache.branches_id.clear()
+        branches: dict[UUID, str] = self._db.get_branches()
+        for branch_id in branches:
+            self._cache.branches_id.append(branch_id)
+        return branches
