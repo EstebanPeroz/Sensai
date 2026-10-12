@@ -13,7 +13,7 @@ from sensai.llm.message import Role
 from sensai.llm.persona import DuplicatePersonaError
 from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
-from sensai.memory.persistent_db import get_db
+from sensai.memory.persistent_db import db
 from sensai.memory.persistent_db.error import DbConnectionError
 
 if TYPE_CHECKING:
@@ -36,7 +36,7 @@ class Core:
         self._ui = ui
         self._settings = settings
 
-        db = get_db()
+        db = db()
         if db is None:
             msg = "no persistent database"
             raise DbConnectionError(msg)

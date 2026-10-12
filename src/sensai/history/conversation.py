@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
 from sensai.memory.history import History
-from sensai.memory.persistent_db import get_db
+from sensai.memory.persistent_db import db
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -31,7 +31,7 @@ class Conversation:
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Init the conversation in the DB if first message."""
-        db = get_db()
+        db = db()
         if db is None:
             return
         self.uuid = db.create_branch(uuid, name)
@@ -40,7 +40,7 @@ class Conversation:
 
     def add_message(self, role: Role, content: str, ui: UIAdapter) -> bool:
         """Add message to History and db."""
-        db = get_db()
+        db = db()
         if not self.uuid or not db:
             ui.send_system_message("Failed to add message")
             return False

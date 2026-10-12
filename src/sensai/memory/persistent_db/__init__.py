@@ -1,4 +1,4 @@
 from sensai.memory.persistent_db.adapter import PersistentDatabase
-from sensai.memory.persistent_db.base import get_db
+from sensai.memory.persistent_db.base import db
 
-__all__ = ["PersistentDatabase", "get_db"]
+__all__ = ["PersistentDatabase", "db"]

@@ -1,4 +1,6 @@
-db.persistent.url= "sqlite:///persistent.db"
+[db]
+persistent.url= "sqlite:///persistent.db"
+
 
 [llm]
 embedding_model = "nomic-embed-text"
