@@ -30,7 +30,7 @@ class Conversation:
         self.history = History()
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
-        """Tmp."""
+        """Init the conversation in the DB if first message."""
         db = get_db()
         if db is None:
             return
@@ -39,7 +39,7 @@ class Conversation:
             db.set_branch_model(self.uuid, self._provider_manager.provider().current_model())
 
     def add_message(self, role: Role, content: str, ui: UIAdapter) -> bool:
-        """Tp."""
+        """Add message to History and db."""
         db = get_db()
         if not self.uuid or not db:
             ui.send_system_message("Failed to add message")
