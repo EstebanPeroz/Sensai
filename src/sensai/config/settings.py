@@ -76,11 +76,31 @@ class WebSettings:
 
 
 @dataclass
+class PersistentDBSettings:
+    """Settings of the [db.persistent] table: the persistent database."""
+
+    url: str | None = None
+
+    def __post_init__(self) -> None:
+        """Check the URL, which comes unchecked from the settings file."""
+        if self.url is not None:
+            _check_name(self.url, "db.persistent.url")
+
+
+@dataclass
+class DBSettings:
+    """Settings of the [db] table."""
+
+    persistent: PersistentDBSettings = field(default_factory=PersistentDBSettings)
+
+
+@dataclass
 class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
     llm: LLMSettings = field(default_factory=LLMSettings)
     web: WebSettings = field(default_factory=WebSettings)
+    db: DBSettings = field(default_factory=DBSettings)
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -113,7 +133,14 @@ def load_settings(path: Path | None = None) -> Settings:
                 if provider.name in llm
             }
             web = WebSettings(**_pop_table(data, "web"))
-            return Settings(llm=LLMSettings(**llm, providers=providers), web=web, **data)
+            db = _pop_table(data, "db")
+            persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
+            return Settings(
+                llm=LLMSettings(**llm, providers=providers),
+                web=web,
+                db=DBSettings(**db, persistent=persistent),
+                **data,
+            )
         except (TypeError, ValueError) as err:
             msg = f"invalid settings in {source}: {err}"
     raise ConfigError(msg)
