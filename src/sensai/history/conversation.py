@@ -20,6 +20,7 @@ class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
     _provider_manager: ProviderManager
+    _persona_manager: PersonaManager
     history: History
     uuid: UUID | None = None
 
@@ -91,7 +92,7 @@ class Conversation:
         messages = self.history.to_json()
         persona = self._persona_manager.active_persona()
         if persona is not None:
-            messages = persona.apply_to_payload(messages)["messages"]
+            messages = [persona.to_payload(), messages]
         chunks = self._provider_manager.provider().chat(
             {"model": self._provider_manager.provider().current_model(), "messages": messages},
             stream=True,
