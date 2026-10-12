@@ -267,6 +267,7 @@ class SqlAlchemy(PersistentDatabase):
             InvalidPersonaError: If a field is given but empty, before anything is stored.
             DatabaseError: If the update could not be stored, which a `name` another
                 persona already uses is enough to cause (names are unique).
+
         """
         with Session(self._engine) as session:
             source = session.get(PersonaTable, persona)

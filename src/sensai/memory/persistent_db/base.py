@@ -27,6 +27,6 @@ def set_db(settings: PersistentDBSettings) -> None:
     _State.db = SqlAlchemy(settings.url)
 
 
-def db() -> PersistentDatabase | None:
+def get_db() -> PersistentDatabase | None:
     """Get the db."""
     return _State.db
