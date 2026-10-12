@@ -140,9 +140,15 @@ class Branch(Command):
             self._ui.send_system_message(f"Invalid arguments for '{name}'. Usage: {self.usage}")
 
     @override
-    def completions(self) -> list[str]:
+    def completions(self, args: list[str]) -> list[str]:
         """Return the available subcommand names."""
-        return sorted(self._subcommands)
+        if len(args) == 0:
+            return sorted(self._subcommands)
+        if args[0] == "set":
+            if self._cache.branches_id == []:
+                self._fetch_branches()
+            return [str(uuid) for uuid in self._cache.branches_id]
+        return []
 
     @staticmethod
     def _try_parse_uuid(value: str) -> UUID | None:
