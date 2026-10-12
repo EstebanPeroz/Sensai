@@ -165,6 +165,7 @@ class SqlAlchemy(PersistentDatabase):
             source.model_name = model
             session.commit()
 
+    @override
     def set_branch_name(self, branch: UUID, name: str) -> None:
         """Set the name used by the branch `branch`.
 
@@ -198,6 +199,28 @@ class SqlAlchemy(PersistentDatabase):
             except SQLAlchemyError:
                 return False
         return True
+
+    @override
+    def export_branch(self, branch: UUID) -> dict | None:
+        """Export the branch based on the uuid."""
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            if source is None:
+                return None
+            export: dict = {
+                "branch": {
+                    "name": source.name,
+                    "model": source.model_name,
+                },
+                "messages": [{"role": message.role.value, "content": message.content} for message in source.messages],
+            }
+            if source.persona:
+                export["persona"] = {
+                    "name": source.persona.name,
+                    "prompt": source.persona.prompt,
+                    "description": source.persona.description,
+                }
+            return export
 
     @override
     def get_messages(self, branch: UUID) -> list[Message]:

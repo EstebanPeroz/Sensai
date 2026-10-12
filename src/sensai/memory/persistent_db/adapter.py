@@ -86,6 +86,10 @@ class PersistentDatabase(ABC):
 
         """
 
+    @abstractmethod
+    def export_branch(self, branch: UUID) -> dict | None:
+        """Export the branch based on the uuid."""
+
     # Message
 
     @abstractmethod
