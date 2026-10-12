@@ -136,9 +136,9 @@ class Persona:
             reason = "key(s) that must be text: " + ", ".join(not_text)
             raise PersonaFileError(path, reason)
 
-    def apply_to_payload(self, messages: list[dict]) -> dict:
+    def to_payload(self) -> dict:
         """Prepare to the paylod, its content."""
-        return {"messages": [{"role": "system", "content": self.prompt}, *messages]}
+        return {"role": "system", "content": self.prompt}
 
 
 DEFAULT_PERSONA_FILE = "personas/analyst.toml"
