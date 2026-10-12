@@ -142,13 +142,17 @@ class Branch(Command):
     @override
     def completions(self, args: list[str]) -> list[str]:
         """Return the available subcommand names."""
-        if len(args) == 0:
+        size: int = len(args)
+        if size == 0:
             return sorted(self._subcommands)
-        if args[0] == "set":
-            if self._cache.branches_id == []:
-                self._fetch_branches()
-            return [str(uuid) for uuid in self._cache.branches_id]
+        if size == 1 and args[0] in ["set", "remove", "rename"]:
+            return self._uuid_completion()
         return []
+
+    def _uuid_completion(self) -> list[str]:
+        if self._cache.branches_id == []:
+            self._fetch_branches()
+        return [str(uuid) for uuid in self._cache.branches_id]
 
     @staticmethod
     def _try_parse_uuid(value: str) -> UUID | None:
