@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sensai.error import SensaiError
+
 if TYPE_CHECKING:
     from sensai.llm.adapter import ProviderAdapter
 
@@ -18,10 +20,13 @@ class Embedder:
         self._model = model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        """Return one vector per text, or an empty list when the embedding model is unavailable."""
+        """Return one vector per text, or an empty list when the embedding model is unavailable or the call fails."""
         if not texts:
             return []
-        vectors = self._provider.embeddings(texts, self._model)
+        try:
+            vectors = self._provider.embeddings(texts, self._model)
+        except SensaiError:
+            return []
         if len(vectors) != len(texts):
             return []
         return vectors

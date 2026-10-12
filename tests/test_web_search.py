@@ -8,6 +8,7 @@ from ddgs.exceptions import RatelimitException
 from sensai.config.settings import WebSettings
 from sensai.error import SensaiError
 from sensai.llm.embedder import Embedder
+from sensai.llm.error import RequestCallError, RequestStatusError
 from sensai.tools.web._ddgs import DuckDuckGoSearch
 from sensai.tools.web._http import HttpFetch
 from sensai.tools.web._ollama import OllamaWeb
@@ -289,6 +290,13 @@ class TestEmbedder:
 
         assert Embedder(provider, "m").embed(["a"]) == []
 
+    @pytest.mark.parametrize("error", [RequestCallError(" Post -> timed out"), RequestStatusError(500)])
+    def test_provider_error_gives_no_vectors(self, error: SensaiError) -> None:
+        provider = MagicMock()
+        provider.embeddings.side_effect = error
+
+        assert Embedder(provider, "m").embed(["a"]) == []
+
     def test_empty_input_skips_provider(self) -> None:
         provider = MagicMock()
 
@@ -369,6 +377,16 @@ class TestWebFetchTool:
 
         assert len(output) <= MAX_TOKENS * 4
         assert output.endswith("[…]")
+
+    def test_embedding_failure_keeps_first_passages(self) -> None:
+        provider = MagicMock()
+        provider.embeddings.side_effect = RequestCallError(" Post -> timed out")
+        page = Page("T", "https://a.com", " ".join(f"w{i}" for i in range(1000)))
+        output = WebFetchTool(StubFetch("a", page), Embedder(provider, "m")).run(url="https://a.com", query="q")
+
+        _, *passages = output.split("\n\n")
+        assert passages[0].startswith("w0 ")
+        assert passages[-1].startswith("w450 ")
 
     def test_failure_is_reported_as_unavailable(self) -> None:
         output = WebFetchTool(StubFetch("a"), KeywordEmbedder()).run(url="https://a.com", query="q")
