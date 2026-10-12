@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from sensai import ui
 from sensai.commands.base import Command, StateCommand
 from sensai.commands.branch import Branch
-from sensai.commands.data_tranfer.export import Export
+from sensai.commands.data_tranfer import Export, Import
 from sensai.commands.help import Help
 from sensai.commands.model import Model
 from sensai.commands.persona import PersonaCommand
@@ -93,6 +93,7 @@ class Core:
                 PersonaCommand(self._persona_manager),
                 Branch(self.conversation, self._provider_manager),
                 Export(self.conversation),
+                Import(),
             ]
         )
         registry.register_command(Help(registry))

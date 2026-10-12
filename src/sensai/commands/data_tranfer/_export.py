@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 from uuid import UUID
 
 from sensai.commands.base import StateCommand
@@ -23,6 +23,7 @@ class Export(StateCommand):
         super().__init__()
         self._conv = conv
 
+    @override
     def execute(self, *args: str) -> None:
         """Execute a export on the current or given Branch uuid."""
         try:
@@ -53,6 +54,7 @@ class Export(StateCommand):
             file.write(json.dumps(export))
             self._ui.send_system_message(f"Branch {uuid} exported as {filename}")
 
+    @override
     def completions(self, args: list[str]) -> list[str]:
         """Complete the potential export param."""
         if len(args) != 0:
