@@ -1,4 +1,5 @@
 import contextlib
+import os
 from typing import TYPE_CHECKING
 
 from sensai import ui
@@ -8,18 +9,23 @@ from sensai.commands.persona import PersonaCommand
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
+from sensai.llm.embedder import Embedder
 from sensai.llm.error import ModelError
 from sensai.llm.message import Role
 from sensai.llm.persona import DuplicatePersonaError
 from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
+from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.tools.tool_manager import ToolManager
+from sensai.tools.web._web_search import web_tools
 
 if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
+    from sensai.tools.tool import Tool
 
 
 class Core:
@@ -49,7 +55,8 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager)
+        react = ReAct(self._provider_manager, ToolManager(self._build_tools()))
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, react)
         self._command_registry = self._build_command_registry()
 
     def run(self) -> None:
@@ -89,6 +96,14 @@ class Core:
         )
         registry.register_command(Help(self._ui, registry))
         return registry
+
+    def _build_tools(self) -> list[Tool]:
+        """Build the tools available to the model: web search and fetch, which need an embedding model."""
+        embedding_model = self._settings.llm.embedding_model
+        if embedding_model is None:
+            return []
+        embedder = Embedder(self._provider_manager.provider(), embedding_model)
+        return web_tools(self._settings.web, os.environ.get("OLLAMA_API_KEY"), embedder)
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""
