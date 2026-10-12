@@ -29,6 +29,10 @@ class PersistentDatabase(ABC):
         """
 
     @abstractmethod
+    def import_branch(self, config: dict) -> None:
+        """Make a branch based on a config."""
+
+    @abstractmethod
     def get_branches(self) -> dict[UUID, str]:
         """Return the dict of all branches with name and uuid."""
 

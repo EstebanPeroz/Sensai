@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, override
 
 from sqlalchemy import Connection, Engine, create_engine, event, select
@@ -12,7 +13,6 @@ from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable, Mes
 
 if TYPE_CHECKING:
     import sqlite3
-    from datetime import datetime
     from uuid import UUID
 
     from sensai.history.conversation import Conversation
@@ -26,6 +26,7 @@ class SqlAlchemy(PersistentDatabase):
     _conn: Connection
     _uuid_error_essage: str = "given uuid is invalid"
     _update_error_message: str = "the update could not be stored"
+    _import_error_message: str = "the branch could not be imported, the config is invalid"
 
     def __init__(self, url: str) -> None:
         """Connect to the database at `url` and create the missing tables.
@@ -71,6 +72,38 @@ class SqlAlchemy(PersistentDatabase):
             except SQLAlchemyError:
                 return None
             return branch.id
+
+    @override
+    def import_branch(self, config: dict) -> None:
+        """Make a branch based on a config, as produced by `export_branch`.
+
+        The persona is reused if one has the same name, otherwise it is created.
+        The branch name is made unique if it is already used.
+
+        Raises:
+            DatabaseError: If the config is malformed or the branch could not be stored.
+
+        """
+        try:
+            branch_config = config["branch"]
+            name = str(branch_config["name"])
+            model = str(branch_config["model"])
+            messages = [(Role(m["role"]), str(m["content"])) for m in config.get("messages", [])]
+        except KeyError, TypeError, ValueError, AttributeError:
+            raise DatabaseError(self._import_error_message) from None
+
+        with Session(self._engine) as session:
+            branch = BranchTable(name=self._free_name(session, name), model_name=model)
+            start = datetime.now(tz=UTC)
+            for i, (role, content) in enumerate(messages):
+                branch.messages.append(
+                    MessageTable(role=role, content=content, created_at=start + timedelta(microseconds=i))
+                )
+            session.add(branch)
+            try:
+                session.commit()
+            except SQLAlchemyError:
+                raise DatabaseError(self._import_error_message) from None
 
     @staticmethod
     def _free_name(session: Session, base: str) -> str:
