@@ -7,3 +7,7 @@ embedding_model = "nomic-embed-text"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"
+
+[web]
+api_base_url = "https://ollama.com/"
+timeout = 10.0

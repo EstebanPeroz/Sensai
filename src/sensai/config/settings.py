@@ -57,6 +57,25 @@ class LLMSettings:
 
 
 @dataclass
+class WebSettings:
+    """Settings of the [web] table, used by the web_search and web_fetch tools.
+
+    The Ollama API key is a secret: it is read from the OLLAMA_API_KEY environment variable, never from this file.
+    """
+
+    api_base_url: str = "https://ollama.com/"
+    timeout: float = 10.0
+
+    def __post_init__(self) -> None:
+        """Check the values, which come unchecked from the settings file."""
+        _check_name(self.api_base_url, "web.api_base_url")
+        _check_url(self.api_base_url, "web.api_base_url")
+        if isinstance(self.timeout, bool) or not isinstance(self.timeout, int | float) or self.timeout <= 0:
+            msg = f"web.timeout must be a positive number, got {self.timeout!r}"
+            raise TypeError(msg)
+
+
+@dataclass
 class PersistentDBSettings:
     """Settings of the [db.persistent] table: the persistent database."""
 
@@ -80,6 +99,7 @@ class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
     llm: LLMSettings = field(default_factory=LLMSettings)
+    web: WebSettings = field(default_factory=WebSettings)
     db: DBSettings = field(default_factory=DBSettings)
 
 
@@ -112,10 +132,12 @@ def load_settings(path: Path | None = None) -> Settings:
                 for provider in PROVIDERS
                 if provider.name in llm
             }
+            web = WebSettings(**_pop_table(data, "web"))
             db = _pop_table(data, "db")
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
+                web=web,
                 db=DBSettings(**db, persistent=persistent),
                 **data,
             )

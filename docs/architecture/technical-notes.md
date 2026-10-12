@@ -55,3 +55,29 @@ matter less than expected. Chunks can be embedded in a batch
 `web_search` tool, LangSearch) versus keyless tools (`duckduckgo-search`).
 The notes call for **a comparison table across content size, relevance, and
 speed** before picking one.
+
+**Comparison (2026-10-08):** three pipelines run on 6 real queries (one in
+French), each one being a search, then a fetch of the first result. Sizes are
+estimated at 4 characters per token, and passages were kept without
+embeddings (first chunks of the page).
+
+| Pipeline | Search (median) | Fetch (median) | Raw search output | Raw page (mean) | Answer found after fetch | Search + fetch output (max) |
+|---|---|---|---|---|---|---|
+| Ollama search + Ollama fetch | 0.93 s | 1.35 s | ~22,000 tok | ~2,650 tok | 6/6 | ~1,520 tok |
+| Ollama search + trafilatura | 0.85 s | 0.90 s | ~22,000 tok | ~10,200 tok | 6/6 | ~1,500 tok |
+| ddgs + trafilatura | 1.46 s | 0.34 s | ~570 tok | ~9,250 tok | 5/6 | ~1,530 tok |
+
+- **Size:** Ollama's `web_search` returns a large part of each page in its
+  results (~22,000 tokens for 5 hits), so it must never reach the model raw.
+  Our `web_search` cuts it to ~520 tokens with no answer lost, and
+  `web_fetch` keeps about 1,000 tokens of a page at most.
+- **Relevance:** Ollama's `web_fetch` returns shorter, cleaner pages. On the
+  same URLs, trafilatura was blocked twice (HTTP 403 on Britannica and
+  Wikipedia). The one ddgs miss had the answer in the page, past the first
+  kept chunks: ranking passages by embeddings is meant to fix that case.
+- **Speed:** a search plus a fetch takes 1.8 to 2.3 s (medians) on every pipeline.
+
+**Choice:** Ollama's API first for both search and fetch, `ddgs` and a direct
+download read by `trafilatura` as fallback. The fallback is about
+availability, not quality: it keeps the tools working without an API key,
+when free-tier quotas run out, or when the API is down.
