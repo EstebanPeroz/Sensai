@@ -83,7 +83,7 @@ class TestDispatch:
             ("rename",),
             ("rename", str(OTHER)),
             ("rename", str(OTHER), "name", "extra"),
-            ("derive", "extra"),
+            ("fork", "extra"),
         ],
     )
     def test_wrong_number_of_arguments_reports_usage(
@@ -96,7 +96,7 @@ class TestDispatch:
         assert branch.usage in fake_ui.messages[0]
 
     def test_completions_are_the_sorted_subcommands(self, branch: Branch) -> None:
-        assert branch.completions() == ["derive", "list", "remove", "rename", "set"]
+        assert branch.completions() == ["fork", "list", "remove", "rename", "set"]
 
 
 class TestList:
@@ -219,7 +219,7 @@ class TestDerive:
     ) -> None:
         db.create_branch.return_value = OTHER
 
-        branch.execute("derive")
+        branch.execute("fork")
 
         db.create_branch.assert_called_once_with(CURRENT)
         db.get_branch.assert_called_once_with(current=conv, target_branch=OTHER, provider_manager=provider_manager)
@@ -235,9 +235,9 @@ class TestDerive:
     ) -> None:
         conv.uuid = None
 
-        branch.execute("derive")
+        branch.execute("fork")
 
-        assert fake_ui.messages == ["You cannot derive without a conversation started/setted"]
+        assert fake_ui.messages == ["You cannot fork without a conversation started/setted"]
         db.create_branch.assert_not_called()
 
     def test_failed_creation_is_reported_and_nothing_is_loaded(
@@ -249,7 +249,7 @@ class TestDerive:
     ) -> None:
         db.create_branch.return_value = None
 
-        branch.execute("derive")
+        branch.execute("fork")
 
         assert fake_ui.messages == ["Failed to make a new branch"]
         db.get_branch.assert_not_called()
