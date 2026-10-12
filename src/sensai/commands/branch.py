@@ -4,12 +4,13 @@ from uuid import UUID
 import sensai.memory.persistent_db.error as db_err
 from sensai.commands.base import Command
 from sensai.memory.persistent_db import get_db
-from sensai.memory.persistent_db.adapter import PersistentDatabase
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sensai.history.conversation import Conversation
+    from sensai.llm.provider_manager import ProviderManager
+    from sensai.memory.persistent_db.adapter import PersistentDatabase
     from sensai.ui.adapter import UIAdapter
 
 
@@ -21,10 +22,11 @@ class Branch(Command):
     usage = "/branch list, branch set <uuid>, branch remove <uuid>, branch rename <uuid> <new_name>, branch derive"
 
     _subcommands: dict[str, Callable[..., None]]
-    _conversation: Conversation
+    _conv: Conversation
+    _pm: ProviderManager
     _db: PersistentDatabase
 
-    def __init__(self, ui: UIAdapter, conv: Conversation) -> None:
+    def __init__(self, ui: UIAdapter, conv: Conversation, provider_manager: ProviderManager) -> None:
         """Initialize the Branch command and its subcommand map.
 
         Raise:
@@ -39,11 +41,13 @@ class Branch(Command):
             "rename": self._rename,
             "derive": self._derive,
         }
-        self._conversation = conv
+        self._conv = conv
+        self._pm = provider_manager
         db = get_db()
         if not db:
             msg = "Fail to access db."
             raise db_err.DatabaseError(msg)
+        self._db = db
 
     def _list(self) -> None:
         """Display the available branches."""
@@ -62,14 +66,14 @@ class Branch(Command):
             return
         try:
             self._db.get_branch(
-                current=self._conversation,
+                current=self._conv,
                 target_branch=target_id,
-                provider_manager=self._conversation._provider_manager,
+                provider_manager=self._pm,
             )
         except db_err.InvalidInstanceError as err:
             self._ui.send_system_message(str(err))
             return
-        self._ui.load_conversation(self._conversation.history)
+        self._ui.load_conversation(self._conv.history)
 
     def _remove(self, uuid: str) -> None:
         """Remove the branch identified by uuid."""
@@ -77,7 +81,7 @@ class Branch(Command):
         if target_id is None:
             self._ui.send_system_message("parameter is not a valid UUID.")
             return
-        if target_id == self._conversation.uuid:
+        if target_id == self._conv.uuid:
             self._ui.send_system_message("You cannot remove your current branch.")
             return
         try:
@@ -102,10 +106,10 @@ class Branch(Command):
 
     def _derive(self) -> None:
         """Derive a new branch from the current one."""
-        if self._conversation.uuid is None:
+        if self._conv.uuid is None:
             self._ui.send_system_message("You cannot derive without a conversation started/setted")
             return
-        uuid: UUID | None = self._db.create_branch(self._conversation.uuid)
+        uuid: UUID | None = self._db.create_branch(self._conv.uuid)
         if uuid is None:
             self._ui.send_system_message("Failed to make a new branch")
             return

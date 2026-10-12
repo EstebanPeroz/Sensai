@@ -86,7 +86,7 @@ class Core:
             [
                 Model(self._ui, self._provider_manager),
                 PersonaCommand(self._ui, self._persona_manager),
-                Branch(self._ui, self.conversation),
+                Branch(self._ui, self.conversation, self._provider_manager),
             ]
         )
         registry.register_command(Help(self._ui, registry))
