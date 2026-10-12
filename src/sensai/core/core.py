@@ -1,15 +1,21 @@
+import contextlib
 from typing import TYPE_CHECKING
 
 from sensai import ui
 from sensai.commands.branch import Branch
 from sensai.commands.help import Help
 from sensai.commands.model import Model
+from sensai.commands.persona import PersonaCommand
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
 from sensai.llm.message import Role
+from sensai.llm.persona import DuplicatePersonaError
+from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
+from sensai.memory.persistent_db.base import get_db
+from sensai.memory.persistent_db.error import DbConnectionError
 
 if TYPE_CHECKING:
     import argparse
@@ -31,13 +37,20 @@ class Core:
         self._ui = ui
         self._settings = settings
 
+        db = get_db()
+        if db is None:
+            msg = "no persistent database"
+            raise DbConnectionError(msg)
+        self._persona_manager = PersonaManager(db)
+        with contextlib.suppress(DuplicatePersonaError):
+            self._persona_manager.create_default_persona()
         self._provider_manager = ProviderManager(settings.llm)
         if not (self._provider_manager.set_model(args.model)):
             lines = [f"Model '{args.model}' not found in provider manager.", "Available models:"]
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self.conversation = Conversation(self._provider_manager)
+        self.conversation = Conversation(self._provider_manager, self._persona_manager)
         self._command_registry = self._build_command_registry()
 
     def run(self) -> None:
@@ -69,7 +82,13 @@ class Core:
 
     def _build_command_registry(self) -> CommandRegistry:
         """Build a command registry with all available commands."""
-        registry = CommandRegistry([Model(self._ui, self._provider_manager), Branch(self._ui, self.conversation)])
+        registry = CommandRegistry(
+            [
+                Model(self._ui, self._provider_manager),
+                PersonaCommand(self._ui, self._persona_manager),
+                Branch(self._ui, self.conversation),
+            ]
+        )
         registry.register_command(Help(self._ui, registry))
         return registry
 
