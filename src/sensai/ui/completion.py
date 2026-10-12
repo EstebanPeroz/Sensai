@@ -31,13 +31,20 @@ class Completer:
         """
         if not text.startswith("/"):
             return []
-        command, *words = text.split(" ")
+        words = text.split()
         if not words:
+            return []
+        command, *args = words
+        trailing_space = text[-1].isspace()
+        if not args and not trailing_space:
             return [name for name in self._sources if name.startswith(command)]
         source: CompletionSource | None = self._sources.get(command)
         if source is None:
             return []
-        *finished, partial = words
+        if trailing_space:
+            finished, partial = args, ""
+        else:
+            *finished, partial = args
         key = (command, tuple(finished))
         if key != self._fetched:
             self._values = source(finished)
