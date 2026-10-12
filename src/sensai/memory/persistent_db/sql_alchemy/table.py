@@ -59,7 +59,7 @@ class BranchTable(Base):
 
     __tablename__ = "branch"
 
-    name: Mapped[str] = mapped_column(unique=True)
+    name: Mapped[str] = mapped_column()
     model_name: Mapped[str] = mapped_column(index=True)
     persona_id: Mapped[UUID | None] = mapped_column(ForeignKey("persona.id", ondelete="SET NULL"))
     persona: Mapped[PersonaTable | None] = relationship(back_populates="branches")

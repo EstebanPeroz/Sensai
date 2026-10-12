@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from sensai import ui
+from sensai.commands.branch import Branch
 from sensai.commands.help import Help
 from sensai.commands.model import Model
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
@@ -68,7 +69,7 @@ class Core:
 
     def _build_command_registry(self) -> CommandRegistry:
         """Build a command registry with all available commands."""
-        registry = CommandRegistry([Model(self._ui, self._provider_manager)])
+        registry = CommandRegistry([Model(self._ui, self._provider_manager), Branch(self._ui, self.conversation)])
         registry.register_command(Help(self._ui, registry))
         return registry
 
