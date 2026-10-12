@@ -92,7 +92,7 @@ class Conversation:
         messages = self.history.to_json()
         persona = self._persona_manager.active_persona()
         if persona is not None:
-            messages = [persona.to_payload(), messages]
+            messages = [persona.to_payload(), *messages]
         chunks = self._provider_manager.provider().chat(
             {"model": self._provider_manager.provider().current_model(), "messages": messages},
             stream=True,
