@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from uuid import UUID
 
+    from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
     from sensai.ui.adapter import UIAdapter
@@ -22,9 +23,10 @@ class Conversation:
     history: History
     uuid: UUID | None = None
 
-    def __init__(self, provider_manager: ProviderManager) -> None:
-        """Bind the conversation to the `provider` and `model` used to answer it."""
+    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager) -> None:
+        """Init method to create the conversation callss."""
         self._provider_manager = provider_manager
+        self._persona_manager = persona_manager
         self.history = History()
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
@@ -86,9 +88,12 @@ class Conversation:
         ui.send_input(Role.USER, user_input)
         if self.add_message(Role.USER, user_input, ui) is False:
             return
-
+        messages = self.history.to_json()
+        persona = self._persona_manager.active_persona()
+        if persona is not None:
+            messages = persona.apply_to_payload(messages)["messages"]
         chunks = self._provider_manager.provider().chat(
-            {"model": self._provider_manager.provider().current_model(), "messages": self.history.to_json()},
+            {"model": self._provider_manager.provider().current_model(), "messages": messages},
             stream=True,
         )
         if chunks is None:
