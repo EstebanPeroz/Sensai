@@ -3,6 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from sensai.commands.base import StateCommand
 from sensai.commands.branch import Branch
 from sensai.memory.persistent_db.error import InvalidInstanceError
 from tests.commands.fakes import FakeUI
@@ -37,7 +38,9 @@ def load_conversation(fake_ui: FakeUI) -> MagicMock:
 
 @pytest.fixture
 def branch(fake_ui: FakeUI, conv: MagicMock, provider_manager: MagicMock, db: MagicMock) -> Branch:
-    return Branch(fake_ui, db, conv, provider_manager)
+    StateCommand.bind_db(db)
+    StateCommand._cache_id.clear()
+    return Branch(conv, provider_manager)
 
 
 class TestDispatch:

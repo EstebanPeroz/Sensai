@@ -2,7 +2,9 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from sensai import ui
+from sensai.commands.base import Command, StateCommand
 from sensai.commands.branch import Branch
+from sensai.commands.data_tranfer.export import Export
 from sensai.commands.help import Help
 from sensai.commands.model import Model
 from sensai.commands.persona import PersonaCommand
@@ -83,14 +85,17 @@ class Core:
 
     def _build_command_registry(self, db: PersistentDatabase) -> CommandRegistry:
         """Build a command registry with all available commands."""
+        Command.bind_ui(self._ui)
+        StateCommand.bind_db(db)
         registry = CommandRegistry(
             [
-                Model(self._ui, self._provider_manager),
-                PersonaCommand(self._ui, self._persona_manager),
-                Branch(self._ui, db, self.conversation, self._provider_manager),
+                Model(self._provider_manager),
+                PersonaCommand(self._persona_manager),
+                Branch(self.conversation, self._provider_manager),
+                Export(self.conversation),
             ]
         )
-        registry.register_command(Help(self._ui, registry))
+        registry.register_command(Help(registry))
         return registry
 
     def _launch_command(self, content: str) -> None:

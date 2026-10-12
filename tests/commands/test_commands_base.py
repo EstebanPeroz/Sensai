@@ -9,7 +9,7 @@ from tests.commands.fakes import FakeUI, MakeFakeCommand
 class TestCommand:
     def test_cannot_instantiate_directly(self, fake_ui: FakeUI) -> None:
         with pytest.raises(TypeError):
-            Command(fake_ui)  # type: ignore[abstract]
+            Command()  # type: ignore[abstract]
 
     def test_subclass_without_execute_cannot_be_instantiated(self, fake_ui: FakeUI) -> None:
         class Incomplete(Command):
@@ -17,7 +17,7 @@ class TestCommand:
             help = "Missing execute."
 
         with pytest.raises(TypeError):
-            Incomplete(fake_ui)  # type: ignore[abstract]
+            Incomplete()  # type: ignore[abstract]
 
     def test_subclass_implementing_execute_can_be_instantiated(self, fake_ui: FakeUI) -> None:
         class Concrete(Command):
@@ -28,7 +28,7 @@ class TestCommand:
             def execute(self, *args: str) -> None:
                 self.called_with = args
 
-        command = Concrete(fake_ui)
+        command = Concrete()
         command.execute("a", "b")
 
         assert command.called_with == ("a", "b")
@@ -42,7 +42,7 @@ class TestCommand:
             def execute(self, *args: str) -> None:
                 self._ui.send_system_message("done")
 
-        Concrete(fake_ui).execute()
+        Concrete().execute()
 
         assert fake_ui.messages == ["done"]
 

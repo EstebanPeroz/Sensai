@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from sensai.memory.persistent_db.adapter import PersistentDatabase
     from sensai.ui.adapter import UIAdapter
 
@@ -11,11 +13,12 @@ class Command(ABC):
 
     name: ClassVar[str]
     help: ClassVar[str]
-    _ui: UIAdapter
+    _ui: ClassVar[UIAdapter]
 
-    def __init__(self, ui: UIAdapter) -> None:
-        """Initialize the command with the UI it reports to."""
-        self._ui = ui
+    @classmethod
+    def bind_ui(cls, ui: UIAdapter) -> None:
+        """Set the UI shared by every command."""
+        Command._ui = ui
 
     @abstractmethod
     def execute(self, *args: str) -> None:
@@ -30,9 +33,17 @@ class Command(ABC):
 class StateCommand(Command):
     """Command updating the state of the conversation or interacting with the db."""
 
-    _db: PersistentDatabase
+    _db: ClassVar[PersistentDatabase]
+    _cache_id: ClassVar[list[UUID]] = []
 
-    def __init__(self, ui: UIAdapter, db: PersistentDatabase) -> None:
-        """Initialize the command with the UI it reports to and the db."""
-        super().__init__(ui)
-        self._db = db
+    @classmethod
+    def bind_db(cls, db: PersistentDatabase) -> None:
+        """Set the UI shared by every command."""
+        StateCommand._db = db
+
+    def _fetch_branches(self) -> dict[UUID, str]:
+        self._cache_id.clear()
+        branches: dict[UUID, str] = self._db.get_branches()
+        for branch_id in branches:
+            self._cache_id.append(branch_id)
+        return branches

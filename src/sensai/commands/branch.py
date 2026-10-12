@@ -9,8 +9,6 @@ if TYPE_CHECKING:
 
     from sensai.history.conversation import Conversation
     from sensai.llm.provider_manager import ProviderManager
-    from sensai.memory.persistent_db.adapter import PersistentDatabase
-    from sensai.ui.adapter import UIAdapter
 
 
 class Branch(StateCommand):
@@ -23,18 +21,15 @@ class Branch(StateCommand):
     _subcommands: dict[str, Callable[..., None]]
     _conv: Conversation
     _pm: ProviderManager
-    _cache_id: list[UUID]
 
-    def __init__(
-        self, ui: UIAdapter, db: PersistentDatabase, conv: Conversation, provider_manager: ProviderManager
-    ) -> None:
+    def __init__(self, conv: Conversation, provider_manager: ProviderManager) -> None:
         """Initialize the Branch command and its subcommand map.
 
         Raise:
             DatabaseError: Failed to get db
 
         """
-        super().__init__(ui, db)
+        super().__init__()
         self._subcommands = {
             "list": self._list,
             "set": self._set,
@@ -44,7 +39,6 @@ class Branch(StateCommand):
         }
         self._conv = conv
         self._pm = provider_manager
-        self._cache_id = []
 
     def _list(self) -> None:
         """Display the available branches."""
@@ -149,10 +143,3 @@ class Branch(StateCommand):
             return UUID(value)
         except ValueError, TypeError, AttributeError:
             return None
-
-    def _fetch_branches(self) -> dict[UUID, str]:
-        self._cache_id.clear()
-        branches: dict[UUID, str] = self._db.get_branches()
-        for branch_id in branches:
-            self._cache_id.append(branch_id)
-        return branches
