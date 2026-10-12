@@ -13,20 +13,24 @@ if TYPE_CHECKING:
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
+    from sensai.llm.thinking.react import ReAct
     from sensai.ui.adapter import UIAdapter
 
 
 class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
+    _react: ReAct
+    _persona_manager: PersonaManager
     _provider_manager: ProviderManager
     history: History
     uuid: UUID | None = None
 
-    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager) -> None:
+    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager, react: ReAct) -> None:
         """Init method to create the conversation callss."""
-        self._provider_manager = provider_manager
+        self._react = react
         self._persona_manager = persona_manager
+        self._provider_manager = provider_manager
         self.history = History()
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
@@ -92,10 +96,7 @@ class Conversation:
         persona = self._persona_manager.active_persona()
         if persona is not None:
             messages = persona.apply_to_payload(messages)["messages"]
-        chunks = self._provider_manager.provider().chat(
-            {"model": self._provider_manager.provider().current_model(), "messages": messages},
-            stream=True,
-        )
+        chunks = self._react.generate_answer(messages)
         if chunks is None:
             return
 
