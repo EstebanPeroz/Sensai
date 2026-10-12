@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
 from sensai.memory.history import History
-from sensai.memory.persistent_db.base import get_db
+from sensai.memory.persistent_db import get_db
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -20,14 +20,15 @@ class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
     _provider_manager: ProviderManager
+    _persona_manager: PersonaManager
     history: History
     uuid: UUID | None = None
 
     def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager) -> None:
         """Init method to create the conversation callss."""
         self._provider_manager = provider_manager
-        self._persona_manager = persona_manager
         self.history = History()
+        self._persona_manager = persona_manager
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Init the conversation in the DB if first message."""
@@ -91,7 +92,7 @@ class Conversation:
         messages = self.history.to_json()
         persona = self._persona_manager.active_persona()
         if persona is not None:
-            messages = persona.apply_to_payload(messages)["messages"]
+            messages = [persona.to_payload(), *messages]
         chunks = self._provider_manager.provider().chat(
             {"model": self._provider_manager.provider().current_model(), "messages": messages},
             stream=True,
