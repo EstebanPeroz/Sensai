@@ -7,11 +7,11 @@ from tests.commands.fakes import FakeUI, MakeFakeCommand
 
 
 class TestCommand:
-    def test_cannot_instantiate_directly(self, fake_ui: FakeUI) -> None:
+    def test_cannot_instantiate_directly(self) -> None:
         with pytest.raises(TypeError):
             Command()  # type: ignore[abstract]
 
-    def test_subclass_without_execute_cannot_be_instantiated(self, fake_ui: FakeUI) -> None:
+    def test_subclass_without_execute_cannot_be_instantiated(self) -> None:
         class Incomplete(Command):
             name = "incomplete"
             help = "Missing execute."
@@ -19,7 +19,7 @@ class TestCommand:
         with pytest.raises(TypeError):
             Incomplete()  # type: ignore[abstract]
 
-    def test_subclass_implementing_execute_can_be_instantiated(self, fake_ui: FakeUI) -> None:
+    def test_subclass_implementing_execute_can_be_instantiated(self) -> None:
         class Concrete(Command):
             name = "concrete"
             help = "A concrete command."

@@ -39,7 +39,7 @@ def load_conversation(fake_ui: FakeUI) -> MagicMock:
 @pytest.fixture
 def branch(conv: MagicMock, provider_manager: MagicMock, db: MagicMock) -> Branch:
     StateCommand.bind_db(db)
-    StateCommand._cache_id.clear()
+    StateCommand._cache_id.clear()  # noqa: SLF001
     return Branch(conv, provider_manager)
 
 
