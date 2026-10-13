@@ -51,6 +51,10 @@ class WebSearchTool(Tool[str]):
         return (
             f"Search the web. Returns at most {MAX_RESULTS} results as title, URL and short snippet. "
             "Call web_fetch on the most relevant URL to read the page itself."
+            "If you think you are not able to know something, or if the user asks for information that"
+            " may have changed (people, software versions, news, prices, future informations),"
+            " you must call this tool instead of guessing. Every future events and informations"
+            " need to be verified online."
         )
 
     @property
