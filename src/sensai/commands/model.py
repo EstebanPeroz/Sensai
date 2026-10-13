@@ -52,6 +52,7 @@ class Model(Command):
         self._ui.send_system_message(f"Invalid number of arguments. Usage: {self.usage}")
 
     @override
-    def completions(self) -> list[str]:
+    def completions(self, args: list[str]) -> list[str]:
         """Return the available model names."""
+        del args
         return sorted(self._provider_manager.get_models())

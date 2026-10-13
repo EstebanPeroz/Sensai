@@ -62,7 +62,7 @@ class Core:
         self._ui.open()
 
         self._ui.set_completions(
-            {f"/{command.name}": command.completions() for command in self._command_registry.commands()}
+            {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
 
         event: ui.Event | None = None
