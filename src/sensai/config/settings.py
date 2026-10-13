@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlsplit
 
 from sensai.error import SensaiError
+from sensai.mcp.config import MCPServerConfig
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -61,6 +62,7 @@ class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
     llm: LLMSettings = field(default_factory=LLMSettings)
+    mcp: MCPServerConfig | None = None
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -87,12 +89,14 @@ def load_settings(path: Path | None = None) -> Settings:
     else:
         try:
             llm = _pop_table(data, "llm")
+            mcp_data = _pop_table(data, "mcp")
             providers: dict[str, ProviderSettings] = {
                 provider.name: provider(**_pop_table(llm, provider.name))
                 for provider in PROVIDERS
                 if provider.name in llm
             }
-            return Settings(llm=LLMSettings(**llm, providers=providers), **data)
+            mcp = MCPServerConfig(**mcp_data) if mcp_data else None
+            return Settings(llm=LLMSettings(**llm, providers=providers), mcp=mcp, **data)
         except (TypeError, ValueError) as err:
             msg = f"invalid settings in {source}: {err}"
     raise ConfigError(msg)
