@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, Any
 
+from sensai.tools.error import DuplicateToolError
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -11,11 +13,34 @@ class ToolManager:
 
     _tools: dict[str, Tool]
     _enabled: set[str]
+    _unknown_disabled: frozenset[str]
 
     def __init__(self, tools: list[Tool] | None = None, disabled: Iterable[str] | None = None) -> None:
-        """Register `tools`, enabling all of them but the ones named in `disabled`."""
-        self._tools = {tool.name: tool for tool in tools or []}
-        self._enabled = set(self._tools) - set(disabled or ())
+        """Register `tools`, enabling all of them but the ones named in `disabled`.
+
+        Names in `disabled` matching no registered tool are ignored; `unknown_disabled()`
+        reports them so the caller can warn about a stale or misspelled name.
+
+        Raises:
+            DuplicateToolError: If two tools share the same name.
+
+        """
+        self._tools = {}
+        for tool in tools or []:
+            if tool.name in self._tools:
+                raise DuplicateToolError(tool.name)
+            self._tools[tool.name] = tool
+        requested = set(disabled or ())
+        self._enabled = set(self._tools) - requested
+        self._unknown_disabled = frozenset(requested - set(self._tools))
+
+    def names(self) -> list[str]:
+        """Return the name of every registered tool, enabled or not, sorted."""
+        return sorted(self._tools)
+
+    def unknown_disabled(self) -> list[str]:
+        """Return the names given as disabled that match no registered tool, sorted."""
+        return sorted(self._unknown_disabled)
 
     def is_enabled(self, name: str) -> bool:
         """Return whether `name` is a registered and enabled tool."""
@@ -36,7 +61,12 @@ class ToolManager:
         return True
 
     def call(self, tool_call: dict[str, Any]) -> dict | None:
-        """Call the tool named function-call payload."""
+        """Call the tool named in an LLM-style function-call payload.
+
+        Return an empty dict if the payload names no tool, and None if no *enabled*
+        tool has this name: a disabled tool is unreachable, like an unknown one, so a
+        model still holding its schema in context cannot reach it.
+        """
         function = tool_call.get("function")
         if function is None:
             return {}
