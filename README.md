@@ -18,6 +18,19 @@ You can also call uv directly, without activating the virtualenv:
 uv run sensai             # run the program
 ```
 
+## MCP server configuration
+
+Configure one local MCP server in your settings file with a stdio command:
+
+```toml
+[mcp]
+command = "uv"
+args = ["run", "python", "server.py"]
+enabled = true
+startup_timeout = 10
+call_timeout = 30
+```
+
 ## Development
 
 ```sh
