@@ -1,3 +1,5 @@
+import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -5,6 +7,8 @@ import pytest
 from sensai.mcp.client import MCPClient
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
+
+FIXTURE_SERVER = Path(__file__).parent / "fixtures" / "tiny_server.py"
 
 
 @pytest.mark.anyio
@@ -44,3 +48,34 @@ async def test_close_closes_started_server() -> None:
         await client.close()
 
     session.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_starts_fixture_discovers_tool_and_creates_adapter() -> None:
+    client = MCPClient(
+        MCPServerConfig(
+            command=sys.executable,
+            args=[str(FIXTURE_SERVER)],
+        ),
+    )
+
+    try:
+        tools = await client.start()
+    finally:
+        await client.close()
+
+    assert len(tools) == 1
+    assert tools[0].name == "echo"
+    assert tools[0].tool_rule == {
+        "type": "function",
+        "function": {
+            "name": "echo",
+            "description": "Echo a message",
+            "parameters": {
+                "properties": {"message": {"title": "Message", "type": "string"}},
+                "required": ["message"],
+                "title": "echoArguments",
+                "type": "object",
+            },
+        },
+    }

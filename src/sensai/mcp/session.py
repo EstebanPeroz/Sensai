@@ -30,16 +30,16 @@ class MCPServerSession:
 
         exit_stack = AsyncExitStack()
         try:
-            with anyio.fail_after(self._config.startup_timeout):
-                streams = await exit_stack.enter_async_context(
-                    stdio_client(
-                        StdioServerParameters(
-                            command=self._config.command,
-                            args=self._config.args,
-                        ),
+            streams = await exit_stack.enter_async_context(
+                stdio_client(
+                    StdioServerParameters(
+                        command=self._config.command,
+                        args=self._config.args,
                     ),
                 )
-                session = await exit_stack.enter_async_context(ClientSession(*streams))
+            )
+            session = await exit_stack.enter_async_context(ClientSession(*streams))
+            with anyio.fail_after(self._config.startup_timeout):
                 await session.initialize()
         except Exception as err:
             await exit_stack.aclose()
@@ -72,7 +72,7 @@ class MCPServerSession:
             MCPToolInfo(
                 name=tool.name,
                 description=tool.description,
-                input_schema=dict(tool.inputSchema),
+                input_schema=dict(tool.input_schema),
             )
             for tool in result.tools
         ]

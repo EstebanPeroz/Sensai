@@ -19,7 +19,7 @@ async def test_reads_tool_name_description_and_input_schema() -> None:
             {
                 "name": "echo",
                 "description": "Echo a message",
-                "inputSchema": {"type": "object", "properties": {"message": {"type": "string"}}},
+                "input_schema": {"type": "object", "properties": {"message": {"type": "string"}}},
             },
         )(),
     ]
