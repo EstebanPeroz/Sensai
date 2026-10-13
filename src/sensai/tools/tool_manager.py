@@ -17,10 +17,6 @@ class ToolManager:
         self._tools = {tool.name: tool for tool in tools or []}
         self._enabled = set(self._tools) - set(disabled or ())
 
-    def names(self) -> list[str]:
-        """Return the name of every registered tool, enabled or not, sorted."""
-        return sorted(self._tools)
-
     def is_enabled(self, name: str) -> bool:
         """Return whether `name` is a registered and enabled tool."""
         return name in self._enabled
