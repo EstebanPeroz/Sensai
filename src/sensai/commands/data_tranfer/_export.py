@@ -28,7 +28,7 @@ class Export(StateCommand):
         """Execute a export on the current or given Branch uuid."""
         try:
             (param,) = args
-        except TypeError:
+        except ValueError:
             self._ui.send_system_message("Invalid type parameter")
             return
         if param == "current":
@@ -50,9 +50,12 @@ class Export(StateCommand):
             self._ui.send_system_message("Failed to export.")
             return
         filename = f"{uuid}.json"
-        with Path(filename).open("w") as file:
-            file.write(json.dumps(export))
-            self._ui.send_system_message(f"Branch {uuid} exported as {filename}")
+        try:
+            with Path(filename).open("w") as file:
+                file.write(json.dumps(export))
+                self._ui.send_system_message(f"Branch {uuid} exported as {filename}")
+        except OSError:
+            self._ui.send_system_message(f"Failed to export Branch {uuid}")
 
     @override
     def completions(self, args: list[str]) -> list[str]:

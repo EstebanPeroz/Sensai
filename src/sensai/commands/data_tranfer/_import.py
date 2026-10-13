@@ -34,12 +34,12 @@ class Import(StateCommand):
 
     def _load_json_dict(self, path: str) -> dict | None:
         try:
-            with Path(path).open() as json_file:
+            with Path(path).open(encoding="utf-8") as json_file:
                 data = json.load(json_file)
         except OSError as e:
             self._ui.send_system_message(f"Cannot read {path}: {e.strerror}")
             return None
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
             self._ui.send_system_message(f"Invalid JSON in {path}: {e}")
             return None
         if not isinstance(data, dict):

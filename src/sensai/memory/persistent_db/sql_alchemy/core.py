@@ -247,12 +247,6 @@ class SqlAlchemy(PersistentDatabase):
                 },
                 "messages": [{"role": message.role.value, "content": message.content} for message in source.messages],
             }
-            if source.persona:
-                export["persona"] = {
-                    "name": source.persona.name,
-                    "prompt": source.persona.prompt,
-                    "description": source.persona.description,
-                }
             return export
 
     @override
