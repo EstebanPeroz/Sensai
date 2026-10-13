@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from sensai.llm.message import Message, Role
     from sensai.llm.persona import Persona
     from sensai.llm.provider_manager import ProviderManager
+    from sensai.monitoring.interaction import Interaction
 
 
 class PersistentDatabase(ABC):
@@ -136,3 +137,16 @@ class PersistentDatabase(ABC):
             InvalidInstanceError: If no persona has this id.
 
         """
+
+    @abstractmethod
+    def add_interaction(self, interaction: Interaction) -> None:
+        """Store `interaction`, the record of one call to the model.
+
+        Raises:
+            DatabaseError: If it could not be stored.
+
+        """
+
+    @abstractmethod
+    def get_interactions(self) -> list[Interaction]:
+        """Return every stored interaction, oldest first."""
