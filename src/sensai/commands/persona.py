@@ -70,8 +70,9 @@ class PersonaCommand(Command):
             self._ui.send_system_message(err.message)
 
     @override
-    def completions(self) -> list[str]:
+    def completions(self, args: list[str]) -> list[str]:
         """Return the sub-commands, which is the argument the UI can complete."""
+        del args
         return sorted(self._subcommands)
 
     def _list(self) -> None:
