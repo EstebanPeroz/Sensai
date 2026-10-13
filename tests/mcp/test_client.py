@@ -1,0 +1,46 @@
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from sensai.mcp.client import MCPClient
+from sensai.mcp.config import MCPServerConfig
+from sensai.mcp.discovery import MCPToolInfo
+
+
+@pytest.mark.anyio
+async def test_starts_server_discovers_tools_and_creates_mcp_tools() -> None:
+    session = AsyncMock()
+    session.list_tools.return_value = [MCPToolInfo("echo", "Echo text", {"type": "object"})]
+    config = MCPServerConfig(command="server")
+    client = MCPClient(config)
+
+    with patch("sensai.mcp.client.MCPServerSession", return_value=session) as session_type:
+        tools = await client.start()
+
+    session_type.assert_called_once_with(config)
+    session.start.assert_awaited_once()
+    session.list_tools.assert_awaited_once()
+    assert len(tools) == 1
+    assert tools[0].name == "echo"
+
+
+@pytest.mark.anyio
+async def test_disabled_server_returns_no_tools_without_starting() -> None:
+    client = MCPClient(MCPServerConfig(command="server", enabled=False))
+
+    with patch("sensai.mcp.client.MCPServerSession") as session_type:
+        assert await client.start() == []
+
+    session_type.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_close_closes_started_server() -> None:
+    session = AsyncMock()
+    client = MCPClient(MCPServerConfig(command="server"))
+
+    with patch("sensai.mcp.client.MCPServerSession", return_value=session):
+        await client.start()
+        await client.close()
+
+    session.close.assert_awaited_once()
