@@ -9,6 +9,7 @@ from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
 from sensai.llm.message import Role
 from sensai.llm.provider_manager import ProviderManager
+from sensai.mcp.client import MCPClient
 
 if TYPE_CHECKING:
     import argparse
@@ -24,11 +25,13 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _mcp_client: MCPClient | None
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
         self._ui = ui
         self._settings = settings
+        self._mcp_client = MCPClient(settings.mcp) if settings.mcp is not None else None
 
         self._provider_manager = ProviderManager(settings.llm)
         if not (self._provider_manager.set_model(args.model)):
