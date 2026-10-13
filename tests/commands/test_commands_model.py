@@ -50,7 +50,7 @@ class TestModel:
         assert "Invalid number of arguments" in fake_ui.messages[0]
         assert "/model [model_name]" in fake_ui.messages[0]
 
-    def test_completions_are_sorted_model_names(self, fake_ui: FakeUI, provider_manager: MagicMock) -> None:
+    def test_completions_are_sorted_model_names(self, provider_manager: MagicMock) -> None:
         provider_manager.get_models.return_value = ["qwen3:1.7b", "llama3:8b"]
 
         assert Model(provider_manager).completions([]) == ["llama3:8b", "qwen3:1.7b"]
