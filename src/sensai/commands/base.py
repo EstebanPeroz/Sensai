@@ -20,6 +20,7 @@ class Command(ABC):
     def execute(self, *args: str) -> None:
         """Execute the command with the given arguments."""
 
-    def completions(self) -> list[str]:
+    def completions(self, args: list[str]) -> list[str]:
         """Return the values the command's argument can take, for completion."""
+        del args
         return []

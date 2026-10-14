@@ -2,6 +2,7 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from sensai import ui
+from sensai.commands.branch import Branch
 from sensai.commands.help import Help
 from sensai.commands.model import Model
 from sensai.commands.persona import PersonaCommand
@@ -61,7 +62,7 @@ class Core:
         self._ui.open()
 
         self._ui.set_completions(
-            {f"/{command.name}": command.completions() for command in self._command_registry.commands()}
+            {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
 
         event: ui.Event | None = None
@@ -85,6 +86,7 @@ class Core:
             [
                 Model(self._ui, self._provider_manager),
                 PersonaCommand(self._ui, self._persona_manager),
+                Branch(self._ui, self.conversation, self._provider_manager),
             ]
         )
         registry.register_command(Help(self._ui, registry))

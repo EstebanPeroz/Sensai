@@ -84,13 +84,13 @@ class SqlAlchemy(PersistentDatabase):
         return f"{base} {n}"
 
     @override
-    def get_branch_list(self) -> dict[str, UUID]:
+    def get_branches(self) -> dict[UUID, str]:
         """Return the dict of all branches with name and uuid."""
-        branches: dict[str, UUID] = {}
+        branches: dict[UUID, str] = {}
         with Session(self._engine) as session:
             source = session.scalars(select(BranchTable)).all()
             for branch in source:
-                branches[branch.name] = branch.id
+                branches[branch.id] = branch.name
         return branches
 
     @override
@@ -98,11 +98,17 @@ class SqlAlchemy(PersistentDatabase):
         """Replace the uuid, model and history of `current` with those of the target branch.
 
         Does nothing if no branch has this uuid.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
         """
+        if current.uuid == target_branch:
+            return
         with Session(self._engine) as session:
             source = session.get(BranchTable, target_branch)
             if source is None:
-                return
+                raise InvalidInstanceError(self._uuid_error_essage)
             current.uuid = source.id
             provider_manager.set_model(source.model_name)
             current.history.replace(self._messages_from_branch(source))
@@ -157,6 +163,20 @@ class SqlAlchemy(PersistentDatabase):
             if source is None:
                 raise InvalidInstanceError(self._uuid_error_essage)
             source.model_name = model
+            session.commit()
+
+    def set_branch_name(self, branch: UUID, name: str) -> None:
+        """Set the name used by the branch `branch`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            if source is None:
+                raise InvalidInstanceError(self._uuid_error_essage)
+            source.name = name
             session.commit()
 
     @override

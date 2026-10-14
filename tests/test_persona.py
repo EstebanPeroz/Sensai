@@ -87,22 +87,8 @@ class TestPersona:
     def test_show_names_its_fields(self) -> None:
         assert make_persona().show() == {"name": "Analyst", "description": "an analytical assistant"}
 
-    def test_apply_to_payload_puts_the_prompt_first(self) -> None:
-        messages = [{"role": "user", "content": "hi"}]
-
-        assert make_persona().apply_to_payload(messages) == {
-            "messages": [
-                {"role": "system", "content": "You are an expert analyst."},
-                {"role": "user", "content": "hi"},
-            ]
-        }
-
-    def test_apply_to_payload_leaves_the_given_messages_alone(self) -> None:
-        messages = [{"role": "user", "content": "hi"}]
-
-        make_persona().apply_to_payload(messages)
-
-        assert messages == [{"role": "user", "content": "hi"}]
+    def test_to_payload_is_the_system_prompt(self) -> None:
+        assert make_persona().to_payload() == {"role": "system", "content": "You are an expert analyst."}
 
 
 class TestDefaultPersona:

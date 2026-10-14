@@ -29,7 +29,7 @@ class PersistentDatabase(ABC):
         """
 
     @abstractmethod
-    def get_branch_list(self) -> dict[str, UUID]:
+    def get_branches(self) -> dict[UUID, str]:
         """Return the dict of all branches with name and uuid."""
 
     @abstractmethod
@@ -62,6 +62,15 @@ class PersistentDatabase(ABC):
     @abstractmethod
     def set_branch_model(self, branch: UUID, model: str) -> None:
         """Set the model used by the branch `branch` to `model`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
+
+    @abstractmethod
+    def set_branch_name(self, branch: UUID, name: str) -> None:
+        """Set the name used by the branch `branch`.
 
         Raises:
             InvalidInstanceError: If no branch has this uuid.
