@@ -44,5 +44,5 @@ class InteractionLogger:
             request=None,
             response=None,
             thinking=None,
-            tool_calls=[{"name": call.get("function", {}).get("name")} for call in interaction.tool_calls],
+            tool_calls=[{"name": (call.get("function") or {}).get("name")} for call in interaction.tool_calls],
         )
