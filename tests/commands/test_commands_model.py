@@ -53,4 +53,4 @@ class TestModel:
     def test_completions_are_sorted_model_names(self, fake_ui: FakeUI, provider_manager: MagicMock) -> None:
         provider_manager.get_models.return_value = ["qwen3:1.7b", "llama3:8b"]
 
-        assert Model(fake_ui, provider_manager).completions() == ["llama3:8b", "qwen3:1.7b"]
+        assert Model(fake_ui, provider_manager).completions([]) == ["llama3:8b", "qwen3:1.7b"]
