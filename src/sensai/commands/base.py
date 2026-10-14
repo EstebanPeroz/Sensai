@@ -38,7 +38,7 @@ class StateCommand(Command):
 
     @classmethod
     def bind_db(cls, db: PersistentDatabase) -> None:
-        """Set the UI shared by every command."""
+        """Set the db shared by every command."""
         StateCommand._db = db
 
     def _fetch_branches(self) -> dict[UUID, str]:
