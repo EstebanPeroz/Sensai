@@ -43,11 +43,6 @@ class ToolsCommand(Command):
 
         self._ui.send_system_message(f"Usage: {self.usage}")
 
-    @override
-    def completions(self) -> list[str]:
-        """Return the supported subcommands and tool names."""
-        return ["list", "enable", "disable", *self._tool_manager.names()]
-
     def _list_tools(self) -> None:
         """Display every registered tool and whether it is currently enabled."""
         names = self._tool_manager.names()
