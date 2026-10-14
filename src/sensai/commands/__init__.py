@@ -5,4 +5,13 @@ from .model import Model
 from .persona import PersonaCommand
 from .registry import CommandRegistry, UnknownCommandError
 
-__all__ = ["Branch", "Command", "CommandRegistry", "Help", "Model", "StateCommand", "UnknownCommandError"]
+__all__ = [
+    "Branch",
+    "Command",
+    "CommandRegistry",
+    "Help",
+    "Model",
+    "PersonaCommand",
+    "StateCommand",
+    "UnknownCommandError",
+]
