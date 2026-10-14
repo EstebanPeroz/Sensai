@@ -68,10 +68,10 @@ class Core:
         requires `ui.run()` to be driving the UI's event loop on the main thread.
         """
         self._ui.open()
-
         self._ui.set_completions(
             {f"/{command.name}": command.completions() for command in self._command_registry.commands()}
         )
+        self._ui.update_thinking_effort(Effort.effort_level(self._react.max_iterations))
 
         event: ui.Event | None = None
         while not self._is_quit(event):

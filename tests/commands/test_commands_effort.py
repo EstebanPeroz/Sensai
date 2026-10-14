@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from sensai.commands.effort import EFFORTS, Effort
+from sensai.commands.effort import EFFORTS, Effort, effort_level
 from sensai.llm.thinking.react import ReAct
 from sensai.tools.tool_manager import ToolManager
 from tests.commands.fakes import FakeUI
@@ -40,11 +40,11 @@ class TestEffort:
         assert react.max_iterations == steps
         assert fake_ui.messages[0].startswith(f"Effort set to '{level}': ")
 
-    @pytest.mark.parametrize(("level", "shown"), [("off", 0.0), ("low", 0.2), ("medium", 0.6), ("high", 1.0)])
-    def test_one_argument_shows_effort_in_ui(self, fake_ui: FakeUI, react: ReAct, level: str, shown: float) -> None:
+    @pytest.mark.parametrize("level", list(EFFORTS))
+    def test_one_argument_shows_effort_in_ui(self, fake_ui: FakeUI, react: ReAct, level: str) -> None:
         Effort(fake_ui, react).execute(level)
 
-        assert fake_ui.thinking_efforts == [shown]
+        assert fake_ui.thinking_efforts == [level]
 
     def test_unknown_effort_keeps_current_one(self, fake_ui: FakeUI, react: ReAct) -> None:
         Effort(fake_ui, react).execute("extreme")
@@ -61,3 +61,12 @@ class TestEffort:
 
     def test_completions_are_the_efforts(self, fake_ui: FakeUI, react: ReAct) -> None:
         assert Effort(fake_ui, react).completions() == ["off", "low", "medium", "high"]
+
+
+class TestEffortLevel:
+    @pytest.mark.parametrize(("steps", "level"), [(0, "off"), (1, "low"), (3, "medium"), (5, "high")])
+    def test_names_the_effort_of_each_level(self, steps: int, level: str) -> None:
+        assert effort_level(steps) == level
+
+    def test_gives_the_number_of_steps_outside_the_levels(self) -> None:
+        assert effort_level(7) == "7 thinking steps"

@@ -9,8 +9,6 @@ if TYPE_CHECKING:
 EFFORTS = {"off": 0, "low": 1, "medium": 3, "high": 5}
 LEVELS = {steps: name for name, steps in EFFORTS.items()}
 
-MAX_STEPS = max(EFFORTS.values())
-
 
 class Effort(Command):
     """Effort command class to display or choose how many thinking steps the model may take before answering."""
@@ -27,9 +25,7 @@ class Effort(Command):
 
     def _display_effort(self) -> None:
         """Display the current effort and the available ones."""
-        current = self._react.max_iterations
-        level = LEVELS.get(current, f"{current} thinking steps")
-        lines = [f"Current effort: {level}", "Available efforts:"]
+        lines = [f"Current effort: {self.effort_level(self._react.max_iterations)}", "Available efforts:"]
         lines.extend(f"- {name}: {self._describe(steps)}" for name, steps in EFFORTS.items())
         self._ui.send_system_message("\n".join(lines))
 
@@ -40,7 +36,7 @@ class Effort(Command):
             return
         steps = EFFORTS[level]
         self._react.update_max_iterations(steps)
-        self._ui.update_thinking_effort(steps / MAX_STEPS)
+        self._ui.update_thinking_effort(level)
         self._ui.send_system_message(f"Effort set to '{level}': {self._describe(steps)}.")
 
     @staticmethod
@@ -65,3 +61,8 @@ class Effort(Command):
     def completions(self) -> list[str]:
         """Return the available efforts."""
         return list(EFFORTS)
+
+    @staticmethod
+    def effort_level(steps: int) -> str:
+        """Return the name of the effort allowing `steps` thinking steps, or the number itself when none does."""
+        return LEVELS.get(steps, f"{steps} thinking steps")
