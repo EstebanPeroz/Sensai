@@ -336,33 +336,33 @@ class SqlAlchemy(PersistentDatabase):
         """
         metrics = interaction.metrics
         with Session(self._engine) as session:
-            branch_id = interaction.branch_id
-            if branch_id is not None and session.get(BranchTable, branch_id) is None:
-                branch_id = None
-            session.add(
-                InteractionTable(
-                    id=interaction.id,
-                    created_at=interaction.created_at,
-                    model=interaction.model,
-                    status=interaction.status,
-                    latency_ms=interaction.latency_ms,
-                    branch_id=branch_id,
-                    persona=interaction.persona,
-                    request=interaction.request,
-                    response=interaction.response,
-                    thinking=interaction.thinking,
-                    tool_calls=interaction.tool_calls,
-                    error=interaction.error,
-                    first_token_ms=interaction.first_token_ms,
-                    prompt_tokens=metrics.prompt_tokens,
-                    completion_tokens=metrics.completion_tokens,
-                    total_duration_ms=metrics.total_duration_ms,
-                    load_duration_ms=metrics.load_duration_ms,
-                    prompt_eval_duration_ms=metrics.prompt_eval_duration_ms,
-                    eval_duration_ms=metrics.eval_duration_ms,
-                )
-            )
             try:
+                branch_id = interaction.branch_id
+                if branch_id is not None and session.get(BranchTable, branch_id) is None:
+                    branch_id = None
+                session.add(
+                    InteractionTable(
+                        id=interaction.id,
+                        created_at=interaction.created_at,
+                        model=interaction.model,
+                        status=interaction.status,
+                        latency_ms=interaction.latency_ms,
+                        branch_id=branch_id,
+                        persona=interaction.persona,
+                        request=interaction.request,
+                        response=interaction.response,
+                        thinking=interaction.thinking,
+                        tool_calls=interaction.tool_calls,
+                        error=interaction.error,
+                        first_token_ms=interaction.first_token_ms,
+                        prompt_tokens=metrics.prompt_tokens,
+                        completion_tokens=metrics.completion_tokens,
+                        total_duration_ms=metrics.total_duration_ms,
+                        load_duration_ms=metrics.load_duration_ms,
+                        prompt_eval_duration_ms=metrics.prompt_eval_duration_ms,
+                        eval_duration_ms=metrics.eval_duration_ms,
+                    )
+                )
                 session.commit()
             except SQLAlchemyError:
                 msg = "the interaction could not be stored"
