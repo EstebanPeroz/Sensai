@@ -1,6 +1,20 @@
 from sensai.commands.help import Help
 from sensai.commands.registry import CommandRegistry
+from sensai.tools.tool import Tool
 from tests.commands.fakes import FakeUI, MakeFakeCommand
+
+
+class FakeTool(Tool[str]):
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def tool_rule(self) -> dict:
+        return {"type": "function", "function": {"name": self.name}}
 
 
 class TestHelp:
@@ -35,3 +49,12 @@ class TestHelp:
         help_command.execute("unused", "args")
 
         assert fake_ui.messages == ["Available commands:"]
+
+    def test_lists_tools_command(self, fake_ui: FakeUI) -> None:
+        registry = CommandRegistry(commands=[])
+        help_command = Help(fake_ui, registry)
+        registry.register_command(help_command)
+
+        help_command.execute()
+
+        assert "- tools: List available tools and toggle them." in fake_ui.messages[0]

@@ -7,6 +7,7 @@ from sensai.commands.help import Help
 from sensai.commands.model import Model
 from sensai.commands.persona import PersonaCommand
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
+from sensai.commands.tools import ToolsCommand
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
@@ -95,6 +96,7 @@ class Core:
                 Model(self._ui, self._provider_manager),
                 PersonaCommand(self._ui, self._persona_manager),
                 Branch(self._ui, self.conversation, self._provider_manager),
+                ToolsCommand(self._ui, self._tool_manager),
             ]
         )
         registry.register_command(Help(self._ui, registry))
