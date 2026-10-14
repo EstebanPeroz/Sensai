@@ -50,14 +50,10 @@ class InteractionRecorder:
         """Accumulate the content, thinking, tool calls and metrics carried by `chunk`."""
         if self._first_token_ms is None and (chunk.content or chunk.thinking or chunk.tool_calls):
             self._first_token_ms = self._elapsed_ms()
-        if chunk.content is not None:
-            self._content += chunk.content
-        if chunk.thinking is not None:
-            self._thinking += chunk.thinking
-        if chunk.tool_calls:
-            self._tool_calls.extend(chunk.tool_calls)
-        if chunk.metrics is not None:
-            self._metrics = chunk.metrics
+        self._content += chunk.content or ""
+        self._thinking += chunk.thinking or ""
+        self._tool_calls += chunk.tool_calls or []
+        self._metrics = chunk.metrics or self._metrics
 
     def finish(self, status: InteractionStatus, error: str | None = None) -> Interaction:
         """Stop the clock and return the record of the call, ended with `status`."""
