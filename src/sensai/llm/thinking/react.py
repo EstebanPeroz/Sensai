@@ -40,6 +40,10 @@ class ReAct:
         self._tool_manager = tool_manager
         self._max_iterations = max_iterations
 
+    def update_max_iterations(self, max_iterations: int) -> None:
+        """Change the maximum number of iterations the ReAct loop will do before giving up."""
+        self._max_iterations = max_iterations
+
     def generate_answer(self, messages: list[dict]) -> Iterator[ChatResponse]:
         """Stream the answer to `messages`, repeating Think, Act and Observe until the model answers.
 

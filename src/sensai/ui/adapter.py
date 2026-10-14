@@ -76,3 +76,7 @@ class UIAdapter(ABC):
     @abstractmethod
     def set_completions(self, completions: dict[str, list[str]]) -> bool:
         """Give the UI each command and the values of its argument, for completion. Returns whether it was delivered."""
+
+    @abstractmethod
+    def update_thinking_effort(self, effort: float) -> bool:
+        """Update the UI with the current thinking effort of the model. Returns whether it was delivered."""
