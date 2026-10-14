@@ -3,6 +3,7 @@ import os
 from typing import TYPE_CHECKING
 
 from sensai import ui
+from sensai.commands.effort import Effort
 from sensai.commands.help import Help
 from sensai.commands.model import Model
 from sensai.commands.persona import PersonaCommand
@@ -33,6 +34,7 @@ class Core:
 
     conversation: Conversation
     _provider_manager: ProviderManager
+    _react: ReAct
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
@@ -55,8 +57,8 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        react = ReAct(self._provider_manager, ToolManager(self._build_tools()))
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, react)
+        self._react = ReAct(self._provider_manager, ToolManager(self._build_tools()))
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
         self._command_registry = self._build_command_registry()
 
     def run(self) -> None:
@@ -92,6 +94,7 @@ class Core:
             [
                 Model(self._ui, self._provider_manager),
                 PersonaCommand(self._ui, self._persona_manager),
+                Effort(self._ui, self._react),
             ]
         )
         registry.register_command(Help(self._ui, registry))

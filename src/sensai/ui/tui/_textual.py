@@ -325,3 +325,12 @@ class ChatApp(App):
         field.value = value
         field.cursor_position = len(value)
         field.focus()
+
+    def update_thinking_effort(self, effort: float) -> None:
+        """Update the thinking effort shown in the header."""
+        text = fx.bold(f"Thinking: {effort:.0%}")
+        labels = self.query("#header-effort")
+        if labels:
+            labels.first(Label).update(text)
+        else:
+            self.query_one("#header-right").mount(Label(text, id="header-effort"))

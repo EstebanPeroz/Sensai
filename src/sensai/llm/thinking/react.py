@@ -40,6 +40,11 @@ class ReAct:
         self._tool_manager = tool_manager
         self._max_iterations = max_iterations
 
+    @property
+    def max_iterations(self) -> int:
+        """Maximum number of iterations the ReAct loop does before answering."""
+        return self._max_iterations
+
     def update_max_iterations(self, max_iterations: int) -> None:
         """Change the maximum number of iterations the ReAct loop will do before giving up."""
         self._max_iterations = max_iterations
