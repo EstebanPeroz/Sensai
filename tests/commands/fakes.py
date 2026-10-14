@@ -59,8 +59,7 @@ class FakeUI(UIAdapter):
 
 
 class FakeCommand(Command):
-    def __init__(self, ui: UIAdapter) -> None:
-        super().__init__(ui)
+    def __init__(self) -> None:
         self.mock_execute = MagicMock()
 
     @override

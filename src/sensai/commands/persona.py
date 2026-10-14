@@ -8,7 +8,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sensai.llm.persona_manager import PersonaManager
-    from sensai.ui.adapter import UIAdapter
 
 # The fields `/persona update` can set, and the keyword each one maps onto in the manager.
 UPDATABLE_FIELDS = {"name": "new_name", "description": "description", "prompt": "prompt"}
@@ -39,9 +38,9 @@ class PersonaCommand(Command):
     _persona_manager: PersonaManager
     _subcommands: dict[str, tuple[Callable[..., None], int, int | None]]
 
-    def __init__(self, ui: UIAdapter, persona_manager: PersonaManager) -> None:
+    def __init__(self, persona_manager: PersonaManager) -> None:
         """Initialize the Persona command with the manager holding the personas."""
-        super().__init__(ui)
+        super().__init__()
         self._persona_manager = persona_manager
         self._subcommands = {
             "list": (self._list, 0, 0),
