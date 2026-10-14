@@ -71,7 +71,7 @@ class Core:
             self._ui.send_system_message(f"Unknown disabled tools in the settings: {', '.join(unknown)}")
 
         self._ui.set_completions(
-            {f"/{command.name}": command.completions() for command in self._command_registry.commands()}
+            {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
 
         event: ui.Event | None = None

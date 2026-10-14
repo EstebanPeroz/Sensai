@@ -96,7 +96,7 @@ class TestDispatch:
         assert branch.usage in fake_ui.messages[0]
 
     def test_completions_are_the_sorted_subcommands(self, branch: Branch) -> None:
-        assert branch.completions() == ["fork", "list", "remove", "rename", "set"]
+        assert branch.completions([]) == ["fork", "list", "remove", "rename", "set"]
 
 
 class TestList:
