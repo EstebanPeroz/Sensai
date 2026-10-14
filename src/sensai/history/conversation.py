@@ -5,30 +5,39 @@ from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
+from sensai.monitoring.interaction import InteractionStatus
+from sensai.monitoring.recorder import InteractionRecorder
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from uuid import UUID
 
+    from sensai.core.events import EventBus
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
+    from sensai.monitoring.interaction import Interaction
     from sensai.ui.adapter import UIAdapter
 
 
 class Conversation:
-    """Drives a chat exchange with a provider, streaming its response back to a UI."""
+    """Drives a chat exchange with a provider, streaming its response back to a UI.
+
+    Every call to the model, whatever its outcome, is emitted on `events` as an `Interaction`.
+    """
 
     _provider_manager: ProviderManager
     _persona_manager: PersonaManager
+    _events: EventBus
     history: History
     uuid: UUID | None = None
 
-    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager) -> None:
+    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager, events: EventBus) -> None:
         """Init method to create the conversation callss."""
         self._provider_manager = provider_manager
         self.history = History()
         self._persona_manager = persona_manager
+        self._events = events
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Init the conversation in the DB if first message."""
@@ -59,30 +68,43 @@ class Conversation:
         self.history.insert(Message(uuid=uuid, role=role, content=content))
         return True
 
+    def _emit_interaction(self, interaction: Interaction, ui: UIAdapter) -> None:
+        """Publish `interaction`; a listener failing to handle it must not break the chat."""
+        try:
+            self._events.emit(interaction)
+        except SensaiError as err:
+            ui.send_system_message(f"Failed to log interaction: {err}")
+
     def _stream_chunks(
         self,
         chunks: Iterator[ChatResponse],
+        recorder: InteractionRecorder,
         stop_streaming: threading.Event,
         stream_done: threading.Event,
         ui: UIAdapter,
     ) -> None:
         """Forward chunks to the UI until they run out or a stop is requested."""
+        status, error = InteractionStatus.OK, None
         try:
-            content: str = ""
             for chunk in chunks:
                 if stop_streaming.is_set():
+                    status = InteractionStatus.INTERRUPTED
                     return
-                if chunk.content is not None:
-                    content += chunk.content
+                recorder.add_chunk(chunk)
                 ui.send_ai_response(chunk)
 
                 if chunk.error is not None:
+                    status, error = InteractionStatus.ERROR, chunk.error
                     break
-            self.add_message(Role.ASSISTANT, content, ui)
+            self.add_message(Role.ASSISTANT, recorder.content, ui)
         except SensaiError as err:
+            status, error = InteractionStatus.ERROR, str(err)
             ui.send_error(str(err))
         finally:
-            stream_done.set()
+            try:
+                self._emit_interaction(recorder.finish(status, error), ui)
+            finally:
+                stream_done.set()
 
     def chat(self, user_input: str, ui: UIAdapter) -> None:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
@@ -93,10 +115,18 @@ class Conversation:
         persona = self._persona_manager.active_persona()
         if persona is not None:
             messages = [persona.to_payload(), *messages]
-        chunks = self._provider_manager.provider().chat(
-            {"model": self._provider_manager.provider().current_model(), "messages": messages},
-            stream=True,
+        model = self._provider_manager.provider().current_model()
+        recorder = InteractionRecorder(
+            model=model,
+            request=messages,
+            branch_id=self.uuid,
+            persona=persona.name if persona is not None else None,
         )
+        try:
+            chunks = self._provider_manager.provider().chat({"model": model, "messages": messages}, stream=True)
+        except SensaiError as err:
+            self._emit_interaction(recorder.finish(InteractionStatus.ERROR, str(err)), ui)
+            raise
         if chunks is None:
             return
 
@@ -104,7 +134,7 @@ class Conversation:
         stream_done = threading.Event()
         threading.Thread(
             target=self._stream_chunks,
-            args=(chunks, stop_streaming, stream_done, ui),
+            args=(chunks, recorder, stop_streaming, stream_done, ui),
             daemon=True,
         ).start()
 
