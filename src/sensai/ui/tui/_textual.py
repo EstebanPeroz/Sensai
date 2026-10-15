@@ -325,3 +325,7 @@ class ChatApp(App):
         field.value = value
         field.cursor_position = len(value)
         field.focus()
+
+    def update_thinking_effort(self, level: str) -> None:
+        """Show the thinking effort `level` at the bottom right of the input box."""
+        self.query_one("#input", Input).border_subtitle = f"effort: {level}"

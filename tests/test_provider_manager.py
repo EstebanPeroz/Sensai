@@ -56,10 +56,6 @@ class FakeAdapter(ProviderAdapter):
     def list(self) -> list[str]:
         return self.models
 
-    @override
-    def close_stream_response(self) -> None:
-        pass
-
 
 @pytest.fixture
 def manager(monkeypatch: pytest.MonkeyPatch) -> ProviderManager:

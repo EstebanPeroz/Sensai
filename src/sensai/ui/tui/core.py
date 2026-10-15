@@ -110,3 +110,12 @@ class UITextualAdapter(ui.UIAdapter):
         except RuntimeError:
             return False
         return True
+
+    @override
+    def update_thinking_effort(self, level: str) -> bool:
+        """Show the thinking effort `level` in the UI."""
+        try:
+            self.app.call_from_thread(self.app.update_thinking_effort, level)
+        except RuntimeError:
+            return False
+        return True

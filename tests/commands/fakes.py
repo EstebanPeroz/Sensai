@@ -11,6 +11,7 @@ from sensai.ui.adapter import UIAdapter
 class FakeUI(UIAdapter):
     def __init__(self) -> None:
         self.messages: list[str] = []
+        self.thinking_efforts: list[str] = []
 
     @override
     def open(self) -> bool:
@@ -55,6 +56,11 @@ class FakeUI(UIAdapter):
 
     @override
     def set_completions(self, completions: dict[str, list[str]]) -> bool:
+        return True
+
+    @override
+    def update_thinking_effort(self, level: str) -> bool:
+        self.thinking_efforts.append(level)
         return True
 
 
