@@ -2,7 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from sensai.config.settings import PROVIDERS, ConfigError, LLMSettings, OllamaSettings, Settings, load_settings
+from sensai.config.settings import (
+    PROVIDERS,
+    ConfigError,
+    LLMSettings,
+    LoggingSettings,
+    OllamaSettings,
+    Settings,
+    load_settings,
+)
 
 
 def write_config(tmp_path: Path, content: str) -> Path:
@@ -18,6 +26,7 @@ class TestPackagedSettings:
         assert isinstance(settings, Settings)
         assert settings.llm.embedding_model == "nomic-embed-text"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
+        assert settings.logging == LoggingSettings(enabled=True, log_content=True)
 
 
 class TestDefaults:
@@ -51,6 +60,13 @@ class TestEmbeddingModel:
         assert settings.llm.embedding_model == "embeddinggemma"
 
 
+class TestLogging:
+    def test_is_read_from_logging_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, "[logging]\nenabled = false\nlog_content = false\n"))
+
+        assert settings.logging == LoggingSettings(enabled=False, log_content=False)
+
+
 class TestValidation:
     @pytest.mark.parametrize(
         ("content", "reason"),
@@ -68,6 +84,9 @@ class TestValidation:
             ('[llm.ollama]\nbase_url = "localhost:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('[llm.ollama]\nbase_url = "ftp://ollama:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('[llm.ollama]\nbase_url = "http://ollama:port"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
+            ('logging = "x"\n', "logging must be a table"),
+            ('[logging]\nenabled = "yes"\n', "logging.enabled must be a boolean"),
+            ("[logging]\nlog_content = 1\n", "logging.log_content must be a boolean"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:

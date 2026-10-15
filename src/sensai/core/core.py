@@ -5,6 +5,7 @@ from sensai import ui
 from sensai.commands import Branch, Command, Help, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
+from sensai.core.events import EventBus
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
@@ -14,6 +15,7 @@ from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.monitoring.logger import InteractionLogger
 
 if TYPE_CHECKING:
     import argparse
@@ -30,6 +32,7 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _events: EventBus
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
@@ -49,7 +52,9 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager)
+        self._events = EventBus()
+        InteractionLogger(db, settings.logging).attach(self._events)
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._events)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:

@@ -6,3 +6,7 @@ embedding_model = "nomic-embed-text"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"
+
+[logging]
+enabled = true
+log_content = true

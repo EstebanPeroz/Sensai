@@ -3,10 +3,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey
+from sqlalchemy import JSON, DateTime, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from sensai.llm.message import Role  # noqa: TC001
+from sensai.monitoring.interaction import InteractionStatus  # noqa: TC001
 
 
 class Base(DeclarativeBase):
@@ -80,3 +81,27 @@ class BranchTable(Base):
         for message in self.messages:
             new_branch.messages.append(message.copy())
         return new_branch
+
+
+class InteractionTable(Base):
+    """One logged call to the model; kept when its branch is removed."""
+
+    __tablename__ = "interaction"
+
+    model: Mapped[str] = mapped_column(index=True)
+    status: Mapped[InteractionStatus] = mapped_column(index=True)
+    latency_ms: Mapped[float] = mapped_column()
+    branch_id: Mapped[UUID | None] = mapped_column(ForeignKey("branch.id", ondelete="SET NULL"), index=True)
+    persona: Mapped[str | None] = mapped_column()
+    request: Mapped[list[dict] | None] = mapped_column(JSON)
+    response: Mapped[str | None] = mapped_column()
+    thinking: Mapped[str | None] = mapped_column()
+    tool_calls: Mapped[list[dict]] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column()
+    first_token_ms: Mapped[float | None] = mapped_column()
+    prompt_tokens: Mapped[int | None] = mapped_column()
+    completion_tokens: Mapped[int | None] = mapped_column()
+    total_duration_ms: Mapped[float | None] = mapped_column()
+    load_duration_ms: Mapped[float | None] = mapped_column()
+    prompt_eval_duration_ms: Mapped[float | None] = mapped_column()
+    eval_duration_ms: Mapped[float | None] = mapped_column()
