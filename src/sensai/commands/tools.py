@@ -20,6 +20,11 @@ class ToolsCommand(Command):
     def __init__(self, ui: UIAdapter, tool_manager: ToolManager) -> None:
         """Initialize the command with the tool registry it manages."""
         super().__init__(ui)
+        self._subcommands = {
+            "list": self._list_tools,
+            "set": self._enable_tool,
+            "remove": self._disable_tool,
+        }
         self._tool_manager = tool_manager
 
     @override
@@ -59,7 +64,7 @@ class ToolsCommand(Command):
         if self._tool_manager.enable(name):
             self._ui.send_system_message(f"Tool '{name}' enabled.", append_response=True)
             return
-        self._ui.send_system_message(f"Tool '{name}' is not available.")
+        return
 
     def _disable_tool(self, name: str) -> None:
         """Disable an enabled tool if it exists."""
@@ -67,3 +72,13 @@ class ToolsCommand(Command):
             self._ui.send_system_message(f"Tool '{name}' disabled.", append_response=True)
             return
         self._ui.send_system_message(f"Tool '{name}' is not available.")
+
+    @override
+    def completions(self, args: list[str]) -> list[str]:
+        """Return content for the completion with tool command."""
+        size: int = len(args)
+        if size == 0:
+            return sorted(self._subcommands)
+        if size == 1 and args[0] in ["remove", "set"]:
+            return self._tool_manager.names()
+        return []
