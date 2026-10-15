@@ -54,6 +54,10 @@ class ReAct:
 
         Each step appends what it produced to `messages`, so the next step can read it.
         """
+        if self._max_iterations == 0:
+            yield from self._request(messages, ANSWER_INSTRUCTION, tools=[])
+            return
+
         tools = self._available_tools()
         instruction = self._first_think_instruction(tools)
         observed = False
@@ -78,6 +82,7 @@ class ReAct:
     def _think(self, messages: list[dict], instruction: str) -> Iterator[ChatResponse]:
         """Make the model reason without answering, and show its reasoning as thinking."""
         thought = ""
+
         for chunk in self._request(messages, instruction, tools=[]):
             if chunk.error is not None:
                 yield chunk
@@ -85,15 +90,14 @@ class ReAct:
                 thought += chunk.content
                 yield self._thinking(chunk.content)
         yield self._thinking("\n")
-
         messages.append({"role": "assistant", "content": thought})
 
     def _act(self, messages: list[dict], tools: list[dict]) -> Iterator[ChatResponse]:
         """Let the model call one of `tools`, or make it write the final answer when there are none."""
         instruction = ACT_INSTRUCTION if tools else ANSWER_INSTRUCTION
-
         answer = ""
         tool_calls = []
+
         for chunk in self._request(messages, instruction, tools):
             yield chunk
             if chunk.content is not None:
@@ -120,9 +124,9 @@ class ReAct:
         provider = self._provider_manager.provider()
         request_messages = messages.copy()
         request_messages.append({"role": "user", "content": instruction})
-
         # Only enables our thinking loop
         payload = {"model": provider.current_model(), "messages": request_messages, "think": False}
+
         if tools:
             payload["tools"] = tools
         return provider.chat(payload, stream=True)
@@ -131,6 +135,7 @@ class ReAct:
         """Return the tools to offer to the current model, none when it cannot call tools."""
         provider = self._provider_manager.provider()
         capabilities = provider.show(provider.current_model())
+
         if not capabilities.tools:
             return []
         return self._tool_manager.get_tool_call_rules()
@@ -139,6 +144,7 @@ class ReAct:
     def _wants_tool(thought: str, *, after_observation: bool) -> bool:
         """Read the decision ending `thought`: a tool is the default before any tool result, the answer after one."""
         thought = thought.lower()
+
         if after_observation:
             return SEARCH_AGAIN in thought
         return TOOL_REFUSAL not in thought

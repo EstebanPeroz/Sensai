@@ -2,7 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from sensai.commands.effort import EFFORTS, Effort, effort_level
+from sensai.commands.effort import EFFORTS, Effort
 from sensai.llm.thinking.react import ReAct
 from sensai.tools.tool_manager import ToolManager
 from tests.commands.fakes import FakeUI
@@ -66,7 +66,7 @@ class TestEffort:
 class TestEffortLevel:
     @pytest.mark.parametrize(("steps", "level"), [(0, "off"), (1, "low"), (3, "medium"), (5, "high")])
     def test_names_the_effort_of_each_level(self, steps: int, level: str) -> None:
-        assert effort_level(steps) == level
+        assert Effort.effort_level(steps) == level
 
     def test_gives_the_number_of_steps_outside_the_levels(self) -> None:
-        assert effort_level(7) == "7 thinking steps"
+        assert Effort.effort_level(7) == "7 thinking steps"
