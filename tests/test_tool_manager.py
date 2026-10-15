@@ -1,3 +1,5 @@
+import pytest
+
 from sensai.tools.tool import Tool, get_parameter
 from sensai.tools.tool_manager import ToolManager
 
@@ -56,6 +58,35 @@ class ProfileTool(Tool[dict]):
     def run(self, **kwargs: object) -> dict:
         del kwargs
         return {"city": "Paris", "age": 30}
+
+
+class BrokenTool(Tool[str]):
+    @property
+    def name(self) -> str:
+        return "broken"
+
+    @property
+    def description(self) -> str:
+        return "Always fails."
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {}}
+
+    def run(self, **kwargs: object) -> str:
+        del kwargs
+        msg = "page could not be parsed"
+        raise ValueError(msg)
+
+
+class InterruptedTool(BrokenTool):
+    @property
+    def name(self) -> str:
+        return "interrupted"
+
+    def run(self, **kwargs: object) -> str:
+        del kwargs
+        raise KeyboardInterrupt
 
 
 def make_manager() -> ToolManager:
@@ -142,6 +173,26 @@ class TestCall:
         result = make_manager().call(make_call("profile"))
 
         assert result == {"role": "tool", "tool_name": "profile", "content": '{"city": "Paris", "age": 30}'}
+
+
+class TestUnexpectedFailure:
+    def test_unexpected_exception_returns_error_message(self) -> None:
+        result = ToolManager([BrokenTool()]).call(make_call("broken"))
+
+        assert result == {
+            "role": "tool",
+            "tool_name": "broken",
+            "content": "error: ValueError: page could not be parsed",
+        }
+
+    def test_unexpected_exception_is_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        ToolManager([BrokenTool()]).call(make_call("broken"))
+
+        assert "Tool 'broken' failed unexpectedly" in caplog.text
+
+    def test_interruption_is_not_swallowed(self) -> None:
+        with pytest.raises(KeyboardInterrupt):
+            ToolManager([InterruptedTool()]).call(make_call("interrupted"))
 
 
 class TestGetToolCallRules:

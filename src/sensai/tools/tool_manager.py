@@ -1,10 +1,13 @@
 import json
+import logging
 from typing import TYPE_CHECKING, Any
 
 from sensai.error import SensaiError
 
 if TYPE_CHECKING:
     from sensai.tools.tool import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class ToolManager:
@@ -29,6 +32,9 @@ class ToolManager:
             result = tool.run(**(function.get("arguments") or {}))
         except (SensaiError, TypeError) as err:
             return self._message(name, f"error: {err}")
+        except Exception as err:
+            logger.exception("Tool '%s' failed unexpectedly", name)
+            return self._message(name, f"error: {type(err).__name__}: {err}")
         return self._message(name, result if isinstance(result, str) else json.dumps(result, default=str))
 
     def get_tool_call_rules(self) -> list[dict]:
