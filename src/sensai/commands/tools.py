@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, override
 from sensai.commands.base import Command
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sensai.tools.tool_manager import ToolManager
     from sensai.ui.adapter import UIAdapter
 
@@ -16,37 +18,30 @@ class ToolsCommand(Command):
     help = "List available tools and toggle them."
     usage = "/tools [list|enable|disable] [name]"
     _tool_manager: ToolManager
+    _subcommands: dict[str, Callable[..., None]]
 
     def __init__(self, ui: UIAdapter, tool_manager: ToolManager) -> None:
         """Initialize the command with the tool registry it manages."""
         super().__init__(ui)
         self._subcommands = {
             "list": self._list_tools,
-            "set": self._enable_tool,
-            "remove": self._disable_tool,
+            "enable": self._enable_tool,
+            "disable": self._disable_tool,
         }
         self._tool_manager = tool_manager
 
     @override
     def execute(self, *args: str) -> None:
-        """List the tools or toggle one by name."""
+        """List the tools or toggle the one named, dispatching on `_subcommands`."""
         if not args or args[0] == "list":
             self._list_tools()
             return
-        if args[0] == "enable":
-            if len(args) != ERROR_LEN_CMD:
-                self._ui.send_system_message(f"Usage: {self.usage}")
-                return
-            self._enable_tool(args[1])
-            return
-        if args[0] == "disable":
-            if len(args) != ERROR_LEN_CMD:
-                self._ui.send_system_message(f"Usage: {self.usage}")
-                return
-            self._disable_tool(args[1])
-            return
 
-        self._ui.send_system_message(f"Usage: {self.usage}")
+        subcommand = self._subcommands.get(args[0])
+        if subcommand is None or len(args) != ERROR_LEN_CMD:
+            self._ui.send_system_message(f"Usage: {self.usage}")
+            return
+        subcommand(args[1])
 
     def _list_tools(self) -> None:
         """Display every registered tool and whether it is currently enabled."""
@@ -79,6 +74,6 @@ class ToolsCommand(Command):
         size: int = len(args)
         if size == 0:
             return sorted(self._subcommands)
-        if size == 1 and args[0] in ["remove", "set"]:
+        if size == 1 and args[0] in ["disable", "enable"]:
             return self._tool_manager.names()
         return []
