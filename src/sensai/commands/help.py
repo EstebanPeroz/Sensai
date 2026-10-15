@@ -4,7 +4,6 @@ from sensai.commands.base import Command
 
 if TYPE_CHECKING:
     from sensai.commands.registry import CommandRegistry
-    from sensai.ui.adapter import UIAdapter
 
 
 class Help(Command):
@@ -14,9 +13,9 @@ class Help(Command):
     help = "Display available commands."
     _registry: CommandRegistry
 
-    def __init__(self, ui: UIAdapter, registry: CommandRegistry) -> None:
+    def __init__(self, registry: CommandRegistry) -> None:
         """Initialize the Help command with a command registry."""
-        super().__init__(ui)
+        super().__init__()
         self._registry = registry
 
     @override

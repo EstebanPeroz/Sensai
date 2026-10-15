@@ -30,6 +30,10 @@ class PersistentDatabase(ABC):
         """
 
     @abstractmethod
+    def import_branch(self, config: dict) -> None:
+        """Make a branch based on a config."""
+
+    @abstractmethod
     def get_branches(self) -> dict[UUID, str]:
         """Return the dict of all branches with name and uuid."""
 
@@ -86,6 +90,10 @@ class PersistentDatabase(ABC):
         or the change could not be saved.
 
         """
+
+    @abstractmethod
+    def export_branch(self, branch: UUID) -> dict | None:
+        """Export the branch based on the uuid."""
 
     # Message
 
