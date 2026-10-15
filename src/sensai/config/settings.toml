@@ -6,3 +6,9 @@ embedding_model = "nomic-embed-text"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"
+
+[features]
+# Feature ids to switch off, as `<namespace>.<name>`.
+disabled = []
+
+# disabled = ["tools.inexesistant.test"]

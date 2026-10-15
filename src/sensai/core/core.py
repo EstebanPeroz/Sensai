@@ -5,6 +5,7 @@ from sensai import ui
 from sensai.commands import Branch, Command, Help, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
+from sensai.commands.tools import ToolsCommand
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
@@ -14,6 +15,8 @@ from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.tools import build_tools
+from sensai.tools.tool_manager import ToolManager
 
 if TYPE_CHECKING:
     import argparse
@@ -30,6 +33,7 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _tool_manager: ToolManager
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
@@ -49,7 +53,8 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager)
+        self._tool_manager = ToolManager(build_tools(), disabled=settings.features.disabled_in("tools"))
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._tool_manager)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
@@ -59,6 +64,10 @@ class Core:
         requires `ui.run()` to be driving the UI's event loop on the main thread.
         """
         self._ui.open()
+
+        unknown = self._tool_manager.unknown_disabled()
+        if unknown:
+            self._ui.send_system_message(f"Unknown disabled tools in the settings: {', '.join(unknown)}")
 
         self._ui.set_completions(
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}
@@ -88,6 +97,7 @@ class Core:
                 Model(self._provider_manager),
                 PersonaCommand(self._persona_manager),
                 Branch(self.conversation, self._provider_manager),
+                ToolsCommand(self._tool_manager),
                 Export(self.conversation),
                 Import(),
             ]
