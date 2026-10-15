@@ -6,7 +6,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sensai.tools.tool_manager import ToolManager
-    from sensai.ui.adapter import UIAdapter
 
 ERROR_LEN_CMD = 2
 
@@ -20,9 +19,9 @@ class ToolsCommand(Command):
     _tool_manager: ToolManager
     _subcommands: dict[str, Callable[..., None]]
 
-    def __init__(self, ui: UIAdapter, tool_manager: ToolManager) -> None:
+    def __init__(self, tool_manager: ToolManager) -> None:
         """Initialize the command with the tool registry it manages."""
-        super().__init__(ui)
+        super().__init__()
         self._subcommands = {
             "list": self._list_tools,
             "enable": self._enable_tool,
