@@ -7,6 +7,8 @@ from sensai.mcp.request import add_tool_result, add_tool_schemas, execute_one_to
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
 
+_MAX_TOOL_ROUNDS = 3
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from uuid import UUID
@@ -76,20 +78,24 @@ class Conversation:
         tool_result: dict | None,
         stop_streaming: threading.Event,
         ui: UIAdapter,
-    ) -> str:
-        """Stream the one allowed follow-up request after a tool call."""
+    ) -> tuple[str, dict | None, dict]:
+        """Stream one follow-up request after a tool call."""
         follow_up = add_tool_result(payload, tool_call, tool_result)
         chunks = self._provider_manager.provider().chat(follow_up, stream=True)
         content = ""
+        next_tool_call = None
         if chunks is None:
-            return content
+            return content, next_tool_call, follow_up
         for chunk in chunks:
             if stop_streaming.is_set():
-                return content
+                return content, next_tool_call, follow_up
             if chunk.content is not None:
                 content += chunk.content
             ui.send_ai_response(chunk)
-        return content
+            if chunk.tool_calls:
+                next_tool_call = chunk.tool_calls[0]
+                break
+        return content, next_tool_call, follow_up
 
     def _stream_chunks(
         self,
@@ -110,15 +116,20 @@ class Conversation:
                 ui.send_ai_response(chunk)
 
                 if chunk.tool_calls:
+                    current_payload = payload
                     tool_call = chunk.tool_calls[0]
-                    self._pending_tool_result = execute_one_tool_call(chunk.tool_calls, self._tool_manager)
-                    content += self._stream_follow_up(
-                        payload,
-                        tool_call,
-                        self._pending_tool_result,
-                        stop_streaming,
-                        ui,
-                    )
+                    for _ in range(_MAX_TOOL_ROUNDS):
+                        self._pending_tool_result = execute_one_tool_call([tool_call], self._tool_manager)
+                        content_part, tool_call, current_payload = self._stream_follow_up(
+                            current_payload,
+                            tool_call,
+                            self._pending_tool_result,
+                            stop_streaming,
+                            ui,
+                        )
+                        content += content_part
+                        if tool_call is None:
+                            break
                     break
                 if chunk.error is not None:
                     break

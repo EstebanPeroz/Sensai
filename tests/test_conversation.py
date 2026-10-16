@@ -62,3 +62,37 @@ def test_model_receives_mcp_result_and_produces_final_text() -> None:
         {"role": "user", "content": "What is 2 + 2?"},
         {"role": "assistant", "content": "The answer is 4"},
     ]
+
+
+def test_repeated_tool_calls_stop_at_the_maximum_round_limit() -> None:
+    tool_call = {"type": "function", "function": {"name": "echo", "arguments": {"message": "again"}}}
+    provider = MagicMock()
+    provider.current_model.return_value = "test"
+    provider.chat.side_effect = [
+        iter([ChatResponse({"message": {"role": "assistant", "tool_calls": [tool_call]}})]),
+        iter([ChatResponse({"message": {"role": "assistant", "tool_calls": [tool_call]}})]),
+        iter([ChatResponse({"message": {"role": "assistant", "tool_calls": [tool_call]}})]),
+        iter([ChatResponse({"message": {"role": "assistant", "tool_calls": [tool_call]}})]),
+    ]
+    provider_manager = MagicMock()
+    provider_manager.provider.return_value = provider
+    tool_manager = MagicMock(spec=ToolManager)
+    tool_manager.call.return_value = {"role": "tool", "tool_name": "echo", "content": "again"}
+    tool_manager.get_tool_call_rules.return_value = []
+    persona_manager = MagicMock()
+    persona_manager.active_persona.return_value = None
+    conversation = Conversation(provider_manager, persona_manager, tool_manager)
+
+    def record_message(role: Role, content: str, ui: object) -> bool:
+        del ui
+        conversation.history.append(role, content)
+        return True
+
+    conversation.add_message = MagicMock(side_effect=record_message)
+    ui = MagicMock()
+    ui.wait_event.return_value = False
+
+    conversation.chat("Keep calling the tool", ui)
+
+    assert provider.chat.call_count == 4
+    assert tool_manager.call.call_count == 3
