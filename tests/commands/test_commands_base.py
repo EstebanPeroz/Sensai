@@ -47,4 +47,4 @@ class TestCommand:
         assert fake_ui.messages == ["done"]
 
     def test_has_no_completions_by_default(self, make_fake_command: MakeFakeCommand) -> None:
-        assert make_fake_command("foo").completions() == []
+        assert make_fake_command("foo").completions([]) == []

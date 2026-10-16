@@ -1,15 +1,22 @@
+import contextlib
 from typing import TYPE_CHECKING
 
 from sensai import ui
+from sensai.commands.branch import Branch
 from sensai.commands.help import Help
 from sensai.commands.model import Model
+from sensai.commands.persona import PersonaCommand
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
 from sensai.llm.message import Role
+from sensai.llm.persona import DuplicatePersonaError
+from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.mcp.client import MCPClient
+from sensai.memory.persistent_db.base import get_db
+from sensai.memory.persistent_db.error import DbConnectionError
 
 if TYPE_CHECKING:
     import argparse
@@ -20,7 +27,7 @@ if TYPE_CHECKING:
 class Core:
     """Wires a UI to a conversation, dispatching UI events until the user quits."""
 
-    conversation: Conversation | None = None
+    conversation: Conversation
     _provider_manager: ProviderManager
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
@@ -33,13 +40,20 @@ class Core:
         self._settings = settings
         self._mcp_client = MCPClient(settings.mcp) if settings.mcp is not None else None
 
+        db = get_db()
+        if db is None:
+            msg = "no persistent database"
+            raise DbConnectionError(msg)
+        self._persona_manager = PersonaManager(db)
+        with contextlib.suppress(DuplicatePersonaError):
+            self._persona_manager.create_default_persona()
         self._provider_manager = ProviderManager(settings.llm)
         if not (self._provider_manager.set_model(args.model)):
             lines = [f"Model '{args.model}' not found in provider manager.", "Available models:"]
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self.conversation = Conversation(self._provider_manager)
+        self.conversation = Conversation(self._provider_manager, self._persona_manager)
         self._command_registry = self._build_command_registry()
 
     def run(self) -> None:
@@ -51,7 +65,7 @@ class Core:
         self._ui.open()
 
         self._ui.set_completions(
-            {f"/{command.name}": command.completions() for command in self._command_registry.commands()}
+            {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
 
         event: ui.Event | None = None
@@ -71,7 +85,13 @@ class Core:
 
     def _build_command_registry(self) -> CommandRegistry:
         """Build a command registry with all available commands."""
-        registry = CommandRegistry([Model(self._ui, self._provider_manager)])
+        registry = CommandRegistry(
+            [
+                Model(self._ui, self._provider_manager),
+                PersonaCommand(self._ui, self._persona_manager),
+                Branch(self._ui, self.conversation, self._provider_manager),
+            ]
+        )
         registry.register_command(Help(self._ui, registry))
         return registry
 
@@ -89,10 +109,8 @@ class Core:
 
     def _launch_conv_chat(self, content: str) -> None:
         """Send `content` through the conversation, reporting any provider error instead of raising."""
-        if self.conversation is None:
-            self._ui.send_error("No conversation setted")
-            # replace with log
-            return
+        if self.conversation.uuid is None:
+            self.conversation.add_conv_to_db(None, content)
         try:
             self.conversation.chat(content, self._ui)
         except SensaiError as err:
