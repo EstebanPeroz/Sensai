@@ -6,6 +6,7 @@ from sensai.core.core import Core
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.tool import MCPTool
+from sensai.tools.tool_manager import ToolManager
 
 
 def test_core_does_not_create_mcp_client_without_configuration() -> None:
@@ -75,4 +76,6 @@ def test_core_registers_discovered_mcp_tools() -> None:
 
     run.assert_called_once_with(mcp_client_type.return_value.start)
     tool_manager_type.assert_called_once()
-    assert mcp_tool in tool_manager_type.call_args.args[0]
+    registered_tools = tool_manager_type.call_args.args[0]
+    assert registered_tools == [mcp_tool]
+    assert ToolManager(registered_tools).names() == ["echo"]
