@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
+from sensai.mcp.request import add_tool_schemas
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
 
@@ -102,8 +103,7 @@ class Conversation:
         if persona is not None:
             messages = [persona.to_payload(), *messages]
         payload: dict = {"model": self._provider_manager.provider().current_model(), "messages": messages}
-        if rules := self._tool_manager.get_tool_call_rules():
-            payload["tools"] = rules
+        add_tool_schemas(payload, self._tool_manager)
         chunks = self._provider_manager.provider().chat(payload, stream=True)
         if chunks is None:
             return
