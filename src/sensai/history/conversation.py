@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
-from sensai.mcp.request import add_tool_schemas
+from sensai.mcp.request import add_tool_schemas, execute_one_tool_call
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
 
@@ -25,6 +25,7 @@ class Conversation:
     _persona_manager: PersonaManager
     history: History
     _tool_manager: ToolManager
+    _pending_tool_result: dict | None = None
     uuid: UUID | None = None
 
     def __init__(
@@ -85,6 +86,9 @@ class Conversation:
                     content += chunk.content
                 ui.send_ai_response(chunk)
 
+                if chunk.tool_calls:
+                    self._pending_tool_result = execute_one_tool_call(chunk.tool_calls, self._tool_manager)
+                    break
                 if chunk.error is not None:
                     break
             self.add_message(Role.ASSISTANT, content, ui)
