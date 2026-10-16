@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
-from sensai.mcp.request import add_tool_schemas, execute_one_tool_call
+from sensai.mcp.request import add_tool_result, add_tool_schemas, execute_one_tool_call
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
 
@@ -69,12 +69,35 @@ class Conversation:
         self.history.insert(Message(uuid=uuid, role=role, content=content))
         return True
 
+    def _stream_follow_up(
+        self,
+        payload: dict,
+        tool_call: dict,
+        tool_result: dict | None,
+        stop_streaming: threading.Event,
+        ui: UIAdapter,
+    ) -> str:
+        """Stream the one allowed follow-up request after a tool call."""
+        follow_up = add_tool_result(payload, tool_call, tool_result)
+        chunks = self._provider_manager.provider().chat(follow_up, stream=True)
+        content = ""
+        if chunks is None:
+            return content
+        for chunk in chunks:
+            if stop_streaming.is_set():
+                return content
+            if chunk.content is not None:
+                content += chunk.content
+            ui.send_ai_response(chunk)
+        return content
+
     def _stream_chunks(
         self,
         chunks: Iterator[ChatResponse],
         stop_streaming: threading.Event,
         stream_done: threading.Event,
         ui: UIAdapter,
+        payload: dict,
     ) -> None:
         """Forward chunks to the UI until they run out or a stop is requested."""
         try:
@@ -87,7 +110,15 @@ class Conversation:
                 ui.send_ai_response(chunk)
 
                 if chunk.tool_calls:
+                    tool_call = chunk.tool_calls[0]
                     self._pending_tool_result = execute_one_tool_call(chunk.tool_calls, self._tool_manager)
+                    content += self._stream_follow_up(
+                        payload,
+                        tool_call,
+                        self._pending_tool_result,
+                        stop_streaming,
+                        ui,
+                    )
                     break
                 if chunk.error is not None:
                     break
@@ -116,7 +147,7 @@ class Conversation:
         stream_done = threading.Event()
         threading.Thread(
             target=self._stream_chunks,
-            args=(chunks, stop_streaming, stream_done, ui),
+            args=(chunks, stop_streaming, stream_done, ui, payload),
             daemon=True,
         ).start()
 

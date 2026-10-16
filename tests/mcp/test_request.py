@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 from sensai.mcp.discovery import MCPToolInfo
-from sensai.mcp.request import add_tool_schemas, execute_one_tool_call
+from sensai.mcp.request import add_tool_result, add_tool_schemas, execute_one_tool_call
 from sensai.mcp.tool import MCPTool
 from sensai.tools.tool_manager import ToolManager
 
@@ -42,6 +42,23 @@ def test_execute_one_tool_call_does_not_call_manager_without_calls() -> None:
             raise AssertionError
 
     assert execute_one_tool_call([], UnusedToolManager()) is None
+
+
+def test_add_tool_result_builds_one_follow_up_request() -> None:
+    payload = {"model": "test", "messages": [{"role": "user", "content": "say hello"}], "tools": [{"type": "function"}]}
+    tool_call = {"type": "function", "function": {"name": "echo", "arguments": {"message": "hello"}}}
+    tool_result = {"role": "tool", "tool_name": "echo", "content": "hello from MCP"}
+
+    assert add_tool_result(payload, tool_call, tool_result) == {
+        "model": "test",
+        "messages": [
+            {"role": "user", "content": "say hello"},
+            {"role": "assistant", "tool_calls": [tool_call]},
+            {"role": "tool", "content": "hello from MCP"},
+        ],
+        "tools": [{"type": "function"}],
+    }
+    assert payload["messages"] == [{"role": "user", "content": "say hello"}]
 
 
 def test_model_tool_call_reaches_mcp_server() -> None:
