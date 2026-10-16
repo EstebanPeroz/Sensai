@@ -4,7 +4,6 @@ from sensai.commands.base import Command
 
 if TYPE_CHECKING:
     from sensai.llm.provider_manager import ProviderManager
-    from sensai.ui.adapter import UIAdapter
 
 
 class Model(Command):
@@ -15,9 +14,9 @@ class Model(Command):
     usage = "/model [model_name]"
     _provider_manager: ProviderManager
 
-    def __init__(self, ui: UIAdapter, provider_manager: ProviderManager) -> None:
+    def __init__(self, provider_manager: ProviderManager) -> None:
         """Initialize the Model command with the provider manager serving the models."""
-        super().__init__(ui)
+        super().__init__()
         self._provider_manager = provider_manager
 
     def _display_available_models(self) -> None:

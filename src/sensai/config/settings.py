@@ -77,12 +77,36 @@ class DBSettings:
 
 
 @dataclass
+class FeatureSettings:
+    """Settings of the [features] table: the features to switch off; every other one is on.
+
+    A feature is named `<namespace>.<name>`, such as `tools.rag_retrieval`.
+    """
+
+    disabled: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Check the disabled list, which comes unchecked from the settings file."""
+        if not isinstance(self.disabled, list):
+            msg = "features.disabled must be a list of feature names"
+            raise TypeError(msg)
+        for name in self.disabled:
+            _check_name(name, "features.disabled entry")
+
+    def disabled_in(self, namespace: str) -> set[str]:
+        """Return the names, stripped of their namespace, of the features disabled in `namespace`."""
+        prefix = f"{namespace}."
+        return {name.removeprefix(prefix) for name in self.disabled if name.startswith(prefix)}
+
+
+@dataclass
 class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
     llm: LLMSettings = field(default_factory=LLMSettings)
     mcp: MCPServerConfig | None = None
     db: DBSettings = field(default_factory=DBSettings)
+    features: FeatureSettings = field(default_factory=FeatureSettings)
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -118,10 +142,12 @@ def load_settings(path: Path | None = None) -> Settings:
             }
             mcp = MCPServerConfig(**mcp_data) if mcp_data else None
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
+            features = FeatureSettings(**_pop_table(data, "features"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
                 mcp=mcp,
                 db=DBSettings(**db, persistent=persistent),
+                features=features,
                 **data,
             )
         except (TypeError, ValueError) as err:
