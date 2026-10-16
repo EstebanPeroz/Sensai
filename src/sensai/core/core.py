@@ -1,6 +1,8 @@
 import contextlib
 from typing import TYPE_CHECKING
 
+import anyio
+
 from sensai import ui
 from sensai.commands import Branch, Command, Help, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
@@ -56,7 +58,10 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self._tool_manager = ToolManager(build_tools(), disabled=settings.features.disabled_in("tools"))
+        tools = build_tools()
+        if self._mcp_client is not None:
+            tools.extend(anyio.run(self._mcp_client.start))
+        self._tool_manager = ToolManager(tools, disabled=settings.features.disabled_in("tools"))
         self.conversation = Conversation(self._provider_manager, self._persona_manager, self._tool_manager)
         self._command_registry = self._build_command_registry(db)
 
