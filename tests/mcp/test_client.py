@@ -51,6 +51,24 @@ async def test_close_closes_started_server() -> None:
 
 
 @pytest.mark.anyio
+async def test_start_closes_server_when_tool_discovery_fails() -> None:
+    session = AsyncMock()
+    session.list_tools.side_effect = RuntimeError("discovery failed")
+    client = MCPClient(MCPServerConfig(command="server"))
+
+    with (
+        patch("sensai.mcp.client.MCPServerSession", return_value=session),
+        pytest.raises(
+            RuntimeError,
+            match="discovery failed",
+        ),
+    ):
+        await client.start()
+
+    session.close.assert_awaited_once()
+
+
+@pytest.mark.anyio
 async def test_starts_fixture_discovers_tool_and_creates_adapter() -> None:
     client = MCPClient(
         MCPServerConfig(

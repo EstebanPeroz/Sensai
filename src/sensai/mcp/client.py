@@ -25,7 +25,12 @@ class MCPClient:
         session = MCPServerSession(self._config)
         await session.start()
         self._session = session
-        return [MCPTool(info, session) for info in await session.list_tools()]
+        try:
+            tools = await session.list_tools()
+        except Exception:
+            await self.close()
+            raise
+        return [MCPTool(info, session) for info in tools]
 
     async def close(self) -> None:
         """Close the started MCP server, if any."""

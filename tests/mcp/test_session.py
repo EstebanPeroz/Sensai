@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -71,6 +71,24 @@ async def test_raises_startup_error_when_server_fails_to_start() -> None:
         match="could not start",
     ):
         await session.start()
+
+
+@pytest.mark.anyio
+async def test_closes_server_process_when_session_initialization_fails() -> None:
+    stdio = AsyncContext(("read-stream", "write-stream"))
+    client_context = AsyncContext(FakeClientSession())
+    client_context.value.initialize = AsyncMock(side_effect=RuntimeError("initialization failed"))
+    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+
+    with (
+        patch("sensai.mcp.session.stdio_client", return_value=stdio),
+        patch("sensai.mcp.session.ClientSession", return_value=client_context),
+        pytest.raises(MCPStartupError, match="initialization failed"),
+    ):
+        await session.start()
+
+    assert client_context.closed is True
+    assert stdio.closed is True
 
 
 @pytest.mark.anyio
