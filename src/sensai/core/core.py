@@ -66,6 +66,14 @@ class Core:
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
+        """Run the application and close the MCP session when it exits."""
+        try:
+            self._run_application()
+        finally:
+            if self._mcp_client is not None:
+                anyio.run(self._mcp_client.close)
+
+    def _run_application(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
 
         Meant to run off the main thread, since it blocks on `ui` being open, which
