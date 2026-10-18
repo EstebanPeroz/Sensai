@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import anyio
-
 from sensai.tools.tool import Tool
 
 if TYPE_CHECKING:
@@ -37,4 +35,4 @@ class MCPTool(Tool[object]):
 
     def run(self, **kwargs: object) -> str:
         """Execute the MCP tool and return its simple text result."""
-        return anyio.run(self._session.call_tool, self.name, kwargs)
+        return self._session.call_tool_sync(self.name, kwargs)

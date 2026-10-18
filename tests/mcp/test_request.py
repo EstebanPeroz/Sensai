@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.request import add_tool_result, add_tool_schemas, execute_one_tool_call
@@ -63,7 +63,7 @@ def test_add_tool_result_builds_one_follow_up_request() -> None:
 
 def test_model_tool_call_reaches_mcp_server() -> None:
     session = MagicMock()
-    session.call_tool = AsyncMock(return_value="hello from the MCP server")
+    session.call_tool_sync.return_value = "hello from the MCP server"
     tool = MCPTool(
         MCPToolInfo("echo", "Echo text", {"type": "object"}),
         session,
@@ -84,4 +84,4 @@ def test_model_tool_call_reaches_mcp_server() -> None:
         "tool_name": "echo",
         "content": "hello from the MCP server",
     }
-    session.call_tool.assert_awaited_once_with("echo", {"message": "hello from the model"})
+    session.call_tool_sync.assert_called_once_with("echo", {"message": "hello from the model"})

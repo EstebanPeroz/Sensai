@@ -91,10 +91,26 @@ class MCPServerSession:
                 raise
             raise MCPCallError(str(err)) from err
 
-        if result.isError:
+        is_error = getattr(result, "is_error", None)
+        if is_error is None:
+            is_error = getattr(result, "isError", False)
+        if is_error:
             msg = "MCP tool returned an error"
             raise MCPCallError(msg)
         if len(result.content) != 1 or result.content[0].type != "text":
             msg = "MCP tool returned a non-text result"
             raise MCPCallError(msg)
         return result.content[0].text
+
+    def call_tool_sync(self, name: str, arguments: dict[str, object]) -> str:
+        """Call one MCP tool synchronously in a self-contained MCP lifecycle."""
+        return anyio.run(self._call_tool_in_new_session, name, arguments)
+
+    async def _call_tool_in_new_session(self, name: str, arguments: dict[str, object]) -> str:
+        """Start, call, and close a temporary session in one event loop."""
+        session = MCPServerSession(self._config)
+        await session.start()
+        try:
+            return await session.call_tool(name, arguments)
+        finally:
+            await session.close()
