@@ -24,17 +24,13 @@ class MCPClient:
 
         session = MCPServerSession(self._config)
         await session.start()
-        self._session = session
         try:
             tools = await session.list_tools()
         except Exception:
-            await self.close()
+            await session.close()
             raise
+        await session.close()
         return [MCPTool(info, session) for info in tools]
 
     async def close(self) -> None:
-        """Close the started MCP server, if any."""
-        if self._session is None:
-            return
-        await self._session.close()
-        self._session = None
+        """Keep shutdown compatible with callers after discovery has completed."""

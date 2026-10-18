@@ -39,13 +39,13 @@ async def test_disabled_server_returns_no_tools_without_starting() -> None:
 
 
 @pytest.mark.anyio
-async def test_close_closes_started_server() -> None:
+async def test_start_closes_discovery_session() -> None:
     session = AsyncMock()
+    session.list_tools.return_value = []
     client = MCPClient(MCPServerConfig(command="server"))
 
     with patch("sensai.mcp.client.MCPServerSession", return_value=session):
         await client.start()
-        await client.close()
 
     session.close.assert_awaited_once()
 
