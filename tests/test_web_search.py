@@ -14,7 +14,7 @@ from sensai.tools.web._http import HttpFetch
 from sensai.tools.web._ollama import OllamaWeb
 from sensai.tools.web._shaping import chunk_words, clean_text, cosine, top_chunks, truncate_tokens
 from sensai.tools.web._web_search import MAX_TOKENS, SEARCH_MAX_TOKENS, WebFetchTool, WebSearchTool, web_tools
-from sensai.tools.web.backend import FallbackFetch, FallbackSearch, FetchBackend, SearchBackend
+from sensai.tools.web.backend import FetchBackend, FetchChain, SearchBackend, SearchChain
 from sensai.tools.web.error import WebBackendError
 from sensai.tools.web.results import Page, SearchResult
 
@@ -199,11 +199,11 @@ class TestHttpFetch:
             HttpFetch(4).fetch("https://a.com")
 
 
-class TestFallback:
+class TestChain:
     def test_search_uses_first_backend_that_answers(self, caplog: pytest.LogCaptureFixture) -> None:
         first, second, third = StubSearch("a"), StubSearch("b", make_results(1)), StubSearch("c", make_results(2))
         with caplog.at_level(logging.INFO, logger="sensai.tools.web.backend"):
-            results = FallbackSearch([first, second, third]).search("q", 5)
+            results = SearchChain([first, second, third]).search("q", 5)
 
         assert results == make_results(1)
         assert third.calls == 0
@@ -211,19 +211,19 @@ class TestFallback:
         assert "answered by b" in caplog.text
 
     def test_search_raises_when_every_backend_fails(self) -> None:
-        with pytest.raises(WebBackendError, match=r"fallback: a: down; b: down"):
-            FallbackSearch([StubSearch("a"), StubSearch("b")]).search("q", 5)
+        with pytest.raises(WebBackendError, match=r"chain: a: down; b: down"):
+            SearchChain([StubSearch("a"), StubSearch("b")]).search("q", 5)
 
     def test_fetch_uses_first_backend_that_answers(self, caplog: pytest.LogCaptureFixture) -> None:
         page = Page("T", "https://a.com", "text")
         with caplog.at_level(logging.INFO, logger="sensai.tools.web.backend"):
-            assert FallbackFetch([StubFetch("a"), StubFetch("b", page)]).fetch("https://a.com") == page
+            assert FetchChain([StubFetch("a"), StubFetch("b", page)]).fetch("https://a.com") == page
 
         assert "answered by b" in caplog.text
 
     def test_fetch_raises_when_every_backend_fails(self) -> None:
         with pytest.raises(WebBackendError, match="a: down"):
-            FallbackFetch([StubFetch("a")]).fetch("https://a.com")
+            FetchChain([StubFetch("a")]).fetch("https://a.com")
 
     def test_backend_error_is_a_sensai_error(self) -> None:
         assert issubclass(WebBackendError, SensaiError)

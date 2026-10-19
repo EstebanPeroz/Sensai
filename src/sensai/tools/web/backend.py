@@ -32,10 +32,10 @@ class FetchBackend(ABC):
         """Return the main content of `url`, raising WebBackendError on failure."""
 
 
-class FallbackSearch(SearchBackend):
+class SearchChain(SearchBackend):
     """Asks each backend in turn, switching to the next one on error."""
 
-    name = "fallback"
+    name = "chain"
 
     def __init__(self, backends: list[SearchBackend]) -> None:
         """Keep the backends in priority order."""
@@ -56,10 +56,10 @@ class FallbackSearch(SearchBackend):
         raise WebBackendError(self.name, "; ".join(errors) or "no backend configured")
 
 
-class FallbackFetch(FetchBackend):
+class FetchChain(FetchBackend):
     """Asks each backend in turn, switching to the next one on error."""
 
-    name = "fallback"
+    name = "chain"
 
     def __init__(self, backends: list[FetchBackend]) -> None:
         """Keep the backends in priority order."""

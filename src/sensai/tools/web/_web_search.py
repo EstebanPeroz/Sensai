@@ -7,7 +7,7 @@ from sensai.tools.web._ddgs import DuckDuckGoSearch
 from sensai.tools.web._http import HttpFetch
 from sensai.tools.web._ollama import OllamaWeb
 from sensai.tools.web._shaping import chunk_words, clean_text, top_chunks, truncate_tokens
-from sensai.tools.web.backend import FallbackFetch, FallbackSearch
+from sensai.tools.web.backend import FetchChain, SearchChain
 from sensai.tools.web.error import WebBackendError
 
 if TYPE_CHECKING:
@@ -134,6 +134,6 @@ def web_tools(settings: WebSettings, api_key: str | None, embedder: Embedder) ->
     """Build web_search and web_fetch: Ollama's API first, keyless backends as fallback."""
     ollama = OllamaWeb(settings.api_base_url, api_key, settings.timeout)
     return [
-        WebSearchTool(FallbackSearch([ollama, DuckDuckGoSearch(settings.timeout)])),
-        WebFetchTool(FallbackFetch([ollama, HttpFetch(settings.timeout)]), embedder),
+        WebSearchTool(SearchChain([ollama, DuckDuckGoSearch(settings.timeout)])),
+        WebFetchTool(FetchChain([ollama, HttpFetch(settings.timeout)]), embedder),
     ]
