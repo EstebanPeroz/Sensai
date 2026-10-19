@@ -1,6 +1,25 @@
 from sensai.llm.responses import ChatResponse, ShowResponse
 from sensai.llm.thinking.react import ReAct
+from sensai.tools.tool import Tool
 from sensai.tools.tool_manager import ToolManager
+
+
+class SearchTool(Tool[str]):
+    @property
+    def name(self) -> str:
+        return "search"
+
+    @property
+    def description(self) -> str:
+        return "Search the web."
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {}}
+
+    def run(self, **kwargs: object) -> str:
+        del kwargs
+        return "a result"
 
 
 class FakeProvider:
@@ -29,9 +48,9 @@ class FakeProviderManager:
         return self._provider
 
 
-def run(max_iterations: int) -> tuple[FakeProvider, str]:
+def run(max_iterations: int, tools: list[Tool] | None = None) -> tuple[FakeProvider, str]:
     provider = FakeProvider()
-    react = ReAct(FakeProviderManager(provider), ToolManager(), max_iterations)  # type: ignore[arg-type]
+    react = ReAct(FakeProviderManager(provider), ToolManager(tools), max_iterations)  # type: ignore[arg-type]
     chunks = list(react.generate_answer([{"role": "user", "content": "Bonjour"}]))
     return provider, "".join(chunk.content or "" for chunk in chunks)
 
@@ -50,6 +69,19 @@ class TestEffortOff:
         assert provider.shown == []
 
     def test_capabilities_are_looked_up_when_thinking_is_allowed(self) -> None:
-        provider, _ = run(max_iterations=1)
+        provider, _ = run(max_iterations=1, tools=[SearchTool()])
 
         assert provider.shown == ["fake-model"]
+
+
+class TestWithoutTools:
+    def test_does_not_look_up_the_model_capabilities(self) -> None:
+        provider, _ = run(max_iterations=1)
+
+        assert provider.shown == []
+
+    def test_still_answers(self) -> None:
+        provider, answer = run(max_iterations=1)
+
+        assert answer == "Bonjour !"
+        assert all("tools" not in payload for payload in provider.payloads)

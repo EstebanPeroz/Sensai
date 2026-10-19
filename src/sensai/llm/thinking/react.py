@@ -132,13 +132,19 @@ class ReAct:
         return provider.chat(payload, stream=True)
 
     def _available_tools(self) -> list[dict]:
-        """Return the tools to offer to the current model, none when it cannot call tools."""
+        """Return the tools to offer to the current model, none when there are none or when it cannot call tools.
+
+        The capabilities of the model are only looked up when there are tools to offer.
+        """
+        rules = self._tool_manager.get_tool_call_rules()
+        if not rules:
+            return []
+
         provider = self._provider_manager.provider()
         capabilities = provider.show(provider.current_model())
-
         if not capabilities.tools:
             return []
-        return self._tool_manager.get_tool_call_rules()
+        return rules
 
     @staticmethod
     def _wants_tool(thought: str, *, after_observation: bool) -> bool:
