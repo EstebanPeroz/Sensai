@@ -118,12 +118,11 @@ class TestOllama:
         assert post.call_args.args == ("https://ollama.com/api/web_fetch",)
         assert post.call_args.kwargs["json"] == {"url": "https://a.com"}
 
-    @pytest.mark.parametrize("api_key", [None, ""])
-    def test_missing_key_fails_without_request(self, api_key: str | None) -> None:
-        backend = OllamaSearch(OllamaClient("https://ollama.com/", api_key, 5))
+    def test_missing_key_fails_without_request(self) -> None:
+        backend = OllamaSearch(OllamaClient("https://ollama.com/", "", 5))
         with (
             patch("sensai.tools.web.backend._ollama.requests.post") as post,
-            pytest.raises(WebBackendError, match="OLLAMA_API_KEY"),
+            pytest.raises(WebBackendError, match=r"web\.api_key is not set"),
         ):
             backend.search("q", 5)
 
@@ -435,7 +434,7 @@ class TestWebFetchTool:
 
 class TestWebTools:
     def test_falls_back_to_keyless_backends_without_api_key(self) -> None:
-        search, fetch = web_tools(WebSettings(), None, KeywordEmbedder())
+        search, fetch = web_tools(WebSettings(), KeywordEmbedder())
         with (
             patch("sensai.tools.web.backend.search.ddgs.DDGS") as ddgs,
             patch("sensai.tools.web.backend._ollama.requests.post") as post,
@@ -448,7 +447,7 @@ class TestWebTools:
             assert fetch.run(url="https://a.com", query="paris").startswith("[1] Paris facts | https://a.com")
 
     def test_uses_ollama_with_api_key(self) -> None:
-        search, _ = web_tools(WebSettings(api_base_url="https://ollama.test"), "key", KeywordEmbedder())
+        search, _ = web_tools(WebSettings(api_base_url="https://ollama.test", api_key="key"), KeywordEmbedder())
         payload = {"results": [{"title": "T", "url": "https://a.com", "content": "c"}]}
         with (
             patch(

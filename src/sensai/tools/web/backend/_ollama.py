@@ -8,7 +8,7 @@ class OllamaClient:
 
     name = "ollama"
 
-    def __init__(self, base_url: str, api_key: str | None, timeout: float) -> None:
+    def __init__(self, base_url: str, api_key: str, timeout: float) -> None:
         """Bind the client to the API at `base_url`, authenticated with `api_key`."""
         self._base_url = base_url.rstrip("/") + "/"
         self._api_key = api_key
@@ -17,7 +17,7 @@ class OllamaClient:
     def post(self, endpoint: str, payload: dict) -> dict:
         """POST `payload` to `endpoint` and return the decoded JSON object, raising WebBackendError on failure."""
         if not self._api_key:
-            raise WebBackendError(self.name, "OLLAMA_API_KEY is not set")
+            raise WebBackendError(self.name, "web.api_key is not set")
         try:
             response = requests.post(
                 self._base_url + endpoint,

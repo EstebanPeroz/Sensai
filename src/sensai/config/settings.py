@@ -60,16 +60,20 @@ class LLMSettings:
 class WebSettings:
     """Settings of the [web] table, used by the web_search and web_fetch tools.
 
-    The Ollama API key is a secret: it is read from the OLLAMA_API_KEY environment variable, never from this file.
+    `api_key` is a secret: fill it in locally, never commit it. Without it, the keyless backends are used.
     """
 
     api_base_url: str = "https://ollama.com/"
+    api_key: str = field(default="", repr=False)
     timeout: float = 10.0
 
     def __post_init__(self) -> None:
         """Check the values, which come unchecked from the settings file."""
         _check_name(self.api_base_url, "web.api_base_url")
         _check_url(self.api_base_url, "web.api_base_url")
+        if not isinstance(self.api_key, str):
+            msg = f"web.api_key must be a string, got {type(self.api_key).__name__}"
+            raise TypeError(msg)
         if isinstance(self.timeout, bool) or not isinstance(self.timeout, int | float) or self.timeout <= 0:
             msg = f"web.timeout must be a positive number, got {self.timeout!r}"
             raise TypeError(msg)

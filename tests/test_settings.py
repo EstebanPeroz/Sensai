@@ -62,9 +62,13 @@ class TestEmbeddingModel:
 
 class TestWeb:
     def test_is_read_from_web_table(self, tmp_path: Path) -> None:
-        settings = load_settings(write_config(tmp_path, '[web]\napi_base_url = "https://example.com"\ntimeout = 3\n'))
+        content = '[web]\napi_base_url = "https://example.com"\napi_key = "secret"\ntimeout = 3\n'
+        settings = load_settings(write_config(tmp_path, content))
 
-        assert settings.web == WebSettings(api_base_url="https://example.com", timeout=3)
+        assert settings.web == WebSettings(api_base_url="https://example.com", api_key="secret", timeout=3)
+
+    def test_api_key_is_hidden_from_repr(self) -> None:
+        assert "secret" not in repr(WebSettings(api_key="secret"))
 
 
 class TestValidation:
@@ -85,7 +89,7 @@ class TestValidation:
             ('[llm.ollama]\nbase_url = "ftp://ollama:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('[llm.ollama]\nbase_url = "http://ollama:port"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
             ('web = "x"\n', "web must be a table"),
-            ('[web]\napi_key = "x"\n', "unexpected keyword argument 'api_key'"),
+            ("[web]\napi_key = 1\n", "web.api_key must be a string"),
             ('[web]\napi_base_url = "ollama.com"\n', "web.api_base_url must be an http\\(s\\) URL"),
             ("[web]\ntimeout = 0\n", "web.timeout must be a positive number"),
             ('[web]\ntimeout = "10"\n', "web.timeout must be a positive number"),

@@ -1,7 +1,4 @@
 NAME := sensai
-
--include .env
-export
 MODEL = qwen3:1.7b
 
 all: install
