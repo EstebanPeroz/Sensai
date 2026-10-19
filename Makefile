@@ -3,9 +3,14 @@ MODEL = qwen3:1.7b
 
 all: install
 
-install:
+SETTINGS := src/sensai/config/settings.toml
+
+install: $(SETTINGS)
 	uv sync --locked
 	uv run pre-commit install
+
+$(SETTINGS):
+	cp $(SETTINGS).template $(SETTINGS)
 
 run:
 	uv run $(NAME) --model ${MODEL}
