@@ -1,8 +1,10 @@
 from itertools import pairwise
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from sensai.llm.error import RequestCallError
 from sensai.rag.error import (
     EmbeddingError,
     RagError,
@@ -12,7 +14,12 @@ from sensai.rag.error import (
     UnsupportedFormatError,
 )
 from sensai.rag.indexation_rag import ChunkStrategy, Indexation
-from tests.rag.fakes import FakeEmbedder, FakeIndexation, SilentEmbedder
+from tests.rag.fakes import (
+    FailingEmbedder,
+    FakeEmbedder,
+    FakeIndexation,
+    SilentEmbedder,
+)
 
 CATS_THEN_ENGINES = (
     "The cat sleeps all day. It purrs when you pet it. Cats sleep sixteen hours. "
@@ -383,8 +390,21 @@ class TestVectorize:
         assert indexation.vectorize("The cat sleeps.") == [1.0, 0.1]
 
     def test_an_embedder_returning_nothing_raises(self) -> None:
-        with pytest.raises(EmbeddingError, match="returned 0 vectors for 2 texts"):
+        with pytest.raises(EmbeddingError, match="produced no embedding"):
             Indexation(SilentEmbedder()).vectorize_batch(["a", "b"])
+
+    def test_the_empty_answer_names_both_plausible_causes(self) -> None:
+        with pytest.raises(EmbeddingError, match=r"not be installed.*provider is down"):
+            Indexation(SilentEmbedder()).vectorize_batch(["a"])
+
+    def test_a_short_answer_is_reported_as_a_count_mismatch(self) -> None:
+        class HalfEmbedder:
+            def embeddings(self, messages: list[str], model: str) -> list[list]:
+                del model
+                return [[0.1]] * (len(messages) - 1)
+
+        with pytest.raises(EmbeddingError, match="returned 1 vectors for 2 texts"):
+            Indexation(HalfEmbedder()).vectorize_batch(["a", "b"])
 
     def test_the_error_names_the_model_that_failed(self) -> None:
         with pytest.raises(EmbeddingError, match="pas-un-modele"):
@@ -397,3 +417,59 @@ class TestVectorize:
     def test_a_silent_embedder_fails_the_whole_chunking(self) -> None:
         with pytest.raises(EmbeddingError):
             Indexation(SilentEmbedder()).semantic_chunk("The cat sleeps. The engine burns fuel.")
+
+
+class TestVectorizeTranslatesProviderFailures:
+    def test_a_transport_failure_becomes_an_embedding_error(self) -> None:
+        with pytest.raises(EmbeddingError, match="could not embed 2 texts"):
+            Indexation(FailingEmbedder()).vectorize_batch(["a", "b"])
+
+    def test_the_message_names_the_model_and_the_cause(self) -> None:
+        with pytest.raises(EmbeddingError, match=r"bge-m3.*connection refused"):
+            Indexation(FailingEmbedder()).vectorize_batch(["a"])
+
+    def test_the_original_error_is_kept_as_the_cause(self) -> None:
+        with pytest.raises(EmbeddingError) as caught:
+            Indexation(FailingEmbedder()).vectorize_batch(["a"])
+
+        assert isinstance(caught.value.__cause__, RequestCallError)
+
+    def test_it_is_catchable_as_a_rag_error(self) -> None:
+        with pytest.raises(RagError):
+            Indexation(FailingEmbedder()).vectorize_batch(["a"])
+
+    def test_a_provider_error_does_not_escape_the_chunking(self) -> None:
+        with pytest.raises(EmbeddingError):
+            Indexation(FailingEmbedder()).semantic_chunk("The cat sleeps. The engine burns fuel.")
+
+    def test_a_bug_in_the_embedder_is_not_swallowed(self) -> None:
+        class Broken:
+            def embeddings(self, messages: list[str], model: str) -> list[list]:
+                del messages, model
+                raise ZeroDivisionError
+
+        with pytest.raises(ZeroDivisionError):
+            Indexation(Broken()).vectorize_batch(["a"])
+
+
+class TestCollectUrlTimeout:
+    def test_the_read_is_bounded(self, indexation: Indexation) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_urlopen(request: object, timeout: object = None) -> object:
+            del request
+            captured["timeout"] = timeout
+            msg = "stopped before the read"
+            raise OSError(msg)
+
+        with patch("sensai.rag.indexation_rag.urllib.request.urlopen", fake_urlopen), pytest.raises(SourceFetchError):
+            indexation._collect_file("http://localhost:9/slow")
+
+        assert captured["timeout"] is not None
+
+    def test_a_timeout_becomes_a_source_fetch_error(self, indexation: Indexation) -> None:
+        with (
+            patch("sensai.rag.indexation_rag.urllib.request.urlopen", side_effect=TimeoutError),
+            pytest.raises(SourceFetchError, match="could not fetch"),
+        ):
+            indexation._collect_file("http://localhost:9/slow")

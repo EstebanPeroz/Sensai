@@ -1,3 +1,4 @@
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, override
 
@@ -10,6 +11,8 @@ if TYPE_CHECKING:
 _INDEXABLE_SUFFIXES = (".txt", ".md", ".pdf", ".html", ".htm")
 _IGNORED_DIRECTORIES = {"__pycache__", "node_modules"}
 _MAX_COMPLETIONS = 50
+# How often the dispatch thread looks for a UI event while indexing runs.
+_POLL_SECONDS = 0.05
 
 
 class Index(Command):
@@ -25,29 +28,54 @@ class Index(Command):
         """Init the index Command with the indexer writing to the store."""
         super().__init__()
         self._indexer = indexer
+        self._running = threading.Event()
 
     @override
     def execute(self, *args: str) -> None:
-        """Index every given source, reporting each one then a summary.
+        """Index every given source, off the thread that dispatches the UI events.
 
-        A source that cannot be indexed is reported and skipped: the others are
-        still indexed, so one bad path does not waste the whole batch.
+        Embedding a document takes seconds, and minutes for a large one. Done on
+        the dispatch thread it would hold back every event meanwhile, the one
+        asking to quit included. So the work goes to a worker thread, and this
+        waits on it while still watching for an event: when one shows up, it
+        returns and leaves the event to the dispatch loop, the indexation
+        carrying on and reporting on its own.
         """
         if not args:
             self._ui.send_system_message(f"Usage: {self.usage}")
             return
-        chunks, failures = 0, 0
-        for source in args:
-            try:
-                indexed = self._indexer.index(source)
-            except RagError as error:
-                failures += 1
-                self._ui.send_system_message(f"{source}: {error.message}")
-                continue
-            chunks += indexed
-            self._ui.send_system_message(f"{source}: {indexed} chunks")
-        if len(args) > 1 or failures:
-            self._ui.send_system_message(self._summary(len(args), chunks, failures))
+        if self._running.is_set():
+            self._ui.send_system_message("An indexation is already running.")
+            return
+        self._running.set()
+        threading.Thread(target=self._index_all, args=args, daemon=True).start()
+        while self._running.is_set():
+            if self._ui.wait_event(timeout=_POLL_SECONDS):
+                return
+
+    def _index_all(self, *sources: str) -> None:
+        """Index every source, reporting each one then a summary. Runs on a worker thread.
+
+        A source that cannot be indexed is reported and skipped: the others are
+        still indexed, so one bad path does not waste the whole batch.
+        """
+        try:
+            chunks, failures = 0, 0
+            for source in sources:
+                try:
+                    indexed = self._indexer.index(source)
+                except RagError as error:
+                    failures += 1
+                    self._ui.send_system_message(f"{source}: {error.message}")
+                    continue
+                chunks += indexed
+                self._ui.send_system_message(f"{source}: {indexed} chunks")
+            if len(sources) > 1 or failures:
+                self._ui.send_system_message(self._summary(len(sources), chunks, failures))
+        except Exception as error:  # noqa: BLE001 - nothing above would report a worker dying
+            self._ui.send_system_message(f"Indexation stopped on an unexpected error: {error!r}")
+        finally:
+            self._running.clear()
 
     @staticmethod
     def _summary(sources: int, chunks: int, failures: int) -> str:

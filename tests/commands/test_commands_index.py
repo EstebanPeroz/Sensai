@@ -1,14 +1,18 @@
+import time
 from pathlib import Path
+from typing import override
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sensai.commands.base import Command
 from sensai.commands.index import Index
+from sensai.rag.indexation_rag import ChunkStrategy, Indexation
 from sensai.rag.indexer import Indexer
 from sensai.rag.store import ChunkTable, VectorStore
 from tests.commands.fakes import FakeUI
-from tests.rag.fakes import FakeIndexation
+from tests.rag.fakes import BlockingEmbedder, FakeIndexation, FlakyEmbedder
 
 CATS_THEN_ENGINES = (
     "The cat sleeps all day. It purrs when you pet it. Cats sleep sixteen hours. "
@@ -17,9 +21,9 @@ CATS_THEN_ENGINES = (
 
 
 @pytest.fixture
-def store() -> VectorStore:
-    """A VectorStore backed by an in-memory database."""
-    return VectorStore("sqlite:///:memory:")
+def store(tmp_path: Path) -> VectorStore:
+    """A VectorStore on a fresh sqlite file: the indexation writes from a worker thread."""
+    return VectorStore(f"sqlite:///{tmp_path / 'rag.db'}")
 
 
 @pytest.fixture
@@ -166,3 +170,132 @@ class TestCompletions:
         monkeypatch.chdir(tmp_path)
 
         assert len(command.completions([])) == 50
+
+
+class TestExecuteWithProviderFailures:
+    @pytest.fixture
+    def flaky(self, store: VectorStore, fake_ui: FakeUI) -> Index:
+        """An Index command whose embedder fails on any text saying "boom"."""
+        del fake_ui
+        return Index(Indexer(Indexation(FlakyEmbedder()), store))
+
+    def test_a_transport_failure_does_not_abort_the_later_sources(
+        self, flaky: Index, fake_ui: FakeUI, tmp_path: Path
+    ) -> None:
+        first = write(tmp_path, "a.txt", "The cat sleeps.")
+        boom = write(tmp_path, "b.txt", "This one says boom.")
+        last = write(tmp_path, "c.txt", "The engine burns fuel.")
+
+        flaky.execute(first, boom, last)
+
+        assert f"{first}: 1 chunks" in fake_ui.messages
+        assert f"{last}: 1 chunks" in fake_ui.messages
+
+    def test_the_failing_source_is_reported_as_an_embedding_error(
+        self, flaky: Index, fake_ui: FakeUI, tmp_path: Path
+    ) -> None:
+        boom = write(tmp_path, "b.txt", "This one says boom.")
+
+        flaky.execute(boom)
+
+        assert any("EmbeddingError" in message for message in fake_ui.messages)
+
+    def test_the_summary_counts_it_as_skipped(self, flaky: Index, fake_ui: FakeUI, tmp_path: Path) -> None:
+        good = write(tmp_path, "a.txt", "The cat sleeps.")
+        boom = write(tmp_path, "b.txt", "This one says boom.")
+
+        flaky.execute(good, boom)
+
+        assert fake_ui.messages[-1] == "Indexed 1/2 sources into 1 chunks (1 skipped)"
+
+    def test_the_sources_that_worked_are_still_stored(self, flaky: Index, store: VectorStore, tmp_path: Path) -> None:
+        good = write(tmp_path, "a.txt", "The cat sleeps.")
+        boom = write(tmp_path, "b.txt", "This one says boom.")
+
+        flaky.execute(boom, good)
+
+        assert sources(store) == [good]
+
+
+class BrokenIndexer(Indexer):
+    """An Indexer that fails the way a bug does, not the way a bad source does."""
+
+    @override
+    def index(self, source: str, *, strategy: ChunkStrategy = ChunkStrategy.AUTO) -> int:
+        """Raise an error no caller expects."""
+        del source, strategy
+        raise ZeroDivisionError
+
+
+class EventPendingUI(FakeUI):
+    """A FakeUI that always reports a queued event, as one does when the user acts."""
+
+    @override
+    def wait_event(self, *, timeout: float | None = None) -> bool:
+        del timeout
+        return True
+
+
+class TestExecuteOffTheDispatchThread:
+    def test_it_returns_as_soon_as_an_event_is_queued(self, store: VectorStore, tmp_path: Path) -> None:
+        ui = EventPendingUI()
+        Command.bind_ui(ui)
+        command = Index(Indexer(FakeIndexation(), store))
+
+        command.execute(write(tmp_path, "a.txt"))
+
+        assert ui.messages == []  # the worker reports later, the dispatch loop gets its event now
+
+    def test_the_work_still_finishes_after_it_returned(self, store: VectorStore, tmp_path: Path) -> None:
+        ui = EventPendingUI()
+        Command.bind_ui(ui)
+        command = Index(Indexer(FakeIndexation(), store))
+        source = write(tmp_path, "a.txt")
+
+        command.execute(source)
+
+        deadline = time.monotonic() + 5
+        while not sources(store) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert sources(store) == [source, source]
+
+    def test_a_second_indexation_is_refused_while_one_runs(
+        self, store: VectorStore, tmp_path: Path, fake_ui: FakeUI
+    ) -> None:
+        del fake_ui
+        ui = EventPendingUI()
+        Command.bind_ui(ui)
+        command = Index(Indexer(Indexation(BlockingEmbedder()), store))
+        command.execute(write(tmp_path, "a.txt"))
+
+        command.execute(write(tmp_path, "b.txt"))
+
+        assert "An indexation is already running." in ui.messages
+
+    def test_the_guard_is_released_once_done(self, command: Index, fake_ui: FakeUI, tmp_path: Path) -> None:
+        source = write(tmp_path, "a.txt")
+
+        command.execute(source)
+        fake_ui.messages.clear()
+        command.execute(source)
+
+        assert "An indexation is already running." not in fake_ui.messages
+
+    def test_an_unexpected_error_is_reported_instead_of_vanishing(
+        self, store: VectorStore, fake_ui: FakeUI, tmp_path: Path
+    ) -> None:
+        command = Index(BrokenIndexer(FakeIndexation(), store))
+
+        command.execute(write(tmp_path, "a.txt"))
+
+        assert any("unexpected error" in message for message in fake_ui.messages)
+
+    def test_the_guard_is_released_even_when_the_indexer_breaks(
+        self, store: VectorStore, fake_ui: FakeUI, tmp_path: Path
+    ) -> None:
+        command = Index(BrokenIndexer(FakeIndexation(), store))
+        command.execute(write(tmp_path, "a.txt"))
+
+        command.execute(write(tmp_path, "b.txt"))
+
+        assert "An indexation is already running." not in fake_ui.messages

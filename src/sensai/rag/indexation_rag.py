@@ -12,6 +12,7 @@ import pypdf
 from bs4 import BeautifulSoup
 from pypdf.errors import DependencyError, PyPdfError
 
+from sensai.error import SensaiError
 from sensai.rag.error import (
     EmbeddingError,
     SourceFetchError,
@@ -22,6 +23,11 @@ from sensai.rag.error import (
 DEFAULT_EMBEDDING_MODEL = "bge-m3"
 
 _MAX_WORD_CHUNKS = 50
+_URL_TIMEOUT_SECONDS = 10
+# The provider bounds how long one embedding request may take. Measured on
+# 50-word chunks, 32 per request already overran it while 8 stayed under a third
+# of the budget, and the total time does not depend on the request size anyway.
+_EMBED_BATCH_SIZE = 8
 _OVERLAP_SENTENCES = 1
 _HTML_TAGS = re.compile(r"<[^>]+>")
 # Zero-width (200b-200f), direction marks (202a-202e),
@@ -37,7 +43,13 @@ class Embedder(Protocol):
     """The only thing the indexation needs from a provider: turning texts into vectors."""
 
     def embeddings(self, messages: list[str], model: str) -> list[list]:
-        """Return one vector per message, or an empty list when `model` is unavailable."""
+        """Return one vector per message, or an empty list when `model` is unavailable.
+
+        Raises:
+            SensaiError: If the request could not be sent, was refused, or came
+                back unreadable. Anything else is a bug, and is left to surface.
+
+        """
         ...
 
 
@@ -89,14 +101,19 @@ class Indexation:
     def _collect_url(self, source: str) -> str:
         """Fetch `source` over HTTP and return the text of the page.
 
+        A server that accepts the connection and then sends nothing would block
+        the read forever, and with it the thread dispatching the UI events, so
+        the read is bounded: the TimeoutError it raises is an OSError, which the
+        clause below already turns into a SourceFetchError.
+
         Raises:
-            SourceFetchError: If the URL cannot be reached or read.
+            SourceFetchError: If the URL cannot be reached, read, or answers too slowly.
 
         """
         # S310: the caller has already checked that `source` starts with http:// or https://.
         request = urllib.request.Request(source, headers={"User-Agent": "Mozilla/5.0"})  # noqa: S310
         try:
-            with urllib.request.urlopen(request) as response:  # noqa: S310
+            with urllib.request.urlopen(request, timeout=_URL_TIMEOUT_SECONDS) as response:  # noqa: S310
                 html_content = response.read().decode("utf-8", errors="ignore")
         except (OSError, HTTPException, ValueError) as error:
             msg = f"could not fetch {source}: {error}"
@@ -298,14 +315,34 @@ class Indexation:
         return self.vectorize_batch([text])[0]
 
     def vectorize_batch(self, texts: list[str]) -> list[list[float]]:
-        """Vectorize several texts in a single network call.
+        """Vectorize several texts, in as many requests as the provider's limit needs.
+
+        A whole document in one request runs into the time the provider allows
+        for it, and splitting it costs nothing measurable.
+        """
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), _EMBED_BATCH_SIZE):
+            vectors.extend(self._embed(texts[start : start + _EMBED_BATCH_SIZE]))
+        return vectors
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
+        """Embed one request worth of texts, translating whatever the provider raises.
 
         Raises:
-            EmbeddingError: If the provider did not return one vector per text,
-                which an unavailable embedding model is enough to cause.
+            EmbeddingError: If the provider failed to answer, or did not return
+                one vector per text, which an unavailable embedding model is
+                enough to cause. Provider errors are translated so that one
+                failing source does not abort a whole batch of them.
 
         """
-        vectors = self._embedder.embeddings(texts, self._model)
+        try:
+            vectors = self._embedder.embeddings(texts, self._model)
+        except SensaiError as error:
+            msg = f"model {self._model!r} could not embed {len(texts)} texts: {error}"
+            raise EmbeddingError(msg) from error
+        if not vectors:
+            msg = f"model {self._model!r} produced no embedding: it may not be installed, or the provider is down"
+            raise EmbeddingError(msg)
         if len(vectors) != len(texts):
             msg = f"model {self._model!r} returned {len(vectors)} vectors for {len(texts)} texts"
             raise EmbeddingError(msg)
