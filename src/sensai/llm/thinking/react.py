@@ -88,8 +88,8 @@ class ReAct:
                 yield chunk
             if chunk.content is not None:
                 thought += chunk.content
-                yield self._thinking(chunk.content)
-        yield self._thinking("\n")
+                yield self._build_thinking(chunk.content)
+        yield self._build_thinking("\n")
         messages.append({"role": "assistant", "content": thought})
 
     def _act(self, messages: list[dict], tools: list[dict]) -> Iterator[ChatResponse]:
@@ -114,7 +114,7 @@ class ReAct:
         """Run each tool the model called and add its result to `messages`, showing the tool name as thinking."""
         for call in tool_calls:
             name = call.get("function", {}).get("name", "unknown")
-            yield self._thinking(f"-> Using {name}...\n\n")
+            yield self._build_thinking(f"-> Using {name}...\n\n")
 
             result = self._tool_manager.call(call)
             messages.append(result)
@@ -163,6 +163,6 @@ class ReAct:
         return "\n".join(lines)
 
     @staticmethod
-    def _thinking(text: str) -> ChatResponse:
+    def _build_thinking(text: str) -> ChatResponse:
         """Build a chunk that the UI shows as thinking instead of as the answer."""
         return ChatResponse({"done": False, "message": {"thinking": text}})
