@@ -114,7 +114,7 @@ class ReAct:
         """Run each tool the model called and add its result to `messages`, showing the tool name as thinking."""
         for call in tool_calls:
             name = call.get("function", {}).get("name", "unknown")
-            yield self._build_thinking(f"-> Using {name}...\n\n")
+            yield self._build_thinking(f"-> Using {name}...\n")
 
             result = self._tool_manager.call(call)
             messages.append(result)
@@ -159,7 +159,6 @@ class ReAct:
         for tool in tools:
             function = tool["function"]
             lines.append(f"- {function['name']}: {function['description']}")
-
         return "\n".join(lines)
 
     @staticmethod

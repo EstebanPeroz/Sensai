@@ -105,7 +105,11 @@ class Core:
         embedding_model = self._settings.llm.embedding_model
         if embedding_model is None:
             return []
-        embedder = Embedder(self._provider_manager.provider(), embedding_model)
+        provider = self._provider_manager.get_provider(embedding_model)
+        if provider is None:
+            err = f"embedding model '{embedding_model}' not found in provider manager"
+            raise ModelError(err)
+        embedder = Embedder(provider, embedding_model)
         return web_tools(self._settings.web, os.environ.get("OLLAMA_API_KEY"), embedder)
 
     def _launch_command(self, content: str) -> None:
