@@ -1,3 +1,4 @@
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from sensai.config.settings import (
     OllamaSettings,
     Settings,
     WebSettings,
+    default_settings_file,
     load_settings,
 )
 
@@ -20,13 +22,33 @@ def write_config(tmp_path: Path, content: str) -> Path:
 
 
 class TestPackagedSettings:
-    def test_loads_packaged_file_by_default(self) -> None:
-        settings = load_settings()
+    def test_loads_default_file_without_path(self) -> None:
+        assert isinstance(load_settings(), Settings)
 
-        assert isinstance(settings, Settings)
+    def test_template_holds_the_defaults(self) -> None:
+        template = resources.files("sensai.config").joinpath("settings.toml.template")
+        settings = load_settings(Path(str(template)))
+
         assert settings.llm.embedding_model == "nomic-embed-text"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
         assert settings.web == WebSettings()
+
+    def test_default_file_is_the_template_without_local_settings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "settings.toml.template").write_text("")
+        monkeypatch.setattr("sensai.config.settings.resources.files", lambda _: tmp_path)
+
+        assert default_settings_file() == tmp_path / "settings.toml.template"
+
+    def test_default_file_is_the_local_settings_when_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "settings.toml.template").write_text("")
+        (tmp_path / "settings.toml").write_text("")
+        monkeypatch.setattr("sensai.config.settings.resources.files", lambda _: tmp_path)
+
+        assert default_settings_file() == tmp_path / "settings.toml"
 
 
 class TestDefaults:

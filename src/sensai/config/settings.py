@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from sensai.error import SensaiError
 
 if TYPE_CHECKING:
+    from importlib.resources.abc import Traversable
     from pathlib import Path
 
 
@@ -60,7 +61,7 @@ class LLMSettings:
 class WebSettings:
     """Settings of the [web] table, used by the web_search and web_fetch tools.
 
-    `api_key` is a secret: fill it in locally, never commit it. Without it, the keyless backends are used.
+    `api_key` is a secret, set in the git-ignored settings.toml only. Without it, the keyless backends are used.
     """
 
     api_base_url: str = "https://ollama.com/"
@@ -131,15 +132,22 @@ class Settings:
     features: FeatureSettings = field(default_factory=FeatureSettings)
 
 
+def default_settings_file() -> Traversable:
+    """Return the local settings.toml of sensai.config, or the settings.toml.template it is copied from."""
+    config = resources.files("sensai.config")
+    local = config.joinpath("settings.toml")
+    return local if local.is_file() else config.joinpath("settings.toml.template")
+
+
 def load_settings(path: Path | None = None) -> Settings:
     """Load the settings file, falling back to the built-in defaults for missing keys.
 
-    Without a path, the settings.toml packaged with sensai is used.
+    Without a path, the local settings.toml is used, or its template when there is none.
     """
     source = path
     try:
         if source is None:
-            source = resources.files("sensai.config").joinpath("settings.toml")
+            source = default_settings_file()
         with source.open("rb") as f:
             data = tomllib.load(f)
     except FileNotFoundError:
