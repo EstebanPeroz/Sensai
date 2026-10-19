@@ -1,8 +1,10 @@
 [db]
 persistent.url= "sqlite:///persistent.db"
+rag.url = "sqlite:///rag.db"
 
 [llm]
-embedding_model = "nomic-embed-text"
+# Must be a multilingual model: nomic-embed-text barely separates French topics.
+embedding_model = "bge-m3"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"

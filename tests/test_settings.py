@@ -2,7 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from sensai.config.settings import PROVIDERS, ConfigError, LLMSettings, OllamaSettings, Settings, load_settings
+from sensai.config.settings import (
+    PROVIDERS,
+    ConfigError,
+    LLMSettings,
+    OllamaSettings,
+    RagDBSettings,
+    Settings,
+    load_settings,
+)
 
 
 def write_config(tmp_path: Path, content: str) -> Path:
@@ -16,8 +24,9 @@ class TestPackagedSettings:
         settings = load_settings()
 
         assert isinstance(settings, Settings)
-        assert settings.llm.embedding_model == "nomic-embed-text"
+        assert settings.llm.embedding_model == "bge-m3"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
+        assert settings.db.rag.url == "sqlite:///rag.db"
 
 
 class TestDefaults:
@@ -51,6 +60,27 @@ class TestEmbeddingModel:
         assert settings.llm.embedding_model == "embeddinggemma"
 
 
+class TestRagDatabase:
+    def test_is_read_from_the_db_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[db]\nrag.url = "sqlite:///other.db"\n'))
+
+        assert settings.db.rag.url == "sqlite:///other.db"
+
+    def test_a_missing_table_is_not_an_error(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "")).db.rag == RagDBSettings()
+
+    def test_the_default_is_a_usable_url(self) -> None:
+        assert RagDBSettings().url == "sqlite:///rag.db"
+
+    def test_it_does_not_disturb_the_persistent_database(self, tmp_path: Path) -> None:
+        content = '[db]\npersistent.url = "sqlite:///main.db"\nrag.url = "sqlite:///chunks.db"\n'
+
+        settings = load_settings(write_config(tmp_path, content))
+
+        assert settings.db.persistent.url == "sqlite:///main.db"
+        assert settings.db.rag.url == "sqlite:///chunks.db"
+
+
 class TestValidation:
     @pytest.mark.parametrize(
         ("content", "reason"),
@@ -63,6 +93,9 @@ class TestValidation:
             ('llm = "x"\n', "llm must be a table"),
             ('[llm]\nollama = "x"\n', "ollama must be a table"),
             ('[llm]\nembedding_model = ""\n', "llm.embedding_model must be a non-empty string"),
+            ('[db]\nrag.url = ""\n', "db.rag.url must be a non-empty string"),
+            ('[db]\nrag.path = "x"\n', "unexpected keyword argument 'path'"),
+            ('[db]\nrag = "x"\n', "rag must be a table"),
             ('[llm.ollama]\nbase_url = ["a"]\n', "llm.ollama.base_url must be a non-empty string"),
             ('[llm.ollama]\nbase_url = "http://"\n', "llm.ollama.base_url must be an http\\(s\\) URL with a host"),
             ('[llm.ollama]\nbase_url = "localhost:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),

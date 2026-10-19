@@ -1,4 +1,5 @@
 persistent.db
+rag.db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

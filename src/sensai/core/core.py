@@ -2,7 +2,7 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from sensai import ui
-from sensai.commands import Branch, Command, Help, Model, PersonaCommand, StateCommand
+from sensai.commands import Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.commands.tools import ToolsCommand
@@ -15,6 +15,9 @@ from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
+from sensai.rag.indexer import Indexer
+from sensai.rag.store import VectorStore
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
 
@@ -100,10 +103,16 @@ class Core:
                 ToolsCommand(self._tool_manager),
                 Export(self.conversation),
                 Import(),
+                Index(self._build_indexer()),
             ]
         )
         registry.register_command(Help(registry))
         return registry
+
+    def _build_indexer(self) -> Indexer:
+        """Build the RAG indexer, on the embedding model the settings ask for."""
+        model = self._settings.llm.embedding_model or DEFAULT_EMBEDDING_MODEL
+        return Indexer(Indexation(self._provider_manager.provider(), model), VectorStore(self._settings.db.rag.url))
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""

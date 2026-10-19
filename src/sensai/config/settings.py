@@ -69,10 +69,26 @@ class PersistentDBSettings:
 
 
 @dataclass
+class RagDBSettings:
+    """Settings of the [db.rag] table: the database holding the RAG chunks.
+
+    Unlike the persistent database, this one has a usable default: a missing
+    [db.rag] table is not an error, it just means the chunks go to rag.db.
+    """
+
+    url: str = "sqlite:///rag.db"
+
+    def __post_init__(self) -> None:
+        """Check the URL, which comes unchecked from the settings file."""
+        _check_name(self.url, "db.rag.url")
+
+
+@dataclass
 class DBSettings:
     """Settings of the [db] table."""
 
     persistent: PersistentDBSettings = field(default_factory=PersistentDBSettings)
+    rag: RagDBSettings = field(default_factory=RagDBSettings)
 
 
 @dataclass
@@ -138,10 +154,11 @@ def load_settings(path: Path | None = None) -> Settings:
             }
             db = _pop_table(data, "db")
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
+            rag = RagDBSettings(**_pop_table(db, "rag"))
             features = FeatureSettings(**_pop_table(data, "features"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
-                db=DBSettings(**db, persistent=persistent),
+                db=DBSettings(**db, persistent=persistent, rag=rag),
                 features=features,
                 **data,
             )
