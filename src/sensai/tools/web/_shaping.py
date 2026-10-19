@@ -42,13 +42,11 @@ def cosine(a: list[float], b: list[float]) -> float:
 def top_chunks(chunks: list[str], query: str, embedder: Embedder, count: int) -> list[str]:
     """Keep the `count` chunks closest to `query`, in their original order.
 
-    Without embeddings (no embedding model available), the first `count` chunks are kept.
+    Raises EmbeddingError when the chunks cannot be embedded.
     """
     if len(chunks) <= count:
         return chunks
     vectors = embedder.embed([query, *chunks])
-    if not vectors:
-        return chunks[:count]
     query_vector, chunk_vectors = vectors[0], vectors[1:]
     scores = [cosine(query_vector, vector) for vector in chunk_vectors]
     best = sorted(range(len(chunks)), key=lambda i: scores[i], reverse=True)[:count]

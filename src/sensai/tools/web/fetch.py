@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
+from sensai.llm.error import EmbeddingError
 from sensai.tools.tool import Tool, get_parameter
 from sensai.tools.web._shaping import chunk_words, clean_text, header, top_chunks, truncate_tokens, unavailable
 from sensai.tools.web.error import WebBackendError
@@ -13,6 +15,8 @@ if TYPE_CHECKING:
 CHUNK_WORDS = 150
 KEPT_CHUNKS = 4
 MAX_TOKENS = 1500
+
+logger = logging.getLogger(__name__)
 
 
 class WebFetchTool(Tool[str]):
@@ -59,6 +63,13 @@ class WebFetchTool(Tool[str]):
             page = self._backend.fetch(url)
         except WebBackendError as err:
             return unavailable("Web fetch", err)
-        passages = top_chunks(chunk_words(clean_text(page.text), CHUNK_WORDS), query, self._embedder, KEPT_CHUNKS)
-        result = header(1, page.title, page.url) + "\n\n" + "\n\n".join(passages)
+        chunks = chunk_words(clean_text(page.text), CHUNK_WORDS)
+        lines = [header(1, page.title, page.url)]
+        try:
+            passages = top_chunks(chunks, query, self._embedder, KEPT_CHUNKS)
+        except EmbeddingError as err:
+            logger.warning("web_fetch: passages not ranked (%s)", err)
+            lines.append(f"(Passages not ranked by relevance, first ones kept: {err})")
+            passages = chunks[:KEPT_CHUNKS]
+        result = "\n\n".join([*lines, *passages])
         return truncate_tokens(result, MAX_TOKENS)

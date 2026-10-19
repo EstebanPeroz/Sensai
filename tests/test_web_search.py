@@ -8,7 +8,7 @@ from ddgs.exceptions import RatelimitException
 from sensai.config.settings import WebSettings
 from sensai.error import SensaiError
 from sensai.llm.embedder import Embedder
-from sensai.llm.error import RequestCallError, RequestStatusError
+from sensai.llm.error import EmbeddingError, RequestCallError, RequestStatusError
 from sensai.tools.web import WebFetchTool, WebSearchTool, web_tools
 from sensai.tools.web._shaping import chunk_words, clean_text, cosine, top_chunks, truncate_tokens
 from sensai.tools.web.backend._ollama import OllamaClient
@@ -263,11 +263,12 @@ class TestShaping:
 
         assert top_chunks(chunks, "paris paris paris", KeywordEmbedder(), 2) == ["paris paris", "paris paris paris"]
 
-    def test_top_chunks_without_embeddings_keeps_first_chunks(self) -> None:
+    def test_top_chunks_raises_without_embeddings(self) -> None:
         embedder = MagicMock(spec=Embedder)
-        embedder.embed.return_value = []
+        embedder.embed.side_effect = EmbeddingError("embedding model 'm' is not available")
 
-        assert top_chunks(["a", "b", "c"], "q", embedder, 2) == ["a", "b"]
+        with pytest.raises(EmbeddingError, match="not available"):
+            top_chunks(["a", "b", "c"], "q", embedder, 2)
 
     def test_top_chunks_skips_embedding_when_few_chunks(self) -> None:
         embedder = MagicMock(spec=Embedder)
@@ -295,18 +296,30 @@ class TestEmbedder:
         assert Embedder(provider, "nomic-embed-text").embed(["a", "b"]) == [[1.0], [2.0]]
         provider.embeddings.assert_called_once_with(["a", "b"], "nomic-embed-text")
 
-    def test_mismatched_count_gives_no_vectors(self) -> None:
+    def test_unavailable_model_raises(self) -> None:
         provider = MagicMock()
         provider.embeddings.return_value = []
 
-        assert Embedder(provider, "m").embed(["a"]) == []
+        with pytest.raises(EmbeddingError, match="'m' is not available"):
+            Embedder(provider, "m").embed(["a"])
+
+    def test_mismatched_count_raises(self) -> None:
+        provider = MagicMock()
+        provider.embeddings.return_value = [[1.0]]
+
+        with pytest.raises(EmbeddingError, match="returned 1 vectors for 2 texts"):
+            Embedder(provider, "m").embed(["a", "b"])
 
     @pytest.mark.parametrize("error", [RequestCallError(" Post -> timed out"), RequestStatusError(500)])
-    def test_provider_error_gives_no_vectors(self, error: SensaiError) -> None:
+    def test_provider_error_raises(self, error: SensaiError) -> None:
         provider = MagicMock()
         provider.embeddings.side_effect = error
 
-        assert Embedder(provider, "m").embed(["a"]) == []
+        with pytest.raises(EmbeddingError, match="'m' failed"):
+            Embedder(provider, "m").embed(["a"])
+
+    def test_embedding_error_is_a_sensai_error(self) -> None:
+        assert issubclass(EmbeddingError, SensaiError)
 
     def test_empty_input_skips_provider(self) -> None:
         provider = MagicMock()
@@ -389,15 +402,19 @@ class TestWebFetchTool:
         assert len(output) <= MAX_TOKENS * 4
         assert output.endswith("[…]")
 
-    def test_embedding_failure_keeps_first_passages(self) -> None:
+    def test_embedding_failure_keeps_first_passages_and_says_so(self, caplog: pytest.LogCaptureFixture) -> None:
         provider = MagicMock()
         provider.embeddings.side_effect = RequestCallError(" Post -> timed out")
         page = Page("T", "https://a.com", " ".join(f"w{i}" for i in range(1000)))
-        output = WebFetchTool(StubFetch("a", page), Embedder(provider, "m")).run(url="https://a.com", query="q")
+        with caplog.at_level(logging.WARNING, logger="sensai.tools.web.fetch"):
+            output = WebFetchTool(StubFetch("a", page), Embedder(provider, "m")).run(url="https://a.com", query="q")
 
-        _, *passages = output.split("\n\n")
+        _, note, *passages = output.split("\n\n")
+        assert note.startswith("(Passages not ranked by relevance")
+        assert "timed out" in note
         assert passages[0].startswith("w0 ")
         assert passages[-1].startswith("w450 ")
+        assert "passages not ranked" in caplog.text
 
     def test_failure_is_reported_as_unavailable(self) -> None:
         output = WebFetchTool(StubFetch("a"), KeywordEmbedder()).run(url="https://a.com", query="q")
