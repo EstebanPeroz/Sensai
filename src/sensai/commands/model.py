@@ -4,7 +4,6 @@ from sensai.commands.base import Command
 
 if TYPE_CHECKING:
     from sensai.llm.provider_manager import ProviderManager
-    from sensai.ui.adapter import UIAdapter
 
 
 class Model(Command):
@@ -15,9 +14,9 @@ class Model(Command):
     usage = "/model [model_name]"
     _provider_manager: ProviderManager
 
-    def __init__(self, ui: UIAdapter, provider_manager: ProviderManager) -> None:
+    def __init__(self, provider_manager: ProviderManager) -> None:
         """Initialize the Model command with the provider manager serving the models."""
-        super().__init__(ui)
+        super().__init__()
         self._provider_manager = provider_manager
 
     def _display_available_models(self) -> None:
@@ -52,6 +51,7 @@ class Model(Command):
         self._ui.send_system_message(f"Invalid number of arguments. Usage: {self.usage}")
 
     @override
-    def completions(self) -> list[str]:
+    def completions(self, args: list[str]) -> list[str]:
         """Return the available model names."""
+        del args
         return sorted(self._provider_manager.get_models())

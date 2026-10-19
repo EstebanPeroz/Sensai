@@ -15,7 +15,7 @@ def react() -> ReAct:
 
 class TestEffort:
     def test_no_arguments_displays_current_and_available_efforts(self, fake_ui: FakeUI, react: ReAct) -> None:
-        Effort(fake_ui, react).execute()
+        Effort(react).execute()
 
         assert fake_ui.messages == [
             (
@@ -29,38 +29,38 @@ class TestEffort:
         ]
 
     def test_no_arguments_with_effort_outside_the_levels(self, fake_ui: FakeUI) -> None:
-        Effort(fake_ui, ReAct(MagicMock(), ToolManager(), max_iterations=7)).execute()
+        Effort(ReAct(MagicMock(), ToolManager(), max_iterations=7)).execute()
 
         assert fake_ui.messages[0].startswith("Current effort: 7 thinking steps\n")
 
     @pytest.mark.parametrize(("level", "steps"), list(EFFORTS.items()))
     def test_one_argument_sets_effort(self, fake_ui: FakeUI, react: ReAct, level: str, steps: int) -> None:
-        Effort(fake_ui, react).execute(level)
+        Effort(react).execute(level)
 
         assert react.max_iterations == steps
         assert fake_ui.messages[0].startswith(f"Effort set to '{level}': ")
 
     @pytest.mark.parametrize("level", list(EFFORTS))
     def test_one_argument_shows_effort_in_ui(self, fake_ui: FakeUI, react: ReAct, level: str) -> None:
-        Effort(fake_ui, react).execute(level)
+        Effort(react).execute(level)
 
         assert fake_ui.thinking_efforts == [level]
 
     def test_unknown_effort_keeps_current_one(self, fake_ui: FakeUI, react: ReAct) -> None:
-        Effort(fake_ui, react).execute("extreme")
+        Effort(react).execute("extreme")
 
         assert react.max_iterations == 5
         assert fake_ui.thinking_efforts == []
         assert fake_ui.messages == ["Effort 'extreme' does not exist. Usage: /effort [off|low|medium|high]"]
 
     def test_too_many_arguments_displays_usage(self, fake_ui: FakeUI, react: ReAct) -> None:
-        Effort(fake_ui, react).execute("low", "high")
+        Effort(react).execute("low", "high")
 
         assert react.max_iterations == 5
         assert fake_ui.messages == ["Invalid number of arguments. Usage: /effort [off|low|medium|high]"]
 
-    def test_completions_are_the_efforts(self, fake_ui: FakeUI, react: ReAct) -> None:
-        assert Effort(fake_ui, react).completions() == ["off", "low", "medium", "high"]
+    def test_completions_are_the_efforts(self, react: ReAct) -> None:
+        assert Effort(react).completions([]) == ["off", "low", "medium", "high"]
 
 
 class TestEffortLevel:

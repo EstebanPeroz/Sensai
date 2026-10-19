@@ -4,7 +4,6 @@ from sensai.commands.base import Command
 
 if TYPE_CHECKING:
     from sensai.llm.thinking.react import ReAct
-    from sensai.ui.adapter import UIAdapter
 
 EFFORTS = {"off": 0, "low": 1, "medium": 3, "high": 5}
 LEVELS = {steps: name for name, steps in EFFORTS.items()}
@@ -18,9 +17,9 @@ class Effort(Command):
     usage = "/effort [off|low|medium|high]"
     _react: ReAct
 
-    def __init__(self, ui: UIAdapter, react: ReAct) -> None:
+    def __init__(self, react: ReAct) -> None:
         """Initialize the Effort command with the ReAct loop whose thinking steps it limits."""
-        super().__init__(ui)
+        super().__init__()
         self._react = react
 
     def _display_effort(self) -> None:
@@ -58,8 +57,9 @@ class Effort(Command):
         self._ui.send_system_message(f"Invalid number of arguments. Usage: {self.usage}")
 
     @override
-    def completions(self) -> list[str]:
+    def completions(self, args: list[str]) -> list[str]:
         """Return the available efforts."""
+        del args
         return list(EFFORTS)
 
     @staticmethod

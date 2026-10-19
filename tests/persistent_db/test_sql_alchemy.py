@@ -69,7 +69,7 @@ class TestInit:
 
     def test_data_survives_a_new_instance(self, db: SqlAlchemy, db_url: str) -> None:
         branch = new_branch(db)
-        assert SqlAlchemy(db_url).get_branch_list() == {"Branch": branch}
+        assert SqlAlchemy(db_url).get_branches() == {branch: "Branch"}
 
     def test_invalid_url_raises(self) -> None:
         with pytest.raises(DbConnectionError):
@@ -82,13 +82,13 @@ class TestCreateBranch:
 
         assert branch is not None
         assert db.get_messages(branch) == []
-        assert db.get_branch_list() == {"Branch": branch}
+        assert db.get_branches() == {branch: "Branch"}
 
     def test_new_branches_get_unique_names(self, db: SqlAlchemy) -> None:
         ids = [new_branch(db) for _ in range(3)]
 
         assert len(set(ids)) == 3
-        assert list(db.get_branch_list()) == ["Branch", "Branch 2", "Branch 3"]
+        assert sorted(db.get_branches().values()) == ["Branch", "Branch 2", "Branch 3"]
 
     def test_copy_has_new_id_and_same_messages(self, db: SqlAlchemy) -> None:
         source = new_branch(db)
@@ -116,7 +116,7 @@ class TestCreateBranch:
         new_branch(db, source)
         new_branch(db, source)
 
-        assert list(db.get_branch_list()) == ["Branch", "Branch 2", "Branch 3"]
+        assert sorted(db.get_branches().values()) == ["Branch", "Branch 2", "Branch 3"]
 
     def test_copy_of_a_copy_gets_a_free_name(self, db: SqlAlchemy) -> None:
         source = new_branch(db)
@@ -124,7 +124,7 @@ class TestCreateBranch:
 
         new_branch(db, second)
 
-        assert list(db.get_branch_list()) == ["Branch", "Branch 2", "Branch 2 2"]
+        assert sorted(db.get_branches().values()) == ["Branch", "Branch 2", "Branch 2 2"]
 
     def test_copy_keeps_model_name(self, db: SqlAlchemy) -> None:
         source = new_branch(db)
@@ -153,18 +153,18 @@ class TestCreateBranch:
 
     def test_unknown_source_returns_none(self, db: SqlAlchemy) -> None:
         assert db.create_branch(uuid4()) is None
-        assert db.get_branch_list() == {}
+        assert db.get_branches() == {}
 
 
-class TestGetBranchList:
+class TestGetBranches:
     def test_empty(self, db: SqlAlchemy) -> None:
-        assert db.get_branch_list() == {}
+        assert db.get_branches() == {}
 
-    def test_maps_name_to_id(self, db: SqlAlchemy) -> None:
+    def test_maps_id_to_name(self, db: SqlAlchemy) -> None:
         first = new_branch(db)
         second = new_branch(db)
 
-        assert db.get_branch_list() == {"Branch": first, "Branch 2": second}
+        assert db.get_branches() == {first: "Branch", second: "Branch 2"}
 
 
 class TestGetBranch:
@@ -183,14 +183,50 @@ class TestGetBranch:
         assert conv.replaced is not None
         assert turns(conv.replaced) == [(Role.USER, "hi"), (Role.ASSISTANT, "hello")]
 
-    def test_unknown_branch_leaves_conversation_untouched(self, db: SqlAlchemy) -> None:
+    def test_unknown_branch_raises_and_leaves_conversation_untouched(self, db: SqlAlchemy) -> None:
         conv, manager = FakeConversation(), FakeProviderManager()
 
-        db.get_branch(cast(Conversation, conv), uuid4(), cast(ProviderManager, manager))
+        with pytest.raises(InvalidInstanceError):
+            db.get_branch(cast(Conversation, conv), uuid4(), cast(ProviderManager, manager))
 
         assert conv.uuid is None
         assert conv.replaced is None
         assert manager.models == []
+
+
+class TestSetBranchName:
+    def test_renames_the_branch(self, db: SqlAlchemy) -> None:
+        branch = new_branch(db)
+
+        db.set_branch_name(branch, "renamed")
+
+        assert db.get_branches() == {branch: "renamed"}
+
+    def test_only_renames_that_branch(self, db: SqlAlchemy) -> None:
+        keep = new_branch(db)
+        renamed = new_branch(db)
+
+        db.set_branch_name(renamed, "renamed")
+
+        assert db.get_branches() == {keep: "Branch", renamed: "renamed"}
+
+    def test_unknown_branch_raises(self, db: SqlAlchemy) -> None:
+        with pytest.raises(InvalidInstanceError):
+            db.set_branch_name(uuid4(), "renamed")
+
+
+class TestSetBranchModel:
+    def test_sets_the_model(self, db: SqlAlchemy) -> None:
+        branch = new_branch(db)
+
+        db.set_branch_model(branch, "llama")
+
+        with Session(db._engine) as session:
+            assert row(session, BranchTable, branch).model_name == "llama"
+
+    def test_unknown_branch_raises(self, db: SqlAlchemy) -> None:
+        with pytest.raises(InvalidInstanceError):
+            db.set_branch_model(uuid4(), "llama")
 
 
 class TestRemoveBranch:
@@ -200,7 +236,7 @@ class TestRemoveBranch:
 
         db.remove_branch(drop)
 
-        assert db.get_branch_list() == {"Branch": keep}
+        assert db.get_branches() == {keep: "Branch"}
 
     def test_cascades_to_messages(self, db: SqlAlchemy) -> None:
         branch = new_branch(db)

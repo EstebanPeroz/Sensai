@@ -3,11 +3,11 @@ import os
 from typing import TYPE_CHECKING
 
 from sensai import ui
+from sensai.commands import Branch, Command, Help, Model, PersonaCommand, StateCommand
+from sensai.commands.data_transfer import Export, Import
 from sensai.commands.effort import Effort
-from sensai.commands.help import Help
-from sensai.commands.model import Model
-from sensai.commands.persona import PersonaCommand
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
+from sensai.commands.tools import ToolsCommand
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.embedder import Embedder
@@ -19,6 +19,7 @@ from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
 from sensai.tools.web._web_search import web_tools
 
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
+    from sensai.memory.persistent_db.adapter import PersistentDatabase
     from sensai.tools.tool import Tool
 
 
@@ -38,6 +40,7 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _tool_manager: ToolManager
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
@@ -57,9 +60,12 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self._react = ReAct(self._provider_manager, ToolManager(self._build_tools()))
+        self._tool_manager = ToolManager(
+            [*build_tools(), *self._build_web_tools()], disabled=settings.features.disabled_in("tools")
+        )
+        self._react = ReAct(self._provider_manager, self._tool_manager)
         self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
-        self._command_registry = self._build_command_registry()
+        self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
@@ -68,8 +74,13 @@ class Core:
         requires `ui.run()` to be driving the UI's event loop on the main thread.
         """
         self._ui.open()
+
+        unknown = self._tool_manager.unknown_disabled()
+        if unknown:
+            self._ui.send_system_message(f"Unknown disabled tools in the settings: {', '.join(unknown)}")
+
         self._ui.set_completions(
-            {f"/{command.name}": command.completions() for command in self._command_registry.commands()}
+            {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
         self._ui.update_thinking_effort(Effort.effort_level(self._react.max_iterations))
 
@@ -88,20 +99,26 @@ class Core:
 
         self._ui.close()
 
-    def _build_command_registry(self) -> CommandRegistry:
+    def _build_command_registry(self, db: PersistentDatabase) -> CommandRegistry:
         """Build a command registry with all available commands."""
+        Command.bind_ui(self._ui)
+        StateCommand.bind_db(db)
         registry = CommandRegistry(
             [
-                Model(self._ui, self._provider_manager),
-                PersonaCommand(self._ui, self._persona_manager),
-                Effort(self._ui, self._react),
+                Model(self._provider_manager),
+                PersonaCommand(self._persona_manager),
+                Branch(self.conversation, self._provider_manager),
+                ToolsCommand(self._tool_manager),
+                Effort(self._react),
+                Export(self.conversation),
+                Import(),
             ]
         )
-        registry.register_command(Help(self._ui, registry))
+        registry.register_command(Help(registry))
         return registry
 
-    def _build_tools(self) -> list[Tool]:
-        """Build the tools available to the model: web search and fetch, which need an embedding model."""
+    def _build_web_tools(self) -> list[Tool]:
+        """Build the web search and fetch tools, which need an embedding model."""
         embedding_model = self._settings.llm.embedding_model
         if embedding_model is None:
             return []

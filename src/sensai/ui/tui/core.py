@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from sensai.llm.message import Role
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
+    from sensai.ui.completion import CompletionSource
 
 
 class UITextualAdapter(ui.UIAdapter):
@@ -103,8 +104,8 @@ class UITextualAdapter(ui.UIAdapter):
         return True
 
     @override
-    def set_completions(self, completions: dict[str, list[str]]) -> bool:
-        """Give the commands and their argument values to the input for completion."""
+    def set_completions(self, completions: dict[str, CompletionSource]) -> bool:
+        """Give the commands and their completion functions to the input."""
         try:
             self.app.call_from_thread(self.app.set_completions, completions)
         except RuntimeError:
