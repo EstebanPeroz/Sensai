@@ -1,5 +1,4 @@
 import contextlib
-import os
 from typing import TYPE_CHECKING
 
 from sensai import ui
@@ -21,7 +20,7 @@ from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
-from sensai.tools.web._web_search import web_tools
+from sensai.tools.web import web_tools
 
 if TYPE_CHECKING:
     import argparse
@@ -127,7 +126,7 @@ class Core:
             err = f"embedding model '{embedding_model}' not found in provider manager"
             raise ModelError(err)
         embedder = Embedder(provider, embedding_model)
-        return web_tools(self._settings.web, os.environ.get("OLLAMA_API_KEY"), embedder)
+        return web_tools(self._settings.web, embedder)
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""
