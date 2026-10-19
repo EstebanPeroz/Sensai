@@ -14,15 +14,9 @@ from sensai.tools.web._http import HttpFetch
 from sensai.tools.web._ollama import OllamaWeb
 from sensai.tools.web._shaping import chunk_words, clean_text, cosine, top_chunks, truncate_tokens
 from sensai.tools.web._web_search import MAX_TOKENS, SEARCH_MAX_TOKENS, WebFetchTool, WebSearchTool, web_tools
-from sensai.tools.web.backend import (
-    FallbackFetch,
-    FallbackSearch,
-    FetchBackend,
-    Page,
-    SearchBackend,
-    SearchResult,
-    WebBackendError,
-)
+from sensai.tools.web.backend import FallbackFetch, FallbackSearch, FetchBackend, SearchBackend
+from sensai.tools.web.error import WebBackendError
+from sensai.tools.web.results import Page, SearchResult
 
 _HTML = """<html><head><title>Paris facts</title></head><body>
 <nav>Home | About | Contact</nav>

@@ -7,7 +7,8 @@ from sensai.tools.web._ddgs import DuckDuckGoSearch
 from sensai.tools.web._http import HttpFetch
 from sensai.tools.web._ollama import OllamaWeb
 from sensai.tools.web._shaping import chunk_words, clean_text, top_chunks, truncate_tokens
-from sensai.tools.web.backend import FallbackFetch, FallbackSearch, WebBackendError
+from sensai.tools.web.backend import FallbackFetch, FallbackSearch
+from sensai.tools.web.error import WebBackendError
 
 if TYPE_CHECKING:
     from sensai.config.settings import WebSettings

@@ -1,7 +1,9 @@
 import requests
 import trafilatura
 
-from sensai.tools.web.backend import FetchBackend, Page, WebBackendError
+from sensai.tools.web.backend import FetchBackend
+from sensai.tools.web.error import WebBackendError
+from sensai.tools.web.results import Page
 
 _USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) Sensai/0.1"
 

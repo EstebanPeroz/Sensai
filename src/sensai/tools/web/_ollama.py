@@ -1,6 +1,8 @@
 import requests
 
-from sensai.tools.web.backend import FetchBackend, Page, SearchBackend, SearchResult, WebBackendError
+from sensai.tools.web.backend import FetchBackend, SearchBackend
+from sensai.tools.web.error import WebBackendError
+from sensai.tools.web.results import Page, SearchResult
 
 
 class OllamaWeb(SearchBackend, FetchBackend):

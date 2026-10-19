@@ -1,41 +1,15 @@
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from sensai.error import SensaiError
+from sensai.tools.web.error import WebBackendError
+
+if TYPE_CHECKING:
+    from sensai.tools.web.results import Page, SearchResult
 
 logger = logging.getLogger(__name__)
-
-
-class WebBackendError(SensaiError):
-    """Raised when a web backend cannot answer (network, timeout, rate limit, bad response)."""
-
-    backend: str
-    reason: str
-
-    def __init__(self, backend: str, reason: str) -> None:
-        """Build the error from the failing backend's name and the `reason` it failed."""
-        super().__init__(f"[WebBackendError] {backend}: {reason}")
-        self.backend = backend
-        self.reason = reason
-
-
-@dataclass(frozen=True)
-class SearchResult:
-    """One web search hit: never more than a short snippet of the page."""
-
-    title: str
-    url: str
-    snippet: str
-
-
-@dataclass(frozen=True)
-class Page:
-    """Main text content of one fetched page, navigation and boilerplate removed."""
-
-    title: str
-    url: str
-    text: str
 
 
 class SearchBackend(ABC):
