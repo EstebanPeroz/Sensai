@@ -1,7 +1,7 @@
 from ddgs import DDGS
 from ddgs.exceptions import DDGSException
 
-from sensai.tools.web.backend import SearchBackend
+from sensai.tools.web.backend.search import SearchBackend
 from sensai.tools.web.error import WebBackendError
 from sensai.tools.web.results import SearchResult
 

@@ -9,14 +9,19 @@ from sensai.config.settings import WebSettings
 from sensai.error import SensaiError
 from sensai.llm.embedder import Embedder
 from sensai.llm.error import RequestCallError, RequestStatusError
-from sensai.tools.web._ddgs import DuckDuckGoSearch
-from sensai.tools.web._http import HttpFetch
-from sensai.tools.web._ollama import OllamaWeb
+from sensai.tools.web import WebFetchTool, WebSearchTool, web_tools
 from sensai.tools.web._shaping import chunk_words, clean_text, cosine, top_chunks, truncate_tokens
-from sensai.tools.web._web_search import MAX_TOKENS, SEARCH_MAX_TOKENS, WebFetchTool, WebSearchTool, web_tools
-from sensai.tools.web.backend import FetchBackend, FetchChain, SearchBackend, SearchChain
+from sensai.tools.web.backend._ollama import OllamaClient
+from sensai.tools.web.backend.fetch import FetchBackend, FetchChain
+from sensai.tools.web.backend.fetch.http import HttpFetch
+from sensai.tools.web.backend.fetch.ollama import OllamaFetch
+from sensai.tools.web.backend.search import SearchBackend, SearchChain
+from sensai.tools.web.backend.search.ddgs import DuckDuckGoSearch
+from sensai.tools.web.backend.search.ollama import OllamaSearch
 from sensai.tools.web.error import WebBackendError
+from sensai.tools.web.fetch import MAX_TOKENS
 from sensai.tools.web.results import Page, SearchResult
+from sensai.tools.web.search import SEARCH_MAX_TOKENS
 
 _HTML = """<html><head><title>Paris facts</title></head><body>
 <nav>Home | About | Contact</nav>
@@ -78,11 +83,13 @@ def make_results(count: int) -> list[SearchResult]:
     return [SearchResult(f"Title {i}", f"https://example.com/{i}", f"snippet {i}") for i in range(count)]
 
 
-class TestOllamaWeb:
+class TestOllama:
     def test_search_posts_query_with_bearer_key(self) -> None:
-        backend = OllamaWeb("https://ollama.com", "secret", 5)
+        backend = OllamaSearch(OllamaClient("https://ollama.com", "secret", 5))
         payload = {"results": [{"title": "T", "url": "https://a.com", "content": "c"}]}
-        with patch("sensai.tools.web._ollama.requests.post", return_value=mock_response(json_data=payload)) as post:
+        with patch(
+            "sensai.tools.web.backend._ollama.requests.post", return_value=mock_response(json_data=payload)
+        ) as post:
             results = backend.search("paris", 5)
 
         assert results == [SearchResult("T", "https://a.com", "c")]
@@ -92,17 +99,19 @@ class TestOllamaWeb:
         assert post.call_args.kwargs["timeout"] == 5
 
     def test_search_skips_results_without_url_and_caps_count(self) -> None:
-        backend = OllamaWeb("https://ollama.com/", "secret", 5)
+        backend = OllamaSearch(OllamaClient("https://ollama.com/", "secret", 5))
         payload = {"results": [{"title": "no url"}, *({"url": f"https://a.com/{i}"} for i in range(9))]}
-        with patch("sensai.tools.web._ollama.requests.post", return_value=mock_response(json_data=payload)):
+        with patch("sensai.tools.web.backend._ollama.requests.post", return_value=mock_response(json_data=payload)):
             results = backend.search("q", 3)
 
         assert [result.url for result in results] == ["https://a.com/0", "https://a.com/1"]
 
     def test_fetch_returns_page(self) -> None:
-        backend = OllamaWeb("https://ollama.com/", "secret", 5)
+        backend = OllamaFetch(OllamaClient("https://ollama.com/", "secret", 5))
         payload = {"title": "Paris", "content": "Paris is the capital.", "links": []}
-        with patch("sensai.tools.web._ollama.requests.post", return_value=mock_response(json_data=payload)) as post:
+        with patch(
+            "sensai.tools.web.backend._ollama.requests.post", return_value=mock_response(json_data=payload)
+        ) as post:
             page = backend.fetch("https://a.com")
 
         assert page == Page("Paris", "https://a.com", "Paris is the capital.")
@@ -111,9 +120,9 @@ class TestOllamaWeb:
 
     @pytest.mark.parametrize("api_key", [None, ""])
     def test_missing_key_fails_without_request(self, api_key: str | None) -> None:
-        backend = OllamaWeb("https://ollama.com/", api_key, 5)
+        backend = OllamaSearch(OllamaClient("https://ollama.com/", api_key, 5))
         with (
-            patch("sensai.tools.web._ollama.requests.post") as post,
+            patch("sensai.tools.web.backend._ollama.requests.post") as post,
             pytest.raises(WebBackendError, match="OLLAMA_API_KEY"),
         ):
             backend.search("q", 5)
@@ -131,25 +140,30 @@ class TestOllamaWeb:
         ],
     )
     def test_search_errors_raise_backend_error(self, response: object, reason: str) -> None:
-        backend = OllamaWeb("https://ollama.com/", "secret", 5)
+        backend = OllamaSearch(OllamaClient("https://ollama.com/", "secret", 5))
         kwargs = {"side_effect": response} if isinstance(response, Exception) else {"return_value": response}
-        with patch("sensai.tools.web._ollama.requests.post", **kwargs), pytest.raises(WebBackendError, match=reason):
+        with (
+            patch("sensai.tools.web.backend._ollama.requests.post", **kwargs),
+            pytest.raises(WebBackendError, match=reason),
+        ):
             backend.search("q", 5)
 
     def test_invalid_json_raises_backend_error(self) -> None:
         response = mock_response()
         response.json.side_effect = requests.exceptions.JSONDecodeError("Expecting value", "", 0)
-        backend = OllamaWeb("https://ollama.com/", "secret", 5)
+        backend = OllamaFetch(OllamaClient("https://ollama.com/", "secret", 5))
         with (
-            patch("sensai.tools.web._ollama.requests.post", return_value=response),
+            patch("sensai.tools.web.backend._ollama.requests.post", return_value=response),
             pytest.raises(WebBackendError, match="invalid JSON"),
         ):
             backend.fetch("https://a.com")
 
     def test_empty_page_raises_backend_error(self) -> None:
-        backend = OllamaWeb("https://ollama.com/", "secret", 5)
+        backend = OllamaFetch(OllamaClient("https://ollama.com/", "secret", 5))
         with (
-            patch("sensai.tools.web._ollama.requests.post", return_value=mock_response(json_data={"content": " "})),
+            patch(
+                "sensai.tools.web.backend._ollama.requests.post", return_value=mock_response(json_data={"content": " "})
+            ),
             pytest.raises(WebBackendError, match="empty page"),
         ):
             backend.fetch("https://a.com")
@@ -158,7 +172,7 @@ class TestOllamaWeb:
 class TestDuckDuckGoSearch:
     def test_maps_ddgs_results(self) -> None:
         hits = [{"title": "T", "href": "https://a.com", "body": "b"}, {"title": "no href"}]
-        with patch("sensai.tools.web._ddgs.DDGS") as ddgs:
+        with patch("sensai.tools.web.backend.search.ddgs.DDGS") as ddgs:
             ddgs.return_value.text.return_value = hits
             results = DuckDuckGoSearch(7).search("paris", 5)
 
@@ -167,7 +181,7 @@ class TestDuckDuckGoSearch:
         ddgs.return_value.text.assert_called_once_with("paris", max_results=5)
 
     def test_rate_limit_raises_backend_error(self) -> None:
-        with patch("sensai.tools.web._ddgs.DDGS") as ddgs:
+        with patch("sensai.tools.web.backend.search.ddgs.DDGS") as ddgs:
             ddgs.return_value.text.side_effect = RatelimitException("202 Ratelimit")
             with pytest.raises(WebBackendError, match="ddgs: 202 Ratelimit"):
                 DuckDuckGoSearch(7).search("paris", 5)
@@ -175,7 +189,7 @@ class TestDuckDuckGoSearch:
 
 class TestHttpFetch:
     def test_extracts_main_content_and_title(self) -> None:
-        with patch("sensai.tools.web._http.requests.get", return_value=mock_response(text=_HTML)) as get:
+        with patch("sensai.tools.web.backend.fetch.http.requests.get", return_value=mock_response(text=_HTML)) as get:
             page = HttpFetch(4).fetch("https://a.com/paris")
 
         assert page.title == "Paris facts"
@@ -195,14 +209,17 @@ class TestHttpFetch:
     )
     def test_errors_raise_backend_error(self, response: object, reason: str) -> None:
         kwargs = {"side_effect": response} if isinstance(response, Exception) else {"return_value": response}
-        with patch("sensai.tools.web._http.requests.get", **kwargs), pytest.raises(WebBackendError, match=reason):
+        with (
+            patch("sensai.tools.web.backend.fetch.http.requests.get", **kwargs),
+            pytest.raises(WebBackendError, match=reason),
+        ):
             HttpFetch(4).fetch("https://a.com")
 
 
 class TestChain:
     def test_search_uses_first_backend_that_answers(self, caplog: pytest.LogCaptureFixture) -> None:
         first, second, third = StubSearch("a"), StubSearch("b", make_results(1)), StubSearch("c", make_results(2))
-        with caplog.at_level(logging.INFO, logger="sensai.tools.web.backend"):
+        with caplog.at_level(logging.INFO, logger="sensai.tools.web.backend.search"):
             results = SearchChain([first, second, third]).search("q", 5)
 
         assert results == make_results(1)
@@ -216,7 +233,7 @@ class TestChain:
 
     def test_fetch_uses_first_backend_that_answers(self, caplog: pytest.LogCaptureFixture) -> None:
         page = Page("T", "https://a.com", "text")
-        with caplog.at_level(logging.INFO, logger="sensai.tools.web.backend"):
+        with caplog.at_level(logging.INFO, logger="sensai.tools.web.backend.fetch"):
             assert FetchChain([StubFetch("a"), StubFetch("b", page)]).fetch("https://a.com") == page
 
         assert "answered by b" in caplog.text
@@ -402,20 +419,25 @@ class TestWebFetchTool:
 class TestWebTools:
     def test_falls_back_to_keyless_backends_without_api_key(self) -> None:
         search, fetch = web_tools(WebSettings(), None, KeywordEmbedder())
-        with patch("sensai.tools.web._ddgs.DDGS") as ddgs, patch("sensai.tools.web._ollama.requests.post") as post:
+        with (
+            patch("sensai.tools.web.backend.search.ddgs.DDGS") as ddgs,
+            patch("sensai.tools.web.backend._ollama.requests.post") as post,
+        ):
             ddgs.return_value.text.return_value = [{"title": "T", "href": "https://a.com", "body": "b"}]
             assert search.run(query="q") == "[1] T | https://a.com\nb"
         post.assert_not_called()
 
-        with patch("sensai.tools.web._http.requests.get", return_value=mock_response(text=_HTML)):
+        with patch("sensai.tools.web.backend.fetch.http.requests.get", return_value=mock_response(text=_HTML)):
             assert fetch.run(url="https://a.com", query="paris").startswith("[1] Paris facts | https://a.com")
 
     def test_uses_ollama_with_api_key(self) -> None:
         search, _ = web_tools(WebSettings(api_base_url="https://ollama.test"), "key", KeywordEmbedder())
         payload = {"results": [{"title": "T", "url": "https://a.com", "content": "c"}]}
         with (
-            patch("sensai.tools.web._ollama.requests.post", return_value=mock_response(json_data=payload)) as post,
-            patch("sensai.tools.web._ddgs.DDGS") as ddgs,
+            patch(
+                "sensai.tools.web.backend._ollama.requests.post", return_value=mock_response(json_data=payload)
+            ) as post,
+            patch("sensai.tools.web.backend.search.ddgs.DDGS") as ddgs,
         ):
             assert search.run(query="q") == "[1] T | https://a.com\nc"
 

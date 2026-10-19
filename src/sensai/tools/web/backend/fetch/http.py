@@ -1,7 +1,7 @@
 import requests
 import trafilatura
 
-from sensai.tools.web.backend import FetchBackend
+from sensai.tools.web.backend.fetch import FetchBackend
 from sensai.tools.web.error import WebBackendError
 from sensai.tools.web.results import Page
 

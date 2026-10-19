@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from sensai.llm.embedder import Embedder
+    from sensai.tools.web.error import WebBackendError
 
 # Rough average for English text with the usual BPE tokenizers.
 CHARS_PER_TOKEN = 4
@@ -60,3 +61,16 @@ def truncate_tokens(text: str, max_tokens: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max_chars - len(TRUNCATION_MARK)].rstrip() + TRUNCATION_MARK
+
+
+def header(index: int, title: str, url: str) -> str:
+    """First line of a result: its index, title (the URL when there is none) and URL to cite."""
+    return f"[{index}] {title or url} | {url}"
+
+
+def unavailable(action: str, err: WebBackendError) -> str:
+    """Message telling the model a web `action` failed, so it does not make up an answer."""
+    return (
+        f"{action} unavailable ({err.reason}). "
+        "Tell the user the information could not be verified online instead of guessing."
+    )
