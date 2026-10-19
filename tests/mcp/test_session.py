@@ -66,9 +66,12 @@ async def test_raises_startup_error_when_server_fails_to_start() -> None:
     session = MCPServerSession(config)
     stdio = AsyncContext((), error=RuntimeError("could not start"))
 
-    with patch("sensai.mcp.session.stdio_client", return_value=stdio), pytest.raises(
-        MCPStartupError,
-        match="could not start",
+    with (
+        patch("sensai.mcp.session.stdio_client", return_value=stdio),
+        pytest.raises(
+            MCPStartupError,
+            match="could not start",
+        ),
     ):
         await session.start()
 

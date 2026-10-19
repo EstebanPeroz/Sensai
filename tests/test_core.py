@@ -17,17 +17,23 @@ def test_core_does_not_create_mcp_client_without_configuration() -> None:
     built_in_tools = [MagicMock()]
     settings = Settings(features=FeatureSettings(disabled=["tools.example"]))
 
-    with patch("sensai.core.core.get_db", return_value=db), patch(
-        "sensai.core.core.ProviderManager",
-        return_value=provider_manager,
-    ), patch(
-        "sensai.core.core.MCPClient",
-    ) as mcp_client, patch(
-        "sensai.core.core.build_tools",
-        return_value=built_in_tools,
-    ) as build_tools, patch(
-        "sensai.core.core.ToolManager",
-    ) as tool_manager:
+    with (
+        patch("sensai.core.core.get_db", return_value=db),
+        patch(
+            "sensai.core.core.ProviderManager",
+            return_value=provider_manager,
+        ),
+        patch(
+            "sensai.core.core.MCPClient",
+        ) as mcp_client,
+        patch(
+            "sensai.core.core.build_tools",
+            return_value=built_in_tools,
+        ) as build_tools,
+        patch(
+            "sensai.core.core.ToolManager",
+        ) as tool_manager,
+    ):
         Core(MagicMock(), settings, Namespace(model="model"))
 
     mcp_client.assert_not_called()
@@ -41,14 +47,19 @@ def test_core_creates_mcp_client_for_configured_server() -> None:
     config = MCPServerConfig(command="server")
     db = MagicMock()
 
-    with patch("sensai.core.core.get_db", return_value=db), patch(
-        "sensai.core.core.ProviderManager",
-        return_value=provider_manager,
-    ), patch(
-        "sensai.core.core.MCPClient",
-    ) as mcp_client, patch(
-        "sensai.core.core.anyio.run",
-        return_value=[],
+    with (
+        patch("sensai.core.core.get_db", return_value=db),
+        patch(
+            "sensai.core.core.ProviderManager",
+            return_value=provider_manager,
+        ),
+        patch(
+            "sensai.core.core.MCPClient",
+        ) as mcp_client,
+        patch(
+            "sensai.core.core.anyio.run",
+            return_value=[],
+        ),
     ):
         Core(MagicMock(), Settings(mcp=config), Namespace(model="model"))
 
@@ -62,17 +73,23 @@ def test_core_registers_discovered_mcp_tools() -> None:
     config = MCPServerConfig(command="server")
     mcp_tool = MCPTool(MCPToolInfo("echo", "Echo text", {"type": "object"}), MagicMock())
 
-    with patch("sensai.core.core.get_db", return_value=db), patch(
-        "sensai.core.core.ProviderManager",
-        return_value=provider_manager,
-    ), patch(
-        "sensai.core.core.MCPClient",
-    ) as mcp_client_type, patch(
-        "sensai.core.core.anyio.run",
-        return_value=[mcp_tool],
-    ) as run, patch(
-        "sensai.core.core.ToolManager",
-    ) as tool_manager_type:
+    with (
+        patch("sensai.core.core.get_db", return_value=db),
+        patch(
+            "sensai.core.core.ProviderManager",
+            return_value=provider_manager,
+        ),
+        patch(
+            "sensai.core.core.MCPClient",
+        ) as mcp_client_type,
+        patch(
+            "sensai.core.core.anyio.run",
+            return_value=[mcp_tool],
+        ) as run,
+        patch(
+            "sensai.core.core.ToolManager",
+        ) as tool_manager_type,
+    ):
         Core(MagicMock(), Settings(mcp=config), Namespace(model="model"))
 
     run.assert_called_once_with(mcp_client_type.return_value.start)
@@ -90,16 +107,21 @@ def test_core_closes_mcp_client_after_run() -> None:
     ui.get_event.return_value = MagicMock(type=EventType.Command, content="/q")
     mcp_client = MagicMock()
 
-    with patch("sensai.core.core.get_db", return_value=db), patch(
-        "sensai.core.core.ProviderManager",
-        return_value=provider_manager,
-    ), patch(
-        "sensai.core.core.MCPClient",
-        return_value=mcp_client,
-    ), patch(
-        "sensai.core.core.anyio.run",
-        return_value=[],
-    ) as run:
+    with (
+        patch("sensai.core.core.get_db", return_value=db),
+        patch(
+            "sensai.core.core.ProviderManager",
+            return_value=provider_manager,
+        ),
+        patch(
+            "sensai.core.core.MCPClient",
+            return_value=mcp_client,
+        ),
+        patch(
+            "sensai.core.core.anyio.run",
+            return_value=[],
+        ) as run,
+    ):
         core = Core(ui, Settings(mcp=MCPServerConfig(command="server")), Namespace(model="model"))
         core.run()
 
