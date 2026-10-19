@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, override
 
 from sqlalchemy import Connection, Engine, create_engine, event, select
@@ -12,7 +13,6 @@ from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable, Mes
 
 if TYPE_CHECKING:
     import sqlite3
-    from datetime import datetime
     from uuid import UUID
 
     from sensai.history.conversation import Conversation
@@ -26,6 +26,7 @@ class SqlAlchemy(PersistentDatabase):
     _conn: Connection
     _uuid_error_essage: str = "given uuid is invalid"
     _update_error_message: str = "the update could not be stored"
+    _import_error_message: str = "the branch could not be imported, the config is invalid"
 
     def __init__(self, url: str) -> None:
         """Connect to the database at `url` and create the missing tables.
@@ -72,6 +73,38 @@ class SqlAlchemy(PersistentDatabase):
                 return None
             return branch.id
 
+    @override
+    def import_branch(self, config: dict) -> None:
+        """Make a branch based on a config, as produced by `export_branch`.
+
+        The persona is reused if one has the same name, otherwise it is created.
+        The branch name is made unique if it is already used.
+
+        Raises:
+            DatabaseError: If the config is malformed or the branch could not be stored.
+
+        """
+        try:
+            branch_config = config["branch"]
+            name = str(branch_config["name"])
+            model = str(branch_config["model"])
+            messages = [(Role(m["role"]), str(m["content"])) for m in config.get("messages", [])]
+        except KeyError, TypeError, ValueError, AttributeError:
+            raise DatabaseError(self._import_error_message) from None
+
+        with Session(self._engine) as session:
+            branch = BranchTable(name=self._free_name(session, name), model_name=model)
+            start = datetime.now(tz=UTC)
+            for i, (role, content) in enumerate(messages):
+                branch.messages.append(
+                    MessageTable(role=role, content=content, created_at=start + timedelta(microseconds=i))
+                )
+            session.add(branch)
+            try:
+                session.commit()
+            except SQLAlchemyError:
+                raise DatabaseError(self._import_error_message) from None
+
     @staticmethod
     def _free_name(session: Session, base: str) -> str:
         """Return `base` if unused, else `base 2`, `base 3`, ... (names are unique)."""
@@ -84,13 +117,13 @@ class SqlAlchemy(PersistentDatabase):
         return f"{base} {n}"
 
     @override
-    def get_branch_list(self) -> dict[str, UUID]:
+    def get_branches(self) -> dict[UUID, str]:
         """Return the dict of all branches with name and uuid."""
-        branches: dict[str, UUID] = {}
+        branches: dict[UUID, str] = {}
         with Session(self._engine) as session:
             source = session.scalars(select(BranchTable)).all()
             for branch in source:
-                branches[branch.name] = branch.id
+                branches[branch.id] = branch.name
         return branches
 
     @override
@@ -98,11 +131,17 @@ class SqlAlchemy(PersistentDatabase):
         """Replace the uuid, model and history of `current` with those of the target branch.
 
         Does nothing if no branch has this uuid.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
         """
+        if current.uuid == target_branch:
+            return
         with Session(self._engine) as session:
             source = session.get(BranchTable, target_branch)
             if source is None:
-                return
+                raise InvalidInstanceError(self._uuid_error_essage)
             current.uuid = source.id
             provider_manager.set_model(source.model_name)
             current.history.replace(self._messages_from_branch(source))
@@ -160,6 +199,21 @@ class SqlAlchemy(PersistentDatabase):
             session.commit()
 
     @override
+    def set_branch_name(self, branch: UUID, name: str) -> None:
+        """Set the name used by the branch `branch`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            if source is None:
+                raise InvalidInstanceError(self._uuid_error_essage)
+            source.name = name
+            session.commit()
+
+    @override
     def set_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.
 
@@ -178,6 +232,22 @@ class SqlAlchemy(PersistentDatabase):
             except SQLAlchemyError:
                 return False
         return True
+
+    @override
+    def export_branch(self, branch: UUID) -> dict | None:
+        """Export the branch based on the uuid."""
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            if source is None:
+                return None
+            export: dict = {
+                "branch": {
+                    "name": source.name,
+                    "model": source.model_name,
+                },
+                "messages": [{"role": message.role.value, "content": message.content} for message in source.messages],
+            }
+            return export
 
     @override
     def get_messages(self, branch: UUID) -> list[Message]:

@@ -13,7 +13,7 @@ from textual.widgets import Input, Label, ListItem, ListView, OptionList
 import sensai.ui.tui._effect as fx
 from sensai import ui
 from sensai.llm.message import Role
-from sensai.ui.completion import complete
+from sensai.ui.completion import Completer, CompletionSource
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
@@ -167,7 +167,7 @@ class ChatApp(App):
     """
 
     _event_queue: ui.EventQueue
-    _completions: dict[str, list[str]]
+    _completer: Completer
     ready: threading.Event
 
     def __init__(self, event_queue: ui.EventQueue) -> None:
@@ -175,7 +175,7 @@ class ChatApp(App):
         super().__init__()
         self._event_queue = event_queue
         self.ready = threading.Event()
-        self._completions = {}
+        self._completer = Completer()
 
     def compose(self) -> ComposeResult:
         """Build the widget tree: a header, a scrolling chat list, and a text input for messages."""
@@ -274,14 +274,14 @@ class ChatApp(App):
         for message in messages.messages():
             self.add_input(message.role, message.content)
 
-    def set_completions(self, completions: dict[str, list[str]]) -> None:
-        """Store the commands and their argument values offered while the user types."""
-        self._completions = completions
+    def set_completions(self, completions: dict[str, CompletionSource]) -> None:
+        """Store, by command, the function giving the values offered while the user types."""
+        self._completer.set_sources(completions)
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Show the completions of the new input value, or hide the list when there are none."""
         dropdown = self.query_one(CompletionList)
-        candidates = complete(event.value, self._completions)
+        candidates = self._completer.complete(event.value)
         if candidates in ([], [event.value]):
             dropdown.display = False
             return

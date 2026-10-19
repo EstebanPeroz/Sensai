@@ -54,13 +54,12 @@ class FakeUI(UIAdapter):
         return True
 
     @override
-    def set_completions(self, completions: dict[str, list[str]]) -> bool:
+    def set_completions(self, completions: dict[str, Callable[[list[str]], list[str]]]) -> bool:
         return True
 
 
 class FakeCommand(Command):
-    def __init__(self, ui: UIAdapter) -> None:
-        super().__init__(ui)
+    def __init__(self) -> None:
         self.mock_execute = MagicMock()
 
     @override

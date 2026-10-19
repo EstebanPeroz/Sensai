@@ -2,10 +2,10 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from sensai import ui
-from sensai.commands.help import Help
-from sensai.commands.model import Model
-from sensai.commands.persona import PersonaCommand
+from sensai.commands import Branch, Command, Help, Model, PersonaCommand, StateCommand
+from sensai.commands.data_transfer import Export, Import
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
+from sensai.commands.tools import ToolsCommand
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.error import ModelError
@@ -15,11 +15,14 @@ from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.tools import build_tools
+from sensai.tools.tool_manager import ToolManager
 
 if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
+    from sensai.memory.persistent_db.adapter import PersistentDatabase
 
 
 class Core:
@@ -30,6 +33,7 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _tool_manager: ToolManager
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
@@ -49,8 +53,9 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager)
-        self._command_registry = self._build_command_registry()
+        self._tool_manager = ToolManager(build_tools(), disabled=settings.features.disabled_in("tools"))
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._tool_manager)
+        self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
@@ -60,8 +65,12 @@ class Core:
         """
         self._ui.open()
 
+        unknown = self._tool_manager.unknown_disabled()
+        if unknown:
+            self._ui.send_system_message(f"Unknown disabled tools in the settings: {', '.join(unknown)}")
+
         self._ui.set_completions(
-            {f"/{command.name}": command.completions() for command in self._command_registry.commands()}
+            {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
 
         event: ui.Event | None = None
@@ -79,15 +88,21 @@ class Core:
 
         self._ui.close()
 
-    def _build_command_registry(self) -> CommandRegistry:
+    def _build_command_registry(self, db: PersistentDatabase) -> CommandRegistry:
         """Build a command registry with all available commands."""
+        Command.bind_ui(self._ui)
+        StateCommand.bind_db(db)
         registry = CommandRegistry(
             [
-                Model(self._ui, self._provider_manager),
-                PersonaCommand(self._ui, self._persona_manager),
+                Model(self._provider_manager),
+                PersonaCommand(self._persona_manager),
+                Branch(self.conversation, self._provider_manager),
+                ToolsCommand(self._tool_manager),
+                Export(self.conversation),
+                Import(),
             ]
         )
-        registry.register_command(Help(self._ui, registry))
+        registry.register_command(Help(registry))
         return registry
 
     def _launch_command(self, content: str) -> None:

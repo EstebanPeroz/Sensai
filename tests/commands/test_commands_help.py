@@ -1,5 +1,7 @@
 from sensai.commands.help import Help
 from sensai.commands.registry import CommandRegistry
+from sensai.commands.tools import ToolsCommand
+from sensai.tools.tool_manager import ToolManager
 from tests.commands.fakes import FakeUI, MakeFakeCommand
 
 
@@ -7,7 +9,7 @@ class TestHelp:
     def test_displays_header_and_registered_commands(self, fake_ui: FakeUI, make_fake_command: MakeFakeCommand) -> None:
         zebra = make_fake_command("zebra", "does zebra things")
         registry = CommandRegistry(commands=[zebra])
-        help_command = Help(fake_ui, registry)
+        help_command = Help(registry)
         registry.register_command(help_command)
 
         help_command.execute()
@@ -22,7 +24,7 @@ class TestHelp:
         zebra = make_fake_command("zebra")
         alpha = make_fake_command("alpha")
         registry = CommandRegistry(commands=[zebra, alpha])
-        help_command = Help(fake_ui, registry)
+        help_command = Help(registry)
 
         help_command.execute()
 
@@ -30,8 +32,17 @@ class TestHelp:
         assert lines == ["- alpha: help text", "- zebra: help text"]
 
     def test_ignores_extra_arguments(self, fake_ui: FakeUI) -> None:
-        help_command = Help(fake_ui, CommandRegistry(commands=[]))
+        help_command = Help(CommandRegistry(commands=[]))
 
         help_command.execute("unused", "args")
 
         assert fake_ui.messages == ["Available commands:"]
+
+    def test_lists_tools_command(self, fake_ui: FakeUI) -> None:
+        registry = CommandRegistry(commands=[ToolsCommand(ToolManager())])
+        help_command = Help(registry)
+        registry.register_command(help_command)
+
+        help_command.execute()
+
+        assert "- tools: List available tools and toggle them." in fake_ui.messages[0]

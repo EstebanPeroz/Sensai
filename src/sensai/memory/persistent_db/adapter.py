@@ -29,7 +29,11 @@ class PersistentDatabase(ABC):
         """
 
     @abstractmethod
-    def get_branch_list(self) -> dict[str, UUID]:
+    def import_branch(self, config: dict) -> None:
+        """Make a branch based on a config."""
+
+    @abstractmethod
+    def get_branches(self) -> dict[UUID, str]:
         """Return the dict of all branches with name and uuid."""
 
     @abstractmethod
@@ -69,6 +73,15 @@ class PersistentDatabase(ABC):
         """
 
     @abstractmethod
+    def set_branch_name(self, branch: UUID, name: str) -> None:
+        """Set the name used by the branch `branch`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
+
+    @abstractmethod
     def set_branch_persona(self, branch: UUID, persona: UUID) -> bool:
         """Set the persona used by the branch `branch` to `persona`.
 
@@ -76,6 +89,10 @@ class PersistentDatabase(ABC):
         or the change could not be saved.
 
         """
+
+    @abstractmethod
+    def export_branch(self, branch: UUID) -> dict | None:
+        """Export the branch based on the uuid."""
 
     # Message
 

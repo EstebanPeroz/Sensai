@@ -1,7 +1,6 @@
 [db]
 persistent.url= "sqlite:///persistent.db"
 
-
 [llm]
 embedding_model = "nomic-embed-text"
 
@@ -11,3 +10,9 @@ base_url = "http://localhost:11434/"
 [web]
 api_base_url = "https://ollama.com/"
 timeout = 10.0
+
+[features]
+# Feature ids to switch off, as `<namespace>.<name>`.
+disabled = []
+
+# disabled = ["tools.inexesistant.test"]
