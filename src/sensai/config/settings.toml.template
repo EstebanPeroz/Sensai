@@ -1,3 +1,6 @@
+# Template of the local settings: `make install` copies it to settings.toml (git-ignored), edit that copy.
+# Without settings.toml, sensai runs with this template.
+
 [db]
 persistent.url= "sqlite:///persistent.db"
 rag.location = "rag_qdrant"
@@ -11,6 +14,12 @@ embedding_model = "nomic-embed-text"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"
+
+[web]
+api_base_url = "https://ollama.com/"
+# Ollama API key (https://ollama.com/settings/keys), to set in settings.toml only.
+api_key = ""
+timeout = 10.0
 
 [features]
 # Feature ids to switch off, as `<namespace>.<name>`.
