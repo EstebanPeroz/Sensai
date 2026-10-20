@@ -27,8 +27,21 @@ class Tool[T](ABC):
 
     @property
     @abstractmethod
+    def description(self) -> str:
+        """What the tool does, read by the model to decide when to call it."""
+
+    @property
+    @abstractmethod
+    def parameters(self) -> dict:
+        """JSON schema of the arguments accepted by `run`."""
+
+    @property
     def tool_rule(self) -> dict:
-        """Schema describing this tool's accepted arguments."""
+        """Describe this tool in the format expected by the chat endpoint."""
+        return {
+            "type": "function",
+            "function": {"name": self.name, "description": self.description, "parameters": self.parameters},
+        }
 
     @abstractmethod
     def run(self, **kwargs: object) -> T:

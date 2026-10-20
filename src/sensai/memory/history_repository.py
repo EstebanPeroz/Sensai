@@ -9,14 +9,21 @@ if TYPE_CHECKING:
 class HistoryRepository(Protocol):
     """Storage of the conversation history of a session, independent of its backend."""
 
-    def append(self, role: Role, content: str) -> None:
-        """Add a message at the end of the history."""
+    def append(
+        self,
+        role: Role,
+        content: str,
+        *,
+        tool_calls: list[dict] | None = None,
+        tool_name: str | None = None,
+    ) -> None:
+        """Add a message at the end of the history, with the tool calls it makes or the tool it answers for."""
 
     def messages(self) -> list[Message]:
         """Return the messages of the history, oldest first."""
         ...
 
-    def to_json(self) -> list[dict[str, str]]:
+    def to_json(self) -> list[dict[str, object]]:
         """Return the messages in the format of the chat payload `messages` list, oldest first."""
         ...
 

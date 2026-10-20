@@ -4,15 +4,18 @@ from typing import TYPE_CHECKING
 from sensai import ui
 from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
+from sensai.commands.effort import Effort
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.commands.tools import ToolsCommand
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
+from sensai.llm.embedder import Embedder
 from sensai.llm.error import ModelError
 from sensai.llm.message import Role
 from sensai.llm.persona import DuplicatePersonaError
 from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
+from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
@@ -21,12 +24,14 @@ from sensai.rag.qdrant_store import QdrantStore
 from sensai.rag.retrievial_rag import Retrieval
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
+from sensai.tools.web import web_tools
 
 if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
     from sensai.memory.persistent_db.adapter import PersistentDatabase
+    from sensai.tools.tool import Tool
 
 
 class Core:
@@ -34,6 +39,7 @@ class Core:
 
     conversation: Conversation
     _provider_manager: ProviderManager
+    _react: ReAct
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
@@ -57,8 +63,11 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self._tool_manager = ToolManager(build_tools(), disabled=settings.features.disabled_in("tools"))
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._tool_manager)
+        self._tool_manager = ToolManager(
+            [*build_tools(), *self._build_web_tools()], disabled=settings.features.disabled_in("tools")
+        )
+        self._react = ReAct(self._provider_manager, self._tool_manager)
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
@@ -76,6 +85,7 @@ class Core:
         self._ui.set_completions(
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
+        self._ui.update_thinking_effort(Effort.effort_level(self._react.max_iterations))
 
         event: ui.Event | None = None
         while not self._is_quit(event):
@@ -103,6 +113,7 @@ class Core:
                 PersonaCommand(self._persona_manager),
                 Branch(self.conversation, self._provider_manager),
                 ToolsCommand(self._tool_manager),
+                Effort(self._react),
                 Export(self.conversation),
                 Import(),
                 Index(indexer),
@@ -123,6 +134,18 @@ class Core:
         indexation = Indexation(provider, model)
         store = QdrantStore(self._settings.db.rag.location)
         return Indexer(indexation, store), Retrieval(indexation, store, provider)
+
+    def _build_web_tools(self) -> list[Tool]:
+        """Build the web search and fetch tools, which need an embedding model."""
+        embedding_model = self._settings.llm.embedding_model
+        if embedding_model is None:
+            return []
+        provider = self._provider_manager.get_provider(embedding_model)
+        if provider is None:
+            err = f"embedding model '{embedding_model}' not found in provider manager"
+            raise ModelError(err)
+        embedder = Embedder(provider, embedding_model)
+        return web_tools(self._settings.web, embedder)
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""

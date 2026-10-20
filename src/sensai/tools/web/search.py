@@ -27,22 +27,20 @@ class WebSearchTool(Tool[str]):
         return "web_search"
 
     @property
-    def tool_rule(self) -> dict:
-        """Function schema advertised to the model."""
+    def description(self) -> str:
+        """What the tool does, read by the model to decide when to call it."""
+        return (
+            f"Search the web. Returns at most {MAX_RESULTS} results as title, URL and short snippet. "
+            "Call web_fetch on the most relevant URL to read the page itself."
+        )
+
+    @property
+    def parameters(self) -> dict:
+        """JSON schema of the arguments accepted by `run`."""
         return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": (
-                    f"Search the web. Returns at most {MAX_RESULTS} results as title, URL and short snippet. "
-                    "Call web_fetch on the most relevant URL to read the page itself."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {"query": {"type": "string", "description": "The search query."}},
-                    "required": ["query"],
-                },
-            },
+            "type": "object",
+            "properties": {"query": {"type": "string", "description": "The search query."}},
+            "required": ["query"],
         }
 
     def run(self, **kwargs: object) -> str:

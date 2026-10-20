@@ -13,30 +13,25 @@ if TYPE_CHECKING:
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
-    from sensai.tools.tool_manager import ToolManager
+    from sensai.llm.thinking.react import ReAct
     from sensai.ui.adapter import UIAdapter
 
 
 class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
-    _provider_manager: ProviderManager
+    _react: ReAct
     _persona_manager: PersonaManager
+    _provider_manager: ProviderManager
     history: History
-    _tool_manager: ToolManager
     uuid: UUID | None = None
 
-    def __init__(
-        self,
-        provider_manager: ProviderManager,
-        persona_manager: PersonaManager,
-        tool_manager: ToolManager,
-    ) -> None:
+    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager, react: ReAct) -> None:
         """Init method to create the conversation callss."""
+        self._react = react
         self._provider_manager = provider_manager
         self.history = History()
         self._persona_manager = persona_manager
-        self._tool_manager = tool_manager
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Init the conversation in the DB if first message."""
@@ -101,10 +96,7 @@ class Conversation:
         persona = self._persona_manager.active_persona()
         if persona is not None:
             messages = [persona.to_payload(), *messages]
-        payload: dict = {"model": self._provider_manager.provider().current_model(), "messages": messages}
-        if rules := self._tool_manager.get_tool_call_rules():
-            payload["tools"] = rules
-        chunks = self._provider_manager.provider().chat(payload, stream=True)
+        chunks = self._react.generate_answer(messages)
         if chunks is None:
             return
 
