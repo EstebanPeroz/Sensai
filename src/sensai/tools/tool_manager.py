@@ -69,11 +69,14 @@ class ToolManager:
         """Run the tool named in an LLM-style function-call payload and return its result as a tool message.
 
         A disabled tool is unreachable, like an unknown one, so a model still holding its schema in context
-        cannot reach it. Every failure is returned as a message starting with `error:`, for the model to read.
+        cannot reach it. Every failure, a malformed call included, is returned as a message starting with
+        `error:`, for the model to read.
         """
-        function = tool_call.get("function") or {}
-        name = function.get("name")
-        if name is None:
+        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+        if function is not None and not isinstance(function, dict):
+            return self._message("unknown", "error: malformed tool call, function must be an object")
+        name = (function or {}).get("name")
+        if function is None or name is None:
             return self._message("unknown", "error: malformed tool call, missing function name")
         if not self.is_enabled(name):
             return self._message(name, f"error: unknown tool '{name}'")
@@ -85,6 +88,14 @@ class ToolManager:
             logger.exception("Tool '%s' failed unexpectedly", name)
             return self._message(name, f"error: {type(err).__name__}: {err}")
         return self._message(name, result if isinstance(result, str) else json.dumps(result, default=str))
+
+    @staticmethod
+    def tool_name(tool_call: object) -> str:
+        """Return the name of the tool an LLM-style call asks for, or `unknown` when the call is malformed."""
+        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+        if not isinstance(function, dict) or function.get("name") is None:
+            return "unknown"
+        return str(function["name"])
 
     def get_tool_call_rules(self) -> list[dict]:
         """Return the schema of every enabled tool, for the `tools` field of a chat payload."""

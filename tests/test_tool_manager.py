@@ -172,6 +172,25 @@ class TestCall:
             "content": "error: malformed tool call, missing function name",
         }
 
+    @pytest.mark.parametrize("function", ["web_search", ["web_search"], 3])
+    def test_function_that_is_not_an_object_returns_error_message(self, function: object) -> None:
+        result = make_manager().call({"type": "function", "function": function})
+
+        assert result == {
+            "role": "tool",
+            "tool_name": "unknown",
+            "content": "error: malformed tool call, function must be an object",
+        }
+
+    def test_call_that_is_not_an_object_returns_error_message(self) -> None:
+        result = make_manager().call("web_search")  # type: ignore[arg-type]
+
+        assert result == {
+            "role": "tool",
+            "tool_name": "unknown",
+            "content": "error: malformed tool call, missing function name",
+        }
+
     def test_wrong_argument_type_returns_error_message(self) -> None:
         result = make_manager().call(make_call("echo", {"city": 2}))
 
@@ -208,6 +227,23 @@ class TestCall:
         result = make_manager().call(make_call("profile"))
 
         assert result == {"role": "tool", "tool_name": "profile", "content": '{"city": "Paris", "age": 30}'}
+
+
+class TestToolName:
+    def test_reads_the_name_of_a_well_formed_call(self) -> None:
+        assert ToolManager.tool_name(make_call("echo")) == "echo"
+
+    @pytest.mark.parametrize(
+        "tool_call",
+        [
+            "web_search",
+            {"type": "function"},
+            {"type": "function", "function": "web_search"},
+            {"type": "function", "function": {"arguments": {}}},
+        ],
+    )
+    def test_is_unknown_for_a_malformed_call(self, tool_call: object) -> None:
+        assert ToolManager.tool_name(tool_call) == "unknown"
 
 
 class TestUnexpectedFailure:

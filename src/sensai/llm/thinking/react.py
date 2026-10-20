@@ -113,7 +113,7 @@ class ReAct:
     def _observe(self, messages: list[dict], tool_calls: list[dict]) -> Iterator[ChatResponse]:
         """Run each tool the model called and add its result to `messages`, showing the tool name as thinking."""
         for call in tool_calls:
-            name = call.get("function", {}).get("name", "unknown")
+            name = self._tool_manager.tool_name(call)
             yield self._build_thinking(f"-> Using {name}...\n")
 
             result = self._tool_manager.call(call)

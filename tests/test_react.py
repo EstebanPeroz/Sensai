@@ -40,6 +40,15 @@ class FakeProvider:
         return [ChatResponse({"done": True, "message": {"role": "assistant", "content": "Bonjour !"}})]
 
 
+class MalformedCallProvider(FakeProvider):
+    def chat(self, payload: dict, *, stream: bool) -> list[ChatResponse]:
+        if "tools" not in payload:
+            return super().chat(payload, stream=stream)
+        self.payloads.append(payload)
+        message = {"role": "assistant", "content": "", "tool_calls": [{"function": "search"}]}
+        return [ChatResponse({"done": True, "message": message})]
+
+
 class FakeProviderManager:
     def __init__(self, provider: FakeProvider) -> None:
         self._provider = provider
@@ -85,3 +94,19 @@ class TestWithoutTools:
 
         assert answer == "Bonjour !"
         assert all("tools" not in payload for payload in provider.payloads)
+
+
+class TestMalformedToolCall:
+    def test_is_reported_to_the_model_instead_of_crashing(self) -> None:
+        provider = MalformedCallProvider()
+        react = ReAct(FakeProviderManager(provider), ToolManager([SearchTool()]), 1)  # type: ignore[arg-type]
+
+        chunks = list(react.generate_answer([{"role": "user", "content": "Find it"}]))
+
+        sent = provider.payloads[-1]["messages"]
+        assert {
+            "role": "tool",
+            "tool_name": "unknown",
+            "content": "error: malformed tool call, function must be an object",
+        } in sent
+        assert "-> Using unknown...\n" in [chunk.thinking for chunk in chunks]
