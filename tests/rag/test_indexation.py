@@ -362,7 +362,7 @@ class TestToChunks:
 
 class TestModel:
     def test_reports_the_model_in_use(self, indexation: Indexation) -> None:
-        assert indexation.model == "bge-m3"
+        assert indexation.model == "nomic-embed-text"
 
     def test_the_model_can_be_chosen(self) -> None:
         assert Indexation(FakeEmbedder(), "another-model").model == "another-model"
@@ -379,7 +379,7 @@ class TestModel:
 
         Indexation(embedder).vectorize_batch(["a"])
 
-        assert embedder.models == ["bge-m3"]
+        assert embedder.models == ["nomic-embed-text"]
 
 
 class TestVectorize:
@@ -425,7 +425,7 @@ class TestVectorizeTranslatesProviderFailures:
             Indexation(FailingEmbedder()).vectorize_batch(["a", "b"])
 
     def test_the_message_names_the_model_and_the_cause(self) -> None:
-        with pytest.raises(EmbeddingError, match=r"bge-m3.*connection refused"):
+        with pytest.raises(EmbeddingError, match=r"nomic-embed-text.*connection refused"):
             Indexation(FailingEmbedder()).vectorize_batch(["a"])
 
     def test_the_original_error_is_kept_as_the_cause(self) -> None:

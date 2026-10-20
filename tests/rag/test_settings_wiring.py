@@ -23,13 +23,14 @@ class TestChosenModel:
     def test_the_shipped_settings_name_a_model(self) -> None:
         assert load_settings().llm.embedding_model is not None
 
-    def test_the_shipped_model_is_not_the_english_only_one(self) -> None:
-        # nomic-embed-text scores +0.03 between unrelated French topics: noise, not signal.
-        assert load_settings().llm.embedding_model != "nomic-embed-text"
+    def test_the_shipped_model_is_a_model_ollama_can_serve(self) -> None:
+        # The guard that used to forbid nomic-embed-text here was dropped on purpose:
+        # it is now the configured model, chosen for its size over its French accuracy.
+        assert load_settings().llm.embedding_model in {"nomic-embed-text", "bge-m3"}
 
 
 class TestIndexationUsesIt:
-    @pytest.mark.parametrize("model", ["bge-m3", "some-other-model"])
+    @pytest.mark.parametrize("model", ["nomic-embed-text", "some-other-model"])
     def test_the_chosen_model_reaches_the_embedder(self, model: str) -> None:
         embedder = FakeEmbedder()
 

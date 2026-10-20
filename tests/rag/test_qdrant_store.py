@@ -1,4 +1,8 @@
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
+from qdrant_client.models import PayloadSchemaType
 
 from sensai.rag.error import RagError, VectorStoreError
 from sensai.rag.qdrant_store import DEFAULT_COLLECTION, QdrantStore
@@ -236,3 +240,128 @@ class TestCountAndSources:
 
     def test_lists_nothing_before_anything_was_written(self, store: QdrantStore) -> None:
         assert store.sources() == set()
+
+
+class TestPayloadIndex:
+    """The index on `source` only exists on a server: embedded Qdrant ignores it."""
+
+    @staticmethod
+    def _store_with_mock_client(location: str) -> tuple[QdrantStore, MagicMock]:
+        """A store whose client is a mock reporting an empty database."""
+        client = MagicMock()
+        client.collection_exists.return_value = False
+        client.scroll.return_value = ([], None)
+        with patch("sensai.rag.qdrant_store.QdrantClient", return_value=client):
+            return QdrantStore(location), client
+
+    def test_a_server_gets_the_index_on_source(self) -> None:
+        store, client = self._store_with_mock_client("http://localhost:6333")
+
+        store.add_chunks("a.md", ["x"], [[0.1]], "m")
+
+        client.create_payload_index.assert_called_once_with(
+            DEFAULT_COLLECTION,
+            field_name="source",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+
+    def test_an_embedded_database_does_not(self, tmp_path: Path) -> None:
+        store, client = self._store_with_mock_client(str(tmp_path / "qdrant"))
+
+        store.add_chunks("a.md", ["x"], [[0.1]], "m")
+
+        client.create_payload_index.assert_not_called()
+
+    def test_an_in_memory_database_does_not(self) -> None:
+        store, client = self._store_with_mock_client(":memory:")
+
+        store.add_chunks("a.md", ["x"], [[0.1]], "m")
+
+        client.create_payload_index.assert_not_called()
+
+    def test_the_index_is_only_created_with_the_collection(self) -> None:
+        store, client = self._store_with_mock_client("http://localhost:6333")
+        store.add_chunks("a.md", ["x"], [[0.1]], "m")
+        client.collection_exists.return_value = True
+        client.get_collection.return_value.config.params.vectors.size = 1
+
+        store.add_chunks("b.md", ["y"], [[0.2]], "m")
+
+        assert client.create_payload_index.call_count == 1
+
+    @pytest.mark.parametrize(
+        ("location", "served"),
+        [
+            ("http://localhost:6333", True),
+            ("https://qdrant.example:6333", True),
+            (":memory:", False),
+            ("rag_qdrant", False),
+            ("/var/lib/sensai/qdrant", False),
+        ],
+    )
+    def test_the_location_decides_the_mode(self, location: str, *, served: bool) -> None:
+        store, _ = self._store_with_mock_client(location)
+
+        assert store._served is served
+
+
+class TestSearch:
+    def test_the_closest_chunk_comes_first(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["far", "near"], [[0.0, 1.0], [1.0, 0.0]], "m")
+
+        found = store.search([1.0, 0.05])
+
+        assert [chunk["text"] for chunk in found] == ["near", "far"]
+
+    def test_every_hit_carries_its_score(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["x"], [[1.0, 0.0]], "m")
+
+        assert store.search([1.0, 0.0])[0]["score"] == pytest.approx(1.0)
+
+    def test_every_hit_carries_the_stored_payload(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["hello"], [[1.0, 0.0]], "bge-m3")
+
+        found = store.search([1.0, 0.0])[0]
+
+        assert found["source"] == "a.md"
+        assert found["position"] == 0
+        assert found["text"] == "hello"
+        assert found["model"] == "bge-m3"
+
+    def test_the_limit_caps_the_hits(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["a", "b", "c"], [[1.0, 0.0], [0.9, 0.1], [0.8, 0.2]], "m")
+
+        assert len(store.search([1.0, 0.0], limit=2)) == 2
+
+    def test_a_minimum_score_drops_the_far_ones(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["near", "far"], [[1.0, 0.0], [0.0, 1.0]], "m")
+
+        found = store.search([1.0, 0.0], min_score=0.5)
+
+        assert [chunk["text"] for chunk in found] == ["near"]
+
+    def test_a_minimum_score_can_drop_everything(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["far"], [[0.0, 1.0]], "m")
+
+        assert store.search([1.0, 0.0], min_score=0.9) == []
+
+    def test_searching_an_empty_store_finds_nothing(self, store: QdrantStore) -> None:
+        assert store.search([1.0, 0.0]) == []
+
+    def test_a_vector_of_the_wrong_size_is_refused(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["x"], [[1.0, 0.0]], "m")
+
+        with pytest.raises(VectorStoreError, match="3-dimension vector, but the collection holds 2"):
+            store.search([1.0, 0.0, 0.0])
+
+    def test_that_refusal_is_a_rag_error(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["x"], [[1.0, 0.0]], "m")
+
+        with pytest.raises(RagError):
+            store.search([1.0])
+
+    def test_it_searches_across_every_source(self, store: QdrantStore) -> None:
+        store.add_chunks("a.md", ["from a"], [[1.0, 0.0]], "m")
+        store.add_chunks("b.md", ["from b"], [[0.9, 0.1]], "m")
+
+        assert {chunk["source"] for chunk in store.search([1.0, 0.0])} == {"a.md", "b.md"}

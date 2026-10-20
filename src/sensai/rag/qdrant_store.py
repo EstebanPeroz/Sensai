@@ -10,6 +10,7 @@ from qdrant_client.models import (
     Filter,
     FilterSelector,
     MatchValue,
+    PayloadSchemaType,
     PointStruct,
     VectorParams,
 )
@@ -18,6 +19,7 @@ from sensai.rag.error import VectorStoreError
 
 DEFAULT_LOCATION = "rag_qdrant"
 DEFAULT_COLLECTION = "documentation"
+DEFAULT_LIMIT = 5
 _SCROLL_PAGE = 256
 
 
@@ -96,6 +98,33 @@ class QdrantStore:
         )
         return len(chunks)
 
+    def search(self, vector: list[float], limit: int = DEFAULT_LIMIT, min_score: float | None = None) -> list[dict]:
+        """Return the stored chunks closest to `vector`, best first, each with its `score`.
+
+        `min_score` drops the chunks that are not close enough. Without it, a
+        question about nothing in the collection still comes back with `limit`
+        chunks, and whatever reads them cannot tell that none of them is
+        relevant.
+
+        Raises:
+            VectorStoreError: If the vector is not the size the collection holds.
+
+        """
+        stored = self.dimension()
+        if stored is None:
+            return []
+        if stored != len(vector):
+            msg = f"searching with a {len(vector)}-dimension vector, but the collection holds {stored}"
+            raise VectorStoreError(msg)
+        answer = self._client.query_points(
+            self._collection,
+            query=vector,
+            limit=limit,
+            score_threshold=min_score,
+            with_payload=True,
+        )
+        return [{**point.payload, "score": point.score} for point in answer.points if point.payload]
+
     def remove_source(self, source: str) -> int:
         """Drop every chunk stored for `source`, and return how many were dropped."""
         removed = self.count(source)
@@ -140,7 +169,11 @@ class QdrantStore:
                 vectors_config=VectorParams(size=dimension, distance=Distance.COSINE),
             )
             if self._served:
-                self._client.create_payload_index(self._collection, field_name="source", field_schema="keyword")
+                self._client.create_payload_index(
+                    self._collection,
+                    field_name="source",
+                    field_schema=PayloadSchemaType.KEYWORD,
+                )
             return
         if stored != dimension:
             msg = (

@@ -3,8 +3,11 @@ persistent.url= "sqlite:///persistent.db"
 rag.location = "rag_qdrant"
 
 [llm]
-# Must be a multilingual model: nomic-embed-text barely separates French topics.
-embedding_model = "bge-m3"
+# Chosen for its size: 274 MB, against 1.16 GB for bge-m3, which an Ollama
+# sharing its memory with the chat model kept evicting. The trade-off is real:
+# on French text, nomic-embed-text separates unrelated topics by about 0.03 of
+# cosine score, against 0.12 for bge-m3, so expect weaker chunking and ranking.
+embedding_model = "nomic-embed-text"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"

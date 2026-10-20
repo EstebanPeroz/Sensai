@@ -24,7 +24,7 @@ class TestPackagedSettings:
         settings = load_settings()
 
         assert isinstance(settings, Settings)
-        assert settings.llm.embedding_model == "bge-m3"
+        assert settings.llm.embedding_model == "nomic-embed-text"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
         assert settings.db.rag.location == "rag_qdrant"
 

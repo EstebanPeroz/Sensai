@@ -2,7 +2,7 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from sensai import ui
-from sensai.commands import Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
+from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.commands.tools import ToolsCommand
@@ -18,6 +18,7 @@ from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
 from sensai.rag.indexer import Indexer
 from sensai.rag.qdrant_store import QdrantStore
+from sensai.rag.retrievial_rag import Retrieval
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
 
@@ -95,6 +96,7 @@ class Core:
         """Build a command registry with all available commands."""
         Command.bind_ui(self._ui)
         StateCommand.bind_db(db)
+        indexer, retrieval = self._build_rag()
         registry = CommandRegistry(
             [
                 Model(self._provider_manager),
@@ -103,18 +105,24 @@ class Core:
                 ToolsCommand(self._tool_manager),
                 Export(self.conversation),
                 Import(),
-                Index(self._build_indexer()),
+                Index(indexer),
+                Ask(retrieval),
             ]
         )
         registry.register_command(Help(registry))
         return registry
 
-    def _build_indexer(self) -> Indexer:
-        """Build the RAG indexer, on the embedding model the settings ask for."""
+    def _build_rag(self) -> tuple[Indexer, Retrieval]:
+        """Build the RAG indexer and retrieval, on the embedding model the settings ask for.
+
+        Both share one store: an embedded Qdrant locks its directory for a
+        single client, so a second store on the same location could not open it.
+        """
         model = self._settings.llm.embedding_model or DEFAULT_EMBEDDING_MODEL
-        return Indexer(
-            Indexation(self._provider_manager.provider(), model), QdrantStore(self._settings.db.rag.location)
-        )
+        provider = self._provider_manager.provider()
+        indexation = Indexation(provider, model)
+        store = QdrantStore(self._settings.db.rag.location)
+        return Indexer(indexation, store), Retrieval(indexation, store, provider)
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""

@@ -1,3 +1,4 @@
+from .ask import Ask
 from .base import Command, StateCommand
 from .branch import Branch
 from .help import Help
@@ -8,6 +9,7 @@ from .registry import CommandRegistry, UnknownCommandError
 from .tools import ToolsCommand
 
 __all__ = [
+    "Ask",
     "Branch",
     "Command",
     "CommandRegistry",
