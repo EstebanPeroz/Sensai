@@ -8,13 +8,13 @@ from sensai.rag.error import RagError
 from sensai.rag.indexation_rag import ChunkStrategy, Indexation
 
 if TYPE_CHECKING:
-    from sensai.rag.store import VectorStore
+    from sensai.rag.qdrant_store import QdrantStore
 
 
 class Indexer:
     """Run a document through the pipeline and store the result."""
 
-    def __init__(self, indexation: Indexation, store: VectorStore) -> None:
+    def __init__(self, indexation: Indexation, store: QdrantStore) -> None:
         """Keep the pipeline and the store this indexer writes to."""
         self._indexation = indexation
         self._store = store

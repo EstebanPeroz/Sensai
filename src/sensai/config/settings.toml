@@ -1,6 +1,6 @@
 [db]
 persistent.url= "sqlite:///persistent.db"
-rag.url = "sqlite:///rag.db"
+rag.location = "rag_qdrant"
 
 [llm]
 # Must be a multilingual model: nomic-embed-text barely separates French topics.

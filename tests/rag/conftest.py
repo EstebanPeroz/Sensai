@@ -1,26 +1,28 @@
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from sensai.rag.store import VectorStore
+from sensai.rag.qdrant_store import QdrantStore
 from tests.rag.fakes import FakeIndexation
 
 
 @pytest.fixture
-def store_url(tmp_path: Path) -> str:
-    """The URL of a fresh sqlite file, to check what survives a new instance."""
-    return f"sqlite:///{tmp_path / 'rag.db'}"
+def store_location(tmp_path: Path) -> str:
+    """A fresh directory for an embedded Qdrant, to check what survives a new instance."""
+    return str(tmp_path / "qdrant")
 
 
 @pytest.fixture
-def store(store_url: str) -> VectorStore:
-    """A VectorStore on a fresh sqlite file, as the application uses one.
+def store(store_location: str) -> Iterator[QdrantStore]:
+    """A QdrantStore on a fresh embedded database, closed once the test is done.
 
-    Not "sqlite:///:memory:": every connection to it is its own empty database,
-    so a store written from one thread looks untouched from another, which is
-    not how the application runs.
+    Embedded Qdrant locks its directory for one client at a time, so a store
+    left open would stop the next one in the same test from opening it.
     """
-    return VectorStore(store_url)
+    opened = QdrantStore(store_location)
+    yield opened
+    opened.close()
 
 
 @pytest.fixture

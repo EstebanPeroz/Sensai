@@ -4,7 +4,7 @@ import pytest
 
 from sensai.config.settings import DBSettings, LLMSettings, RagDBSettings, Settings, load_settings
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
-from sensai.rag.store import VectorStore
+from sensai.rag.qdrant_store import QdrantStore
 from tests.rag.fakes import FakeEmbedder
 
 
@@ -43,20 +43,21 @@ class TestIndexationUsesIt:
         assert indexation.model == load_settings().llm.embedding_model
 
 
-class TestRagDatabaseUrl:
+class TestRagDatabaseLocation:
     def test_the_store_writes_where_the_settings_say(self, tmp_path: Path) -> None:
-        url = f"sqlite:///{tmp_path / 'chosen.db'}"
+        location = str(tmp_path / "chosen")
+        settings = Settings(db=DBSettings(rag=RagDBSettings(location=location)))
 
-        VectorStore(Settings(db=DBSettings(rag=RagDBSettings(url=url))).db.rag.url).add_chunks(
-            "a.md", ["x"], [[0.1]], "m"
-        )
+        store = QdrantStore(settings.db.rag.location)
+        store.add_chunks("a.md", ["x"], [[0.1]], "m")
+        store.close()
 
-        assert (tmp_path / "chosen.db").exists()
+        assert (tmp_path / "chosen").exists()
 
-    def test_the_shipped_settings_point_at_rag_db(self) -> None:
-        assert load_settings().db.rag.url == "sqlite:///rag.db"
+    def test_the_shipped_settings_name_a_location(self) -> None:
+        assert load_settings().db.rag.location == "rag_qdrant"
 
-    def test_the_two_databases_are_not_the_same_file(self) -> None:
+    def test_the_two_databases_are_not_the_same_place(self) -> None:
         settings = load_settings()
 
-        assert settings.db.rag.url != settings.db.persistent.url
+        assert settings.db.rag.location != settings.db.persistent.url

@@ -70,17 +70,18 @@ class PersistentDBSettings:
 
 @dataclass
 class RagDBSettings:
-    """Settings of the [db.rag] table: the database holding the RAG chunks.
+    """Settings of the [db.rag] table: the Qdrant database holding the RAG chunks.
 
-    Unlike the persistent database, this one has a usable default: a missing
-    [db.rag] table is not an error, it just means the chunks go to rag.db.
+    `location` is a server URL, ":memory:", or a directory holding an embedded
+    database. Unlike the persistent database, this one has a usable default: a
+    missing [db.rag] table just means the chunks go to a local directory.
     """
 
-    url: str = "sqlite:///rag.db"
+    location: str = "rag_qdrant"
 
     def __post_init__(self) -> None:
-        """Check the URL, which comes unchecked from the settings file."""
-        _check_name(self.url, "db.rag.url")
+        """Check the location, which comes unchecked from the settings file."""
+        _check_name(self.location, "db.rag.location")
 
 
 @dataclass

@@ -1,13 +1,11 @@
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from sensai.rag.error import RagError, SourceError, SourceNotFoundError, UnsupportedFormatError
 from sensai.rag.indexation_rag import ChunkStrategy
 from sensai.rag.indexer import Indexer
-from sensai.rag.store import ChunkTable, VectorStore, load_vector
+from sensai.rag.qdrant_store import QdrantStore
 from tests.rag.fakes import FakeIndexation
 
 CATS_THEN_ENGINES = (
@@ -17,15 +15,14 @@ CATS_THEN_ENGINES = (
 
 
 @pytest.fixture
-def indexer(indexation: FakeIndexation, store: VectorStore) -> Indexer:
+def indexer(indexation: FakeIndexation, store: QdrantStore) -> Indexer:
     """An Indexer wired to a fake pipeline and an in-memory store."""
     return Indexer(indexation, store)
 
 
-def stored(store: VectorStore) -> list[ChunkTable]:
-    """Every stored chunk, ordered by source then position."""
-    with Session(store._engine) as session:
-        return list(session.scalars(select(ChunkTable).order_by(ChunkTable.source, ChunkTable.position)))
+def stored(store: QdrantStore) -> list[dict]:
+    """Every stored payload, ordered by source then position."""
+    return sorted(store._payloads(None), key=lambda payload: (payload["source"], payload["position"]))
 
 
 def write(tmp_path: Path, name: str, content: str) -> str:
@@ -41,42 +38,41 @@ class TestIndex:
 
         assert indexer.index(source) == 2
 
-    def test_stores_the_chunks_under_their_source(self, indexer: Indexer, store: VectorStore, tmp_path: Path) -> None:
+    def test_stores_the_chunks_under_their_source(self, indexer: Indexer, store: QdrantStore, tmp_path: Path) -> None:
         source = write(tmp_path, "a.txt", CATS_THEN_ENGINES)
 
         indexer.index(source)
 
-        assert [chunk.source for chunk in stored(store)] == [source, source]
+        assert [payload["source"] for payload in stored(store)] == [source, source]
 
-    def test_stores_the_chunks_in_order(self, indexer: Indexer, store: VectorStore, tmp_path: Path) -> None:
+    def test_stores_the_chunks_in_order(self, indexer: Indexer, store: QdrantStore, tmp_path: Path) -> None:
         source = write(tmp_path, "a.txt", CATS_THEN_ENGINES)
 
         indexer.index(source)
 
         chunks = stored(store)
-        assert [chunk.position for chunk in chunks] == [0, 1]
-        assert chunks[0].text.startswith("The cat sleeps")
-        assert chunks[1].text.startswith("The engine burns")
+        assert [payload["position"] for payload in chunks] == [0, 1]
+        assert chunks[0]["text"].startswith("The cat sleeps")
+        assert chunks[1]["text"].startswith("The engine burns")
 
     def test_stores_the_model_the_pipeline_reports(
-        self, indexer: Indexer, indexation: FakeIndexation, store: VectorStore, tmp_path: Path
+        self, indexer: Indexer, indexation: FakeIndexation, store: QdrantStore, tmp_path: Path
     ) -> None:
         source = write(tmp_path, "a.txt", "One. Two.")
 
         indexer.index(source)
 
-        assert {chunk.model for chunk in stored(store)} == {indexation.model}
+        assert {payload["model"] for payload in stored(store)} == {indexation.model}
 
     def test_stores_the_vectors_the_pipeline_produced(
-        self, indexer: Indexer, store: VectorStore, tmp_path: Path
+        self, indexer: Indexer, store: QdrantStore, tmp_path: Path
     ) -> None:
         source = write(tmp_path, "a.txt", "The cat sleeps.")
 
         indexer.index(source)
 
-        chunk = stored(store)[0]
-        assert load_vector(chunk.vector) == [1.0, 0.1]
-        assert chunk.dim == 2
+        assert store.dimension() == 2
+        assert store.count() == 1
 
     def test_embeds_every_chunk_in_one_call(self, indexer: Indexer, indexation: FakeIndexation, tmp_path: Path) -> None:
         source = write(tmp_path, "a.txt", CATS_THEN_ENGINES)
@@ -85,14 +81,14 @@ class TestIndex:
 
         assert len(indexation.batches[-1]) == 2
 
-    def test_a_markdown_source_carries_its_titles(self, indexer: Indexer, store: VectorStore, tmp_path: Path) -> None:
+    def test_a_markdown_source_carries_its_titles(self, indexer: Indexer, store: QdrantStore, tmp_path: Path) -> None:
         source = write(tmp_path, "a.md", "# Engines\nThe engine burns fuel.")
 
         indexer.index(source)
 
-        assert stored(store)[0].text == "Engines\n\nThe engine burns fuel."
+        assert stored(store)[0]["text"] == "Engines\n\nThe engine burns fuel."
 
-    def test_a_forced_strategy_is_passed_through(self, indexer: Indexer, store: VectorStore, tmp_path: Path) -> None:
+    def test_a_forced_strategy_is_passed_through(self, indexer: Indexer, store: QdrantStore, tmp_path: Path) -> None:
         source = write(tmp_path, "a.txt", CATS_THEN_ENGINES)
 
         indexer.index(source, strategy=ChunkStrategy.SENTENCE)
@@ -102,7 +98,7 @@ class TestIndex:
 
 class TestIndexAgain:
     def test_replaces_what_was_stored_for_the_source(
-        self, indexer: Indexer, store: VectorStore, tmp_path: Path
+        self, indexer: Indexer, store: QdrantStore, tmp_path: Path
     ) -> None:
         source = write(tmp_path, "a.txt", CATS_THEN_ENGINES)
         indexer.index(source)
@@ -110,9 +106,9 @@ class TestIndexAgain:
         Path(source).write_text("The cat sleeps.", encoding="utf-8")
         assert indexer.index(source) == 1
 
-        assert [chunk.text for chunk in stored(store)] == ["The cat sleeps."]
+        assert [payload["text"] for payload in stored(store)] == ["The cat sleeps."]
 
-    def test_does_not_duplicate_an_unchanged_source(self, indexer: Indexer, store: VectorStore, tmp_path: Path) -> None:
+    def test_does_not_duplicate_an_unchanged_source(self, indexer: Indexer, store: QdrantStore, tmp_path: Path) -> None:
         source = write(tmp_path, "a.txt", CATS_THEN_ENGINES)
 
         indexer.index(source)
@@ -120,7 +116,7 @@ class TestIndexAgain:
 
         assert len(stored(store)) == 2
 
-    def test_leaves_the_other_sources_alone(self, indexer: Indexer, store: VectorStore, tmp_path: Path) -> None:
+    def test_leaves_the_other_sources_alone(self, indexer: Indexer, store: QdrantStore, tmp_path: Path) -> None:
         first = write(tmp_path, "a.txt", "The cat sleeps.")
         second = write(tmp_path, "b.txt", "The engine burns fuel.")
         indexer.index(first)
@@ -128,7 +124,7 @@ class TestIndexAgain:
 
         indexer.index(first)
 
-        assert {chunk.source for chunk in stored(store)} == {first, second}
+        assert {payload["source"] for payload in stored(store)} == {first, second}
 
 
 class TestIndexRejects:
@@ -164,7 +160,7 @@ class TestIndexRejects:
 
         assert not isinstance(caught.value, SourceError)
 
-    def test_stores_nothing_when_it_rejects(self, indexer: Indexer, store: VectorStore, tmp_path: Path) -> None:
+    def test_stores_nothing_when_it_rejects(self, indexer: Indexer, store: QdrantStore, tmp_path: Path) -> None:
         with pytest.raises(RagError):
             indexer.index(str(tmp_path / "absent.md"))
 

@@ -1,16 +1,15 @@
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import override
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from sensai.commands.base import Command
 from sensai.commands.index import Index
 from sensai.rag.indexation_rag import ChunkStrategy, Indexation
 from sensai.rag.indexer import Indexer
-from sensai.rag.store import ChunkTable, VectorStore
+from sensai.rag.qdrant_store import QdrantStore
 from tests.commands.fakes import FakeUI
 from tests.rag.fakes import BlockingEmbedder, FakeIndexation, FlakyEmbedder
 
@@ -21,13 +20,15 @@ CATS_THEN_ENGINES = (
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> VectorStore:
-    """A VectorStore on a fresh sqlite file: the indexation writes from a worker thread."""
-    return VectorStore(f"sqlite:///{tmp_path / 'rag.db'}")
+def store(tmp_path: Path) -> Iterator[QdrantStore]:
+    """A QdrantStore on a fresh embedded database, closed once the test is done."""
+    opened = QdrantStore(str(tmp_path / "qdrant"))
+    yield opened
+    opened.close()
 
 
 @pytest.fixture
-def command(store: VectorStore, fake_ui: FakeUI) -> Index:
+def command(store: QdrantStore, fake_ui: FakeUI) -> Index:
     """An Index command writing to `store`, with its UI already bound."""
     del fake_ui  # the fixture binds the UI every command shares
     return Index(Indexer(FakeIndexation(), store))
@@ -41,10 +42,9 @@ def write(directory: Path, name: str, content: str = CATS_THEN_ENGINES) -> str:
     return str(source)
 
 
-def sources(store: VectorStore) -> list[str]:
+def sources(store: QdrantStore) -> list[str]:
     """The source of every stored chunk."""
-    with Session(store._engine) as session:  # noqa: SLF001
-        return list(session.scalars(select(ChunkTable.source)))
+    return [str(payload["source"]) for payload in store._payloads(None)]  # noqa: SLF001
 
 
 class TestExecute:
@@ -74,7 +74,7 @@ class TestExecute:
             "Indexed 2/2 sources into 3 chunks",
         ]
 
-    def test_every_source_reaches_the_store(self, command: Index, store: VectorStore, tmp_path: Path) -> None:
+    def test_every_source_reaches_the_store(self, command: Index, store: QdrantStore, tmp_path: Path) -> None:
         first = write(tmp_path, "a.txt")
         second = write(tmp_path, "b.txt", "The cat sleeps.")
 
@@ -115,7 +115,7 @@ class TestExecuteWithFailures:
 
         assert fake_ui.messages[-1] == "Indexed 0/1 sources into 0 chunks (1 skipped)"
 
-    def test_a_failing_source_stores_nothing(self, command: Index, store: VectorStore, tmp_path: Path) -> None:
+    def test_a_failing_source_stores_nothing(self, command: Index, store: QdrantStore, tmp_path: Path) -> None:
         command.execute(str(tmp_path / "absent.md"))
 
         assert sources(store) == []
@@ -174,7 +174,7 @@ class TestCompletions:
 
 class TestExecuteWithProviderFailures:
     @pytest.fixture
-    def flaky(self, store: VectorStore, fake_ui: FakeUI) -> Index:
+    def flaky(self, store: QdrantStore, fake_ui: FakeUI) -> Index:
         """An Index command whose embedder fails on any text saying "boom"."""
         del fake_ui
         return Index(Indexer(Indexation(FlakyEmbedder()), store))
@@ -208,7 +208,7 @@ class TestExecuteWithProviderFailures:
 
         assert fake_ui.messages[-1] == "Indexed 1/2 sources into 1 chunks (1 skipped)"
 
-    def test_the_sources_that_worked_are_still_stored(self, flaky: Index, store: VectorStore, tmp_path: Path) -> None:
+    def test_the_sources_that_worked_are_still_stored(self, flaky: Index, store: QdrantStore, tmp_path: Path) -> None:
         good = write(tmp_path, "a.txt", "The cat sleeps.")
         boom = write(tmp_path, "b.txt", "This one says boom.")
 
@@ -237,7 +237,7 @@ class EventPendingUI(FakeUI):
 
 
 class TestExecuteOffTheDispatchThread:
-    def test_it_returns_as_soon_as_an_event_is_queued(self, store: VectorStore, tmp_path: Path) -> None:
+    def test_it_returns_as_soon_as_an_event_is_queued(self, store: QdrantStore, tmp_path: Path) -> None:
         ui = EventPendingUI()
         Command.bind_ui(ui)
         command = Index(Indexer(FakeIndexation(), store))
@@ -246,7 +246,7 @@ class TestExecuteOffTheDispatchThread:
 
         assert ui.messages == []  # the worker reports later, the dispatch loop gets its event now
 
-    def test_the_work_still_finishes_after_it_returned(self, store: VectorStore, tmp_path: Path) -> None:
+    def test_the_work_still_finishes_after_it_returned(self, store: QdrantStore, tmp_path: Path) -> None:
         ui = EventPendingUI()
         Command.bind_ui(ui)
         command = Index(Indexer(FakeIndexation(), store))
@@ -260,7 +260,7 @@ class TestExecuteOffTheDispatchThread:
         assert sources(store) == [source, source]
 
     def test_a_second_indexation_is_refused_while_one_runs(
-        self, store: VectorStore, tmp_path: Path, fake_ui: FakeUI
+        self, store: QdrantStore, tmp_path: Path, fake_ui: FakeUI
     ) -> None:
         del fake_ui
         ui = EventPendingUI()
@@ -282,7 +282,7 @@ class TestExecuteOffTheDispatchThread:
         assert "An indexation is already running." not in fake_ui.messages
 
     def test_an_unexpected_error_is_reported_instead_of_vanishing(
-        self, store: VectorStore, fake_ui: FakeUI, tmp_path: Path
+        self, store: QdrantStore, fake_ui: FakeUI, tmp_path: Path
     ) -> None:
         command = Index(BrokenIndexer(FakeIndexation(), store))
 
@@ -291,7 +291,7 @@ class TestExecuteOffTheDispatchThread:
         assert any("unexpected error" in message for message in fake_ui.messages)
 
     def test_the_guard_is_released_even_when_the_indexer_breaks(
-        self, store: VectorStore, fake_ui: FakeUI, tmp_path: Path
+        self, store: QdrantStore, fake_ui: FakeUI, tmp_path: Path
     ) -> None:
         command = Index(BrokenIndexer(FakeIndexation(), store))
         command.execute(write(tmp_path, "a.txt"))

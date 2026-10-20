@@ -17,7 +17,7 @@ from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
 from sensai.rag.indexer import Indexer
-from sensai.rag.store import VectorStore
+from sensai.rag.qdrant_store import QdrantStore
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
 
@@ -112,7 +112,9 @@ class Core:
     def _build_indexer(self) -> Indexer:
         """Build the RAG indexer, on the embedding model the settings ask for."""
         model = self._settings.llm.embedding_model or DEFAULT_EMBEDDING_MODEL
-        return Indexer(Indexation(self._provider_manager.provider(), model), VectorStore(self._settings.db.rag.url))
+        return Indexer(
+            Indexation(self._provider_manager.provider(), model), QdrantStore(self._settings.db.rag.location)
+        )
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""
