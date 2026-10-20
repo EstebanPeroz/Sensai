@@ -80,3 +80,7 @@ class UIAdapter(ABC):
 
         Returns whether it was delivered.
         """
+
+    @abstractmethod
+    def update_thinking_effort(self, level: str) -> bool:
+        """Show the current thinking effort `level` of the model. Returns whether it was delivered."""

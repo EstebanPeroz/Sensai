@@ -10,8 +10,12 @@ class DummyTool(Tool[str]):
         return "dummy"
 
     @property
-    def tool_rule(self) -> dict:
-        return {"type": "function"}
+    def description(self) -> str:
+        return "Return the given value as text."
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {"value": {"type": "string"}}}
 
     def run(self, **kwargs: object) -> str:
         return str(kwargs.get("value"))
@@ -23,8 +27,16 @@ class MultiParamTool(Tool[str]):
         return "multi"
 
     @property
-    def tool_rule(self) -> dict:
-        return {"type": "function"}
+    def description(self) -> str:
+        return "Join a city and an age."
+
+    @property
+    def parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {"city": {"type": "string"}, "age": {"type": "integer"}},
+            "required": ["city", "age"],
+        }
 
     def run(self, **kwargs: object) -> str:
         city = get_parameter("city", str, **kwargs)
@@ -54,7 +66,10 @@ class TestToolAbstractness:
         tool = DummyTool()
 
         assert tool.name == "dummy"
-        assert tool.tool_rule == {"type": "function"}
+        assert tool.tool_rule == {
+            "type": "function",
+            "function": {"name": "dummy", "description": tool.description, "parameters": tool.parameters},
+        }
         assert tool.run(value=42) == "42"
 
 
