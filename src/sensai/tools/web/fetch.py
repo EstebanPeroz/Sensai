@@ -33,26 +33,23 @@ class WebFetchTool(Tool[str]):
         return "web_fetch"
 
     @property
-    def tool_rule(self) -> dict:
-        """Function schema advertised to the model."""
+    def description(self) -> str:
+        """What the tool does, read by the model to decide when to call it."""
+        return (
+            "Read one web page, usually a URL returned by web_search. "
+            "Returns the passages of the page most relevant to the query, with the page title and URL to cite."
+        )
+
+    @property
+    def parameters(self) -> dict:
+        """JSON schema of the arguments accepted by `run`."""
         return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": (
-                    "Read one web page, usually a URL returned by web_search. "
-                    "Returns the passages of the page most relevant to the query, with the page title and URL "
-                    "to cite."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string", "description": "The http(s) URL of the page to read."},
-                        "query": {"type": "string", "description": "What to look for in the page."},
-                    },
-                    "required": ["url", "query"],
-                },
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "The http(s) URL of the page to read."},
+                "query": {"type": "string", "description": "What to look for in the page."},
             },
+            "required": ["url", "query"],
         }
 
     def run(self, **kwargs: object) -> str:
