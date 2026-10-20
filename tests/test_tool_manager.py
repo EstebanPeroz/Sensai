@@ -91,6 +91,27 @@ class InterruptedTool(BrokenTool):
         raise KeyboardInterrupt
 
 
+class ResultTool(Tool[object]):
+    def __init__(self, result: object) -> None:
+        self._result = result
+
+    @property
+    def name(self) -> str:
+        return "result"
+
+    @property
+    def description(self) -> str:
+        return "Return a fixed result."
+
+    @property
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {}}
+
+    def run(self, **kwargs: object) -> object:
+        del kwargs
+        return self._result
+
+
 class NamedTool(Tool[str]):
     def __init__(self, name: str) -> None:
         self._name = name
@@ -227,6 +248,34 @@ class TestCall:
         result = make_manager().call(make_call("profile"))
 
         assert result == {"role": "tool", "tool_name": "profile", "content": '{"city": "Paris", "age": 30}'}
+
+
+class TestResultConversion:
+    def test_result_that_cannot_become_json_returns_error_message(self) -> None:
+        result = ToolManager([ResultTool({("a", "b"): 1})]).call(make_call("result"))
+
+        assert result == {
+            "role": "tool",
+            "tool_name": "result",
+            "content": "error: keys must be str, int, float, bool or None, not tuple",
+        }
+
+    def test_circular_result_returns_error_message(self) -> None:
+        circular: list[object] = []
+        circular.append(circular)
+
+        result = ToolManager([ResultTool(circular)]).call(make_call("result"))
+
+        assert result == {
+            "role": "tool",
+            "tool_name": "result",
+            "content": "error: ValueError: Circular reference detected",
+        }
+
+    def test_unserializable_values_are_converted_to_text(self) -> None:
+        result = ToolManager([ResultTool({"when": object})]).call(make_call("result"))
+
+        assert result["content"] == '{"when": "<class \'object\'>"}'
 
 
 class TestToolName:

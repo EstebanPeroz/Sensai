@@ -82,12 +82,13 @@ class ToolManager:
             return self._message(name, f"error: unknown tool '{name}'")
         try:
             result = self._tools[name].run(**(function.get("arguments") or {}))
+            content = result if isinstance(result, str) else json.dumps(result, default=str)
         except (SensaiError, TypeError) as err:
             return self._message(name, f"error: {err}")
         except Exception as err:
             logger.exception("Tool '%s' failed unexpectedly", name)
             return self._message(name, f"error: {type(err).__name__}: {err}")
-        return self._message(name, result if isinstance(result, str) else json.dumps(result, default=str))
+        return self._message(name, content)
 
     @staticmethod
     def tool_name(tool_call: object) -> str:
