@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from sensai.rag.indexer import Indexer
 
 _INDEXABLE_SUFFIXES = (".txt", ".md", ".pdf", ".html", ".htm")
-_IGNORED_DIRECTORIES = {"__pycache__", "node_modules"}
 _MAX_COMPLETIONS = 50
 # How often the dispatch thread looks for a UI event while indexing runs.
 _POLL_SECONDS = 0.05
@@ -99,9 +98,7 @@ class Index(Command):
         """
         found: list[str] = []
         for directory, subdirectories, files in Path().walk():
-            subdirectories[:] = [
-                name for name in subdirectories if not name.startswith(".") and name not in _IGNORED_DIRECTORIES
-            ]
+            subdirectories[:] = [name for name in subdirectories if not name.startswith(".")]
             for name in sorted(files):
                 if Path(name).suffix.lower() in _INDEXABLE_SUFFIXES:
                     found.append(str(directory / name))
