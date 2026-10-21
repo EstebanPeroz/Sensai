@@ -44,8 +44,9 @@ class RedisSemanticCache:
         """Return the cached answer of the most similar query of the scope, or None below the similarity threshold.
 
         The query and its context are compared separately, and both must reach the threshold: comparing them as one
-        text would let a long shared context hide a different query. A query without context only matches entries
-        without context, and the other way around.
+        text would let a long shared context hide a different query. An entry cached without context, a question asked
+        first, stands on its own and matches whatever the context; an entry cached with context only matches a query
+        asked after a similar one.
         """
         embeddings = self._embed(query, context)
         if embeddings is None:
@@ -58,11 +59,11 @@ class RedisSemanticCache:
         except redis.RedisError:
             return None
         for stored, stored_context, answer in entries:
-            if not isinstance(stored, bytes) or not isinstance(answer, bytes):
+            if not isinstance(stored, bytes) or not isinstance(stored_context, bytes) or not isinstance(answer, bytes):
                 continue
             score = _cosine_similarity(embedding, _unpack(stored))
-            if context_embedding or stored_context:
-                if not context_embedding or not isinstance(stored_context, bytes) or not stored_context:
+            if stored_context:
+                if not context_embedding:
                     continue
                 score = min(score, _cosine_similarity(context_embedding, _unpack(stored_context)))
             if score >= best_score:

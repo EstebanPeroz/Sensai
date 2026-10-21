@@ -233,11 +233,11 @@ class TestContext:
 
         assert cache.lookup("give me an example", SCOPE) is None
 
-    def test_query_with_context_misses_an_entry_without_context(self, client: FakeRedis) -> None:
+    def test_query_with_context_hits_an_entry_without_context(self, client: FakeRedis) -> None:
         cache = make_cache(client)
         cache.store("what is redis?", SCOPE, "An in-memory store.")
 
-        assert cache.lookup("what is redis?", SCOPE, context="how to cook pasta?") is None
+        assert cache.lookup("what is redis?", SCOPE, context="how to cook pasta?") == "An in-memory store."
 
     def test_context_without_embedding_is_not_stored(self, client: FakeRedis) -> None:
         make_cache(client).store("what is redis?", SCOPE, "An in-memory store.", context="unknown")
