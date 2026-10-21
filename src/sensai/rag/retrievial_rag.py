@@ -5,13 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal, Protocol
 
 from sensai.llm.message import Role
-from sensai.rag.qdrant_store import DEFAULT_LIMIT, QdrantStore
+from sensai.rag.collection import DEFAULT_LIMIT, as_chunk
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
+    from sensai.rag.collection import Collection
     from sensai.rag.indexation_rag import Indexation
 
 DEFAULT_MIN_SCORE = 0.45
+
+
 _NOTHING_FOUND = "The indexed documents hold nothing close enough to that question."
 _GROUNDING = (
     "Answer the question using only the extracts below. If they do not hold the "
@@ -35,13 +38,13 @@ class Retrieval:
     """Answer a question from the chunks stored by the indexation."""
 
     _indexation: Indexation
-    _store: QdrantStore
+    _collection: Collection
     _answerer: Answerer
 
-    def __init__(self, indexation: Indexation, store: QdrantStore, answerer: Answerer) -> None:
-        """Keep the pipeline that encodes the question, the store, and the model that answers."""
+    def __init__(self, indexation: Indexation, collection: Collection, answerer: Answerer) -> None:
+        """Keep the pipeline that encodes the question, the collection, and the model that answers."""
         self._indexation = indexation
-        self._store = store
+        self._collection = collection
         self._answerer = answerer
 
     def answer(
@@ -91,7 +94,8 @@ class Retrieval:
             VectorStoreError: If the question's vector does not fit the collection.
 
         """
-        return self._store.search(self._encode(question), limit=limit, min_score=min_score)
+        hits = self._collection.query(self._encode(question), limit=limit, min_score=min_score)
+        return [as_chunk(hit) for hit in hits]
 
     def create_prompt(self, question: str, chunks: list[dict]) -> list[dict]:
         """Build the messages carrying the retrieved chunks and the question.
