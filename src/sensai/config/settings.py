@@ -101,25 +101,30 @@ class DBSettings:
 
 @dataclass
 class FeatureSettings:
-    """Settings of the [features] table: the features to switch off; every other one is on.
+    """Settings of the [features] table: the features to switch off, and those asking the user before acting.
 
-    A feature is named `<namespace>.<name>`, such as `tools.rag_retrieval`.
+    Every feature not disabled is on. A feature is named `<namespace>.<name>`, such as `tools.rag_retrieval`.
     """
 
     disabled: list[str] = field(default_factory=list)
+    confirm: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        """Check the disabled list, which comes unchecked from the settings file."""
-        if not isinstance(self.disabled, list):
-            msg = "features.disabled must be a list of feature names"
-            raise TypeError(msg)
-        for name in self.disabled:
-            _check_name(name, "features.disabled entry")
+        """Check the disabled and confirm lists, which come unchecked from the settings file."""
+        for key, names in (("disabled", self.disabled), ("confirm", self.confirm)):
+            if not isinstance(names, list):
+                msg = f"features.{key} must be a list of feature names"
+                raise TypeError(msg)
+            for name in names:
+                _check_name(name, f"features.{key} entry")
 
     def disabled_in(self, namespace: str) -> set[str]:
         """Return the names, stripped of their namespace, of the features disabled in `namespace`."""
-        prefix = f"{namespace}."
-        return {name.removeprefix(prefix) for name in self.disabled if name.startswith(prefix)}
+        return _names_in(self.disabled, namespace)
+
+    def confirm_in(self, namespace: str) -> set[str]:
+        """Return the names, stripped of their namespace, of the features needing confirmation in `namespace`."""
+        return _names_in(self.confirm, namespace)
 
 
 @dataclass
@@ -190,6 +195,11 @@ def _pop_table(parent: dict[str, Any], key: str) -> dict[str, Any]:
         msg = f"{key} must be a table"
         raise TypeError(msg)
     return table
+
+
+def _names_in(names: list[str], namespace: str) -> set[str]:
+    prefix = f"{namespace}."
+    return {name.removeprefix(prefix) for name in names if name.startswith(prefix)}
 
 
 def _check_name(value: object, name: str) -> None:

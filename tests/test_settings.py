@@ -6,6 +6,7 @@ import pytest
 from sensai.config.settings import (
     PROVIDERS,
     ConfigError,
+    FeatureSettings,
     LLMSettings,
     OllamaSettings,
     Settings,
@@ -93,6 +94,27 @@ class TestWeb:
         assert "secret" not in repr(WebSettings(api_key="secret"))
 
 
+class TestFeatures:
+    def test_confirm_is_read_from_features_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[features]\nconfirm = ["tools.web_fetch"]\n'))
+
+        assert settings.features.confirm == ["tools.web_fetch"]
+
+    def test_confirm_defaults_to_empty(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "")).features.confirm == []
+
+    def test_confirm_in_strips_the_namespace(self) -> None:
+        features = FeatureSettings(confirm=["tools.web_fetch", "commands.export", "tools.ask_user"])
+
+        assert features.confirm_in("tools") == {"web_fetch", "ask_user"}
+
+    def test_confirm_and_disabled_are_independent(self) -> None:
+        features = FeatureSettings(disabled=["tools.a"], confirm=["tools.b"])
+
+        assert features.disabled_in("tools") == {"a"}
+        assert features.confirm_in("tools") == {"b"}
+
+
 class TestValidation:
     @pytest.mark.parametrize(
         ("content", "reason"),
@@ -116,6 +138,10 @@ class TestValidation:
             ("[web]\ntimeout = 0\n", "web.timeout must be a positive number"),
             ('[web]\ntimeout = "10"\n', "web.timeout must be a positive number"),
             ("[web]\ntimeout = true\n", "web.timeout must be a positive number"),
+            ('[features]\ndisabled = "tools.x"\n', "features.disabled must be a list"),
+            ('[features]\nconfirm = "tools.x"\n', "features.confirm must be a list"),
+            ('[features]\nconfirm = [""]\n', "features.confirm entry must be a non-empty string"),
+            ("[features]\nconfirm = [1]\n", "features.confirm entry must be a non-empty string"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:

@@ -21,3 +21,8 @@ timeout = 10.0
 disabled = []
 
 # disabled = ["tools.inexesistant.test"]
+
+# Feature ids asking the user before each use (Allow / Always this session / Deny).
+confirm = []
+
+# confirm = ["tools.web_fetch"]
