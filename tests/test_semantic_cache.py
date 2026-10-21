@@ -54,7 +54,7 @@ class FakeRedis:
         if self.fail:
             raise redis.ConnectionError
 
-    def scan_iter(self, match: str) -> list[str]:
+    def scan_iter(self, match: str, count: int | None = None) -> list[str]:  # noqa: ARG002
         self._check()
         return [key for key in self.hashes if fnmatch.fnmatchcase(key, match)]
 
@@ -180,6 +180,15 @@ class TestLookup:
         client.fail = True
 
         assert cache.lookup("what is redis?", SCOPE) is None
+
+    @pytest.mark.parametrize("field", ["embedding", "context_embedding"])
+    def test_malformed_entry_is_a_miss(self, client: FakeRedis, field: str) -> None:
+        cache = make_cache(client)
+        cache.store("give me an example", SCOPE, "SET key value", context="what is redis?")
+        for entry in client.hashes.values():
+            entry[field] = b"abc"
+
+        assert cache.lookup("give me an example", SCOPE, context="what is redis?") is None
 
     def test_embedding_failure_is_a_miss(self, client: FakeRedis) -> None:
         assert make_cache(client).lookup("embedding failure", SCOPE) is None

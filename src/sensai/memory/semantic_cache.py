@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from sensai.memory.semantic_cache_repository import CacheScope
 
 KEY_PREFIX = "sensai:cache:"
+SCAN_COUNT = 1000
 _FIELDS = ("embedding", "context_embedding", "answer")
 
 
@@ -91,14 +92,14 @@ class RedisSemanticCache:
     def clear(self) -> None:
         """Remove every cached answer, whatever its scope or embedding model."""
         with contextlib.suppress(redis.RedisError):
-            keys = list(self._client.scan_iter(match=KEY_PREFIX + "*"))
+            keys = list(self._client.scan_iter(match=KEY_PREFIX + "*", count=SCAN_COUNT))
             if keys:
                 self._client.delete(*keys)
 
     def _scope_entries(self, scope: CacheScope) -> list[list[bytes | None]]:
         """Return the fields compared on lookup of every entry of the scope, read in a single round trip."""
         pipeline = self._client.pipeline(transaction=False)
-        for key in self._client.scan_iter(match=self._scope_prefix(scope) + "*"):
+        for key in self._client.scan_iter(match=self._scope_prefix(scope) + "*", count=SCAN_COUNT):
             pipeline.hmget(key, _FIELDS)
         return pipeline.execute()
 
@@ -121,7 +122,11 @@ def _pack(vector: Sequence[float]) -> bytes:
 
 
 def _unpack(data: bytes) -> list[float]:
-    return array("f", data).tolist()
+    """Decode a stored vector, or return an empty one, similar to nothing, if Redis holds malformed bytes."""
+    try:
+        return array("f", data).tolist()
+    except ValueError:
+        return []
 
 
 def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
