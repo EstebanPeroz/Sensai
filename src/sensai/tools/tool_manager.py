@@ -1,11 +1,16 @@
+import json
+import logging
 from typing import TYPE_CHECKING, Any
 
+from sensai.error import SensaiError
 from sensai.tools.error import DuplicateToolError
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from sensai.tools.tool import Tool
+
+logger = logging.getLogger(__name__)
 
 
 class ToolManager:
@@ -60,24 +65,43 @@ class ToolManager:
         self._enabled.discard(name)
         return True
 
-    def call(self, tool_call: dict[str, Any]) -> dict | None:
-        """Call the tool named in an LLM-style function-call payload.
+    def call(self, tool_call: dict[str, Any]) -> dict[str, str]:
+        """Run the tool named in an LLM-style function-call payload and return its result as a tool message.
 
-        Return an empty dict if the payload names no tool, and None if no *enabled*
-        tool has this name: a disabled tool is unreachable, like an unknown one, so a
-        model still holding its schema in context cannot reach it.
+        A disabled tool is unreachable, like an unknown one, so a model still holding its schema in context
+        cannot reach it. Every failure, a malformed call included, is returned as a message starting with
+        `error:`, for the model to read.
         """
-        function = tool_call.get("function")
-        if function is None:
-            return {}
-        tool_name = function.get("name")
-        if tool_name is None:
-            return {}
-        if not self.is_enabled(tool_name):
-            return None
-        arguments = function.get("arguments", {})
-        return {"role": "tool", "tool_name": tool_name, "content": self._tools[tool_name].run(**arguments)}
+        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+        if function is not None and not isinstance(function, dict):
+            return self._message("unknown", "error: malformed tool call, function must be an object")
+        name = (function or {}).get("name")
+        if function is None or name is None:
+            return self._message("unknown", "error: malformed tool call, missing function name")
+        if not self.is_enabled(name):
+            return self._message(name, f"error: unknown tool '{name}'")
+        try:
+            result = self._tools[name].run(**(function.get("arguments") or {}))
+            content = result if isinstance(result, str) else json.dumps(result, default=str)
+        except (SensaiError, TypeError) as err:
+            return self._message(name, f"error: {err}")
+        except Exception as err:
+            logger.exception("Tool '%s' failed unexpectedly", name)
+            return self._message(name, f"error: {type(err).__name__}: {err}")
+        return self._message(name, content)
+
+    @staticmethod
+    def tool_name(tool_call: object) -> str:
+        """Return the name of the tool an LLM-style call asks for, or `unknown` when the call is malformed."""
+        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+        if not isinstance(function, dict) or function.get("name") is None:
+            return "unknown"
+        return str(function["name"])
 
     def get_tool_call_rules(self) -> list[dict]:
         """Return the schema of every enabled tool, for the `tools` field of a chat payload."""
         return [self._tools[name].tool_rule for name in sorted(self._enabled)]
+
+    @staticmethod
+    def _message(tool_name: str, content: str) -> dict[str, str]:
+        return {"role": "tool", "tool_name": tool_name, "content": content}

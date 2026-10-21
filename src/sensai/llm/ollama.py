@@ -23,7 +23,6 @@ class OllamaAdapter(ProviderAdapter):
         """Init ollama Adapter with its connection settings and the embedding model, if one is configured."""
         super().__init__()
         self._base_url: str = settings.base_url.rstrip("/") + "/"
-        self._response: requests.Response | None = None
 
     @overload
     def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse]: ...
@@ -107,12 +106,6 @@ class OllamaAdapter(ProviderAdapter):
 
         return models
 
-    def close_stream_response(self) -> None:
-        """Close a response during streaming."""
-        if self._response is not None:
-            self._response.close()
-            self._response = None
-
     def _get(self, endpoint: str, *, timeout: int = 10) -> dict:
         try:
             result = requests.get(
@@ -147,7 +140,7 @@ class OllamaAdapter(ProviderAdapter):
 
     def _post_stream(self, endpoint: str, payload: dict, *, timeout: int = 10) -> Iterator[dict]:
         try:
-            self._response = requests.post(
+            response = requests.post(
                 self._base_url + endpoint,
                 json=payload,
                 stream=True,
@@ -156,14 +149,14 @@ class OllamaAdapter(ProviderAdapter):
         except requests.RequestException as err:
             raise RequestCallError(" Post -> " + str(err)) from None
 
-        if not self._response.ok:
-            status_code = self._response.status_code
-            self.close_stream_response()
-            raise RequestStatusError(status_code)
+        if not response.ok:
+            response.close()
+            raise RequestStatusError(response.status_code)
 
-        return self._iter_json_lines(self._response)
+        return self._iter_json_lines(response)
 
-    def _iter_json_lines(self, result: requests.Response) -> Iterator[dict]:
+    @staticmethod
+    def _iter_json_lines(result: requests.Response) -> Iterator[dict]:
         try:
             for line in result.iter_lines(decode_unicode=True):
                 if not line:
@@ -175,4 +168,4 @@ class OllamaAdapter(ProviderAdapter):
         except requests.RequestException as err:
             raise RequestCallError(" fail to get stream chunk" + str(err)) from None
         finally:
-            self.close_stream_response()
+            result.close()

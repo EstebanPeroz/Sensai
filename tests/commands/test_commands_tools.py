@@ -22,8 +22,13 @@ class StubTool(Tool[str]):
 
     @property
     @override
-    def tool_rule(self) -> dict:
-        return {"type": "function", "function": {"name": self._name}}
+    def description(self) -> str:
+        return f"The {self._name} tool."
+
+    @property
+    @override
+    def parameters(self) -> dict:
+        return {"type": "object", "properties": {}}
 
     @override
     def run(self, **kwargs: object) -> str:
@@ -293,21 +298,21 @@ class TestToolsEffectOnModelPayload:
     def test_disabling_a_tool_removes_its_rule_from_the_payload(self, tool_manager: ToolManager) -> None:
         ToolsCommand(tool_manager).execute("disable", "echo")
 
-        assert tool_manager.get_tool_call_rules() == [{"type": "function", "function": {"name": "weather"}}]
+        assert tool_manager.get_tool_call_rules() == [StubTool("weather").tool_rule]
 
     def test_enabling_a_tool_restores_its_rule_in_the_payload(self) -> None:
         manager = make_manager(disabled=("echo", "weather"))
 
         ToolsCommand(manager).execute("enable", "weather")
 
-        assert manager.get_tool_call_rules() == [{"type": "function", "function": {"name": "weather"}}]
+        assert manager.get_tool_call_rules() == [StubTool("weather").tool_rule]
 
     def test_disabled_tool_becomes_unreachable_for_the_model(self, tool_manager: ToolManager) -> None:
         call = {"type": "function", "function": {"name": "echo", "arguments": {}}}
 
         ToolsCommand(tool_manager).execute("disable", "echo")
 
-        assert tool_manager.call(call) is None
+        assert tool_manager.call(call) == {"role": "tool", "tool_name": "echo", "content": "error: unknown tool 'echo'"}
 
 
 class TestToolsResponseAppending:

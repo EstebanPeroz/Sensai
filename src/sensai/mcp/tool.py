@@ -23,15 +23,14 @@ class MCPTool(Tool[object]):
         return self._info.name
 
     @property
-    def tool_rule(self) -> dict[str, object]:
-        """Return the tool schema in the format expected by the model provider."""
-        function: dict[str, object] = {
-            "name": self._info.name,
-            "parameters": self._info.input_schema,
-        }
-        if self._info.description is not None:
-            function["description"] = self._info.description
-        return {"type": "function", "function": function}
+    def description(self) -> str:
+        """Return the description advertised by the MCP server."""
+        return self._info.description or ""
+
+    @property
+    def parameters(self) -> dict[str, object]:
+        """Return the input schema advertised by the MCP server."""
+        return self._info.input_schema
 
     def run(self, **kwargs: object) -> str:
         """Execute the MCP tool and return its simple text result."""

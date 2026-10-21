@@ -10,6 +10,7 @@ from sensai.error import SensaiError
 from sensai.mcp.config import MCPServerConfig
 
 if TYPE_CHECKING:
+    from importlib.resources.abc import Traversable
     from pathlib import Path
 
 
@@ -55,6 +56,29 @@ class LLMSettings:
         """Check the embedding model, which comes unchecked from the settings file."""
         if self.embedding_model is not None:
             _check_name(self.embedding_model, "llm.embedding_model")
+
+
+@dataclass
+class WebSettings:
+    """Settings of the [web] table, used by the web_search and web_fetch tools.
+
+    `api_key` is a secret, set in the git-ignored settings.toml only. Without it, the keyless backends are used.
+    """
+
+    api_base_url: str = "https://ollama.com/"
+    api_key: str = field(default="", repr=False)
+    timeout: float = 10.0
+
+    def __post_init__(self) -> None:
+        """Check the values, which come unchecked from the settings file."""
+        _check_name(self.api_base_url, "web.api_base_url")
+        _check_url(self.api_base_url, "web.api_base_url")
+        if not isinstance(self.api_key, str):
+            msg = f"web.api_key must be a string, got {type(self.api_key).__name__}"
+            raise TypeError(msg)
+        if isinstance(self.timeout, bool) or not isinstance(self.timeout, int | float) or self.timeout <= 0:
+            msg = f"web.timeout must be a positive number, got {self.timeout!r}"
+            raise TypeError(msg)
 
 
 @dataclass
@@ -105,19 +129,27 @@ class Settings:
 
     llm: LLMSettings = field(default_factory=LLMSettings)
     mcp: MCPServerConfig | None = None
+    web: WebSettings = field(default_factory=WebSettings)
     db: DBSettings = field(default_factory=DBSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
+
+
+def default_settings_file() -> Traversable:
+    """Return the local settings.toml of sensai.config, or the settings.toml.template it is copied from."""
+    config = resources.files("sensai.config")
+    local = config.joinpath("settings.toml")
+    return local if local.is_file() else config.joinpath("settings.toml.template")
 
 
 def load_settings(path: Path | None = None) -> Settings:
     """Load the settings file, falling back to the built-in defaults for missing keys.
 
-    Without a path, the settings.toml packaged with sensai is used.
+    Without a path, the local settings.toml is used, or its template when there is none.
     """
     source = path
     try:
         if source is None:
-            source = resources.files("sensai.config").joinpath("settings.toml")
+            source = default_settings_file()
         with source.open("rb") as f:
             data = tomllib.load(f)
     except FileNotFoundError:
@@ -141,11 +173,13 @@ def load_settings(path: Path | None = None) -> Settings:
                 if provider.name in llm
             }
             mcp = MCPServerConfig(**mcp_data) if mcp_data else None
+            web = WebSettings(**_pop_table(data, "web"))
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
             features = FeatureSettings(**_pop_table(data, "features"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
                 mcp=mcp,
+                web=web,
                 db=DBSettings(**db, persistent=persistent),
                 features=features,
                 **data,

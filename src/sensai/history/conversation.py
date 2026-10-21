@@ -23,18 +23,15 @@ if TYPE_CHECKING:
 class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
-    _provider_manager: ProviderManager
     _persona_manager: PersonaManager
+    _provider_manager: ProviderManager
     history: History
     _tool_manager: ToolManager
     _pending_tool_result: dict | None = None
     uuid: UUID | None = None
 
     def __init__(
-        self,
-        provider_manager: ProviderManager,
-        persona_manager: PersonaManager,
-        tool_manager: ToolManager,
+        self, provider_manager: ProviderManager, persona_manager: PersonaManager, tool_manager: ToolManager
     ) -> None:
         """Init method to create the conversation callss."""
         self._provider_manager = provider_manager
