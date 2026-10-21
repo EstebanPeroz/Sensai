@@ -93,13 +93,19 @@ class Conversation:
         ui: UIAdapter,
         cache_key: CacheKey | None,
     ) -> None:
-        """Forward chunks to the UI until they run out or a stop is requested, then cache a complete answer."""
+        """Forward chunks to the UI until they run out or a stop is requested, then cache a complete answer.
+
+        An answer built with tools is not cached: it relies on facts, such as web results, that may soon be outdated.
+        """
         try:
             content: str = ""
             failed = False
+            used_tools = False
             for chunk in chunks:
                 if stop_streaming.is_set():
                     return
+                if chunk.tool_calls:
+                    used_tools = True
                 if chunk.content is not None:
                     content += chunk.content
                 ui.send_ai_response(chunk)
@@ -108,7 +114,7 @@ class Conversation:
                     failed = True
                     break
             self.add_message(Role.ASSISTANT, content, ui)
-            if self._cache is not None and cache_key is not None and not failed and content.strip():
+            if self._cache is not None and cache_key is not None and not failed and not used_tools and content.strip():
                 self._cache.store(cache_key.query, cache_key.scope, content, cache_key.context)
         except SensaiError as err:
             ui.send_error(str(err))

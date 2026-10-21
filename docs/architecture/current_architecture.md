@@ -60,5 +60,6 @@ the TUI as they arrive.
 
 Semantic cache: before calling the model, `Conversation` looks the query up in the cache, scoped by the model in use,
 the active persona and the embedding model, and compared with the previous user messages as context. On a hit, the
-cached answer is sent to the TUI and saved like any other; on a miss, the complete answer is stored with a TTL. Without
-an embedding model or a reachable Redis server, `Core` builds no cache and every query goes to the model.
+cached answer is sent to the TUI and saved like any other; on a miss, the complete answer is stored with a TTL, unless
+it was built with tools, whose results (web pages, search results) may soon be outdated. Without an embedding model or
+a reachable Redis server, `Core` builds no cache and every query goes to the model.

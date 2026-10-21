@@ -165,6 +165,22 @@ class TestFirstTurn:
 
         assert cache.stored == []
 
+    def test_answer_built_with_tools_is_not_stored(
+        self, make_conversation: Callable[..., Conversation], react: MagicMock
+    ) -> None:
+        tool_call = {"function": {"name": "web_search", "arguments": {"query": "redis"}}}
+        react.generate_answer.side_effect = lambda _messages: iter(
+            [
+                ChatResponse({"done": False, "message": {"role": "assistant", "tool_calls": [tool_call]}}),
+                *chunks("Redis"),
+            ]
+        )
+        cache = FakeCache()
+
+        make_conversation(cache).chat("What is Redis?", FakeUI())
+
+        assert cache.stored == []
+
     def test_empty_answer_is_not_stored(self, make_conversation: Callable[..., Conversation], react: MagicMock) -> None:
         react.generate_answer.side_effect = lambda _messages: chunks(" ")
         cache = FakeCache()
