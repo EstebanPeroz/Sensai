@@ -12,11 +12,12 @@ import redis
 from sensai.error import SensaiError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from redis.typing import EncodableT, FieldT
 
     from sensai.config.settings import CacheSettings
+    from sensai.llm.embedder import Embedder
     from sensai.memory.semantic_cache_repository import CacheScope
 
 KEY_PREFIX = "sensai:cache:"
@@ -31,19 +32,12 @@ class RedisSemanticCache:
     the embedding model, since vectors from different models are not comparable.
     """
 
-    def __init__(
-        self,
-        client: redis.Redis,
-        settings: CacheSettings,
-        embed: Callable[[str, str], Sequence[float]],
-        embedding_model: str,
-    ) -> None:
-        """Init the cache with its Redis client, its settings, the embedding function and the model it embeds with."""
+    def __init__(self, client: redis.Redis, settings: CacheSettings, embedder: Embedder) -> None:
+        """Init the cache with its Redis client, its settings and the embedder its queries are compared with."""
         self._client = client
         self._threshold = settings.similarity_threshold
         self._ttl = settings.ttl
-        self._embed = embed
-        self._embedding_model = embedding_model
+        self._embedder = embedder
 
     def lookup(self, query: str, scope: CacheScope, context: str = "") -> str | None:
         """Return the cached answer of the most similar query of the scope, or None below the similarity threshold.
@@ -52,10 +46,10 @@ class RedisSemanticCache:
         text would let a long shared context hide a different query. A query without context only matches entries
         without context, and the other way around.
         """
-        embedding = self._embed_query(query)
-        context_embedding = self._embed_query(context) if context else []
-        if not embedding or (context and not context_embedding):
+        embeddings = self._embed(query, context)
+        if embeddings is None:
             return None
+        embedding, context_embedding = embeddings
         best_answer: str | None = None
         best_score = self._threshold
         try:
@@ -76,10 +70,10 @@ class RedisSemanticCache:
 
     def store(self, query: str, scope: CacheScope, answer: str, context: str = "") -> None:
         """Cache the answer to a query asked after the given context, within its scope, for the configured TTL."""
-        embedding = self._embed_query(query)
-        context_embedding = self._embed_query(context) if context else []
-        if not embedding or (context and not context_embedding):
+        embeddings = self._embed(query, context)
+        if embeddings is None:
             return
+        embedding, context_embedding = embeddings
         key = self._scope_prefix(scope) + uuid.uuid4().hex
         entry: dict[FieldT, EncodableT] = {
             "query": query,
@@ -108,14 +102,16 @@ class RedisSemanticCache:
             pipeline.hmget(key, _FIELDS)
         return pipeline.execute()
 
-    def _embed_query(self, query: str) -> Sequence[float]:
+    def _embed(self, query: str, context: str) -> tuple[list[float], list[float]] | None:
+        """Embed the query and its context in a single call, or return None if the embedder fails."""
         try:
-            return self._embed(query, self._embedding_model)
+            vectors = self._embedder.embed([query, context] if context else [query])
         except SensaiError:
-            return []
+            return None
+        return vectors[0], vectors[1] if context else []
 
     def _scope_prefix(self, scope: CacheScope) -> str:
-        fields = (self._embedding_model, scope.model, scope.persona, scope.subject or "")
+        fields = (self._embedder.model, scope.model, scope.persona, scope.subject or "")
         digest = hashlib.sha256("\0".join(fields).encode()).hexdigest()[:16]
         return f"{KEY_PREFIX}{digest}:"
 

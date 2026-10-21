@@ -8,6 +8,7 @@ import redis
 
 from sensai.config.settings import CacheSettings
 from sensai.error import SensaiError
+from sensai.llm.embedder import Embedder
 from sensai.memory.semantic_cache import KEY_PREFIX, RedisSemanticCache
 from sensai.memory.semantic_cache_repository import CacheScope, SemanticCacheRepository
 
@@ -26,10 +27,19 @@ EMBEDDINGS = {
 }
 
 
-def embed(text: str, model: str) -> list[float]:
-    if text == "embedding failure":
-        raise SensaiError(model)
-    return EMBEDDINGS.get(text, [])
+class FakeProvider:
+    """Embeds the texts of EMBEDDINGS, fails on "embedding failure" and returns nothing for any other text."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[str], str]] = []
+
+    def embeddings(self, messages: list[str], model: str) -> list[list[float]]:
+        self.calls.append((messages, model))
+        if "embedding failure" in messages:
+            raise SensaiError(model)
+        if not all(text in EMBEDDINGS for text in messages):
+            return []
+        return [EMBEDDINGS[text] for text in messages]
 
 
 class FakeRedis:
@@ -94,9 +104,13 @@ def client() -> FakeRedis:
 
 
 def make_cache(
-    client: FakeRedis, embedding_model: str = "nomic-embed-text", **settings: float
+    client: FakeRedis,
+    embedding_model: str = "nomic-embed-text",
+    provider: FakeProvider | None = None,
+    **settings: float,
 ) -> SemanticCacheRepository:
-    return RedisSemanticCache(client, CacheSettings(**settings), embed, embedding_model)  # type: ignore[arg-type]
+    embedder = Embedder(provider or FakeProvider(), embedding_model)  # type: ignore[arg-type]
+    return RedisSemanticCache(client, CacheSettings(**settings), embedder)  # type: ignore[arg-type]
 
 
 class TestLookup:
@@ -171,17 +185,18 @@ class TestLookup:
         assert make_cache(client).lookup("embedding failure", SCOPE) is None
 
     def test_query_is_embedded_with_the_embedding_model(self, client: FakeRedis) -> None:
-        models: list[str] = []
-        cache = RedisSemanticCache(
-            client,  # type: ignore[arg-type]
-            CacheSettings(),
-            lambda text, model: models.append(model) or embed(text, model),
-            "mxbai-embed-large",
-        )
+        provider = FakeProvider()
 
-        cache.lookup("what is redis?", SCOPE)
+        make_cache(client, embedding_model="mxbai-embed-large", provider=provider).lookup("what is redis?", SCOPE)
 
-        assert models == ["mxbai-embed-large"]
+        assert provider.calls == [(["what is redis?"], "mxbai-embed-large")]
+
+    def test_query_and_context_are_embedded_in_a_single_call(self, client: FakeRedis) -> None:
+        provider = FakeProvider()
+
+        make_cache(client, provider=provider).lookup("give me an example", SCOPE, context="what is redis?")
+
+        assert provider.calls == [(["give me an example", "what is redis?"], "nomic-embed-text")]
 
 
 class TestContext:
