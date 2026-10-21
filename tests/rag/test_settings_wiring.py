@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 
 from sensai.config.settings import DBSettings, LLMSettings, RagDBSettings, Settings, load_settings
+from sensai.rag.collection import Collection, chunk_point
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
-from sensai.rag.qdrant_store import QdrantStore
 from tests.rag.fakes import FakeEmbedder
 
 
@@ -45,18 +45,18 @@ class TestIndexationUsesIt:
 
 
 class TestRagDatabaseLocation:
-    def test_the_store_writes_where_the_settings_say(self, tmp_path: Path) -> None:
+    def test_the_collection_writes_where_the_settings_say(self, tmp_path: Path) -> None:
         location = str(tmp_path / "chosen")
         settings = Settings(db=DBSettings(rag=RagDBSettings(location=location)))
 
-        store = QdrantStore(settings.db.rag.location)
-        store.add_chunks("a.md", ["x"], [[0.1]], "m")
-        store.close()
+        collection = Collection.open(settings.db.rag.location)
+        collection.upsert([chunk_point("a.md", 0, "x", [0.1], "m")])
+        collection.close()
 
         assert (tmp_path / "chosen").exists()
 
     def test_the_shipped_settings_name_a_location(self) -> None:
-        assert load_settings().db.rag.location == "rag_qdrant"
+        assert load_settings().db.rag.location == "http://localhost:6333"
 
     def test_the_two_databases_are_not_the_same_place(self) -> None:
         settings = load_settings()

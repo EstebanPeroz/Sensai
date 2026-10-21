@@ -32,7 +32,7 @@ class TestPackagedSettings:
 
         assert settings.llm.embedding_model == "nomic-embed-text"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
-        assert settings.db.rag.location == "rag_qdrant"
+        assert settings.db.rag.location == "http://localhost:6333"
         assert settings.web == WebSettings()
 
     def test_default_file_is_the_template_without_local_settings(
@@ -94,7 +94,7 @@ class TestRagDatabase:
         assert load_settings(write_config(tmp_path, "")).db.rag == RagDBSettings()
 
     def test_the_default_is_a_usable_url(self) -> None:
-        assert RagDBSettings().location == "rag_qdrant"
+        assert RagDBSettings().location == "http://localhost:6333"
 
     def test_it_does_not_disturb_the_persistent_database(self, tmp_path: Path) -> None:
         content = '[db]\npersistent.url = "sqlite:///main.db"\nrag.location = "chunks_qdrant"\n'

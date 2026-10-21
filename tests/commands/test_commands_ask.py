@@ -7,20 +7,21 @@ import pytest
 
 from sensai.commands.ask import Ask
 from sensai.commands.base import Command
+from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import Indexation
-from sensai.rag.qdrant_store import QdrantStore
 from sensai.rag.retrievial_rag import Retrieval
 from tests.commands.fakes import FakeUI
 from tests.rag.fakes import BlockingEmbedder, FailingEmbedder, FakeAnswerer, FakeIndexation
+from tests.rag.seeding import seed
 
 ABOUT_ENGINES = "The engine burns fuel."
 ABOUT_CATS = "The cat sleeps."
 
 
 @pytest.fixture
-def store(tmp_path: Path) -> Iterator[QdrantStore]:
-    """A QdrantStore on a fresh embedded database, closed once the test is done."""
-    opened = QdrantStore(str(tmp_path / "qdrant"))
+def collection(tmp_path: Path) -> Iterator[Collection]:
+    """A Collection on a fresh embedded database, closed once the test is done."""
+    opened = Collection.open(str(tmp_path / "qdrant"))
     yield opened
     opened.close()
 
@@ -32,13 +33,13 @@ def answerer() -> FakeAnswerer:
 
 
 @pytest.fixture
-def command(store: QdrantStore, answerer: FakeAnswerer, fake_ui: FakeUI) -> Ask:
-    """An Ask command over a store holding one chunk on engines and one on cats."""
+def command(collection: Collection, answerer: FakeAnswerer, fake_ui: FakeUI) -> Ask:
+    """An Ask command over a collection holding one chunk on engines and one on cats."""
     del fake_ui  # the fixture binds the UI every command shares
     indexation = FakeIndexation()
     for source, text in (("engines.md", ABOUT_ENGINES), ("cats.md", ABOUT_CATS)):
-        store.add_chunks(source, [text], indexation.vectorize_batch([text]), indexation.model)
-    return Ask(Retrieval(indexation, store, answerer))
+        seed(collection, indexation, source, text)
+    return Ask(Retrieval(indexation, collection, answerer))
 
 
 class EventPendingUI(FakeUI):
@@ -77,9 +78,9 @@ class TestExecute:
         assert ABOUT_ENGINES in answerer.payloads[0]["messages"][0]["content"]
 
     def test_an_empty_store_is_said_plainly_without_sources(
-        self, store: QdrantStore, answerer: FakeAnswerer, fake_ui: FakeUI
+        self, collection: Collection, answerer: FakeAnswerer, fake_ui: FakeUI
     ) -> None:
-        command = Ask(Retrieval(FakeIndexation(), store, answerer))
+        command = Ask(Retrieval(FakeIndexation(), collection, answerer))
 
         command.execute("anything")
 
@@ -87,29 +88,29 @@ class TestExecute:
         assert "nothing close enough" in fake_ui.messages[0]
 
     def test_an_empty_store_asks_the_model_nothing(
-        self, store: QdrantStore, answerer: FakeAnswerer, fake_ui: FakeUI
+        self, collection: Collection, answerer: FakeAnswerer, fake_ui: FakeUI
     ) -> None:
         del fake_ui
-        Ask(Retrieval(FakeIndexation(), store, answerer)).execute("anything")
+        Ask(Retrieval(FakeIndexation(), collection, answerer)).execute("anything")
 
         assert answerer.payloads == []
 
 
 class TestExecuteFailures:
     def test_an_embedding_failure_is_reported(
-        self, store: QdrantStore, answerer: FakeAnswerer, fake_ui: FakeUI
+        self, collection: Collection, answerer: FakeAnswerer, fake_ui: FakeUI
     ) -> None:
-        command = Ask(Retrieval(Indexation(FailingEmbedder()), store, answerer))
+        command = Ask(Retrieval(Indexation(FailingEmbedder()), collection, answerer))
 
         command.execute("anything")
 
         assert any("EmbeddingError" in message for message in fake_ui.messages)
 
     def test_a_failure_does_not_reach_the_model(
-        self, store: QdrantStore, answerer: FakeAnswerer, fake_ui: FakeUI
+        self, collection: Collection, answerer: FakeAnswerer, fake_ui: FakeUI
     ) -> None:
         del fake_ui
-        command = Ask(Retrieval(Indexation(FailingEmbedder()), store, answerer))
+        command = Ask(Retrieval(Indexation(FailingEmbedder()), collection, answerer))
 
         command.execute("anything")
 
@@ -117,19 +118,19 @@ class TestExecuteFailures:
 
 
 class TestExecuteOffTheDispatchThread:
-    def test_it_returns_while_the_work_is_still_running(self, store: QdrantStore) -> None:
+    def test_it_returns_while_the_work_is_still_running(self, collection: Collection) -> None:
         ui = EventPendingUI()
         Command.bind_ui(ui)
-        command = Ask(Retrieval(Indexation(BlockingEmbedder()), store, FakeAnswerer()))
+        command = Ask(Retrieval(Indexation(BlockingEmbedder()), collection, FakeAnswerer()))
 
         command.execute("anything")
 
         assert ui.messages == []  # the dispatch loop gets its event back before the answer lands
 
-    def test_the_work_still_finishes_after_it_returned(self, store: QdrantStore) -> None:
+    def test_the_work_still_finishes_after_it_returned(self, collection: Collection) -> None:
         ui = EventPendingUI()
         Command.bind_ui(ui)
-        command = Ask(Retrieval(FakeIndexation(), store, FakeAnswerer()))
+        command = Ask(Retrieval(FakeIndexation(), collection, FakeAnswerer()))
 
         command.execute("anything")
 
@@ -138,11 +139,11 @@ class TestExecuteOffTheDispatchThread:
             time.sleep(0.01)
         assert ui.messages
 
-    def test_a_second_question_is_refused_while_one_runs(self, store: QdrantStore, fake_ui: FakeUI) -> None:
+    def test_a_second_question_is_refused_while_one_runs(self, collection: Collection, fake_ui: FakeUI) -> None:
         del fake_ui
         ui = EventPendingUI()
         Command.bind_ui(ui)
-        command = Ask(Retrieval(Indexation(BlockingEmbedder()), store, FakeAnswerer()))
+        command = Ask(Retrieval(Indexation(BlockingEmbedder()), collection, FakeAnswerer()))
         command.execute("first")
 
         command.execute("second")

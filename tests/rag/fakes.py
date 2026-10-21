@@ -48,12 +48,12 @@ class FakeIndexation(Indexation):
     @property
     def batches(self) -> list[list[str]]:
         """The messages of every embedding call made so far."""
-        return self._embedder.batches
+        return self._provider.batches
 
     @property
     def models(self) -> list[str]:
         """The model asked of the embedder on every call made so far."""
-        return self._embedder.models
+        return self._provider.models
 
 
 class FailingEmbedder:

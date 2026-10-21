@@ -1,21 +1,22 @@
 import pytest
 
+from sensai.rag.collection import Collection, chunk_point
 from sensai.rag.error import EmbeddingError, VectorStoreError
 from sensai.rag.indexation_rag import Indexation
-from sensai.rag.qdrant_store import QdrantStore
 from sensai.rag.retrievial_rag import Retrieval
 from tests.rag.fakes import FailingEmbedder, FakeAnswerer, FakeIndexation, SilentAnswerer
+from tests.rag.seeding import seed
 
 ABOUT_ENGINES = "The engine burns fuel."
 ABOUT_CATS = "The cat sleeps."
 
 
 @pytest.fixture
-def indexed(store: QdrantStore, indexation: FakeIndexation) -> Retrieval:
-    """A Retrieval over a store holding one chunk on engines and one on cats."""
-    store.add_chunks("engines.md", [ABOUT_ENGINES], indexation.vectorize_batch([ABOUT_ENGINES]), indexation.model)
-    store.add_chunks("cats.md", [ABOUT_CATS], indexation.vectorize_batch([ABOUT_CATS]), indexation.model)
-    return Retrieval(indexation, store, FakeAnswerer())
+def indexed(collection: Collection, indexation: FakeIndexation) -> Retrieval:
+    """A Retrieval over a collection holding one chunk on engines and one on cats."""
+    seed(collection, indexation, "engines.md", ABOUT_ENGINES)
+    seed(collection, indexation, "cats.md", ABOUT_CATS)
+    return Retrieval(indexation, collection, FakeAnswerer())
 
 
 class TestResearch:
@@ -56,24 +57,24 @@ class TestResearch:
 
         assert indexation.models == [indexation.model]
 
-    def test_searching_an_empty_store_finds_nothing(self, store: QdrantStore, indexation: FakeIndexation) -> None:
-        assert Retrieval(indexation, store, FakeAnswerer()).research("anything") == []
+    def test_searching_an_empty_store_finds_nothing(self, collection: Collection, indexation: FakeIndexation) -> None:
+        assert Retrieval(indexation, collection, FakeAnswerer()).research("anything") == []
 
 
 class TestResearchFailures:
-    def test_an_embedding_failure_surfaces(self, store: QdrantStore) -> None:
-        retrieval = Retrieval(Indexation(FailingEmbedder()), store, FakeAnswerer())
+    def test_an_embedding_failure_surfaces(self, collection: Collection) -> None:
+        retrieval = Retrieval(Indexation(FailingEmbedder()), collection, FakeAnswerer())
 
         with pytest.raises(EmbeddingError):
             retrieval.research("anything")
 
     def test_a_question_vector_of_the_wrong_size_is_refused(
-        self, store: QdrantStore, indexation: FakeIndexation
+        self, collection: Collection, indexation: FakeIndexation
     ) -> None:
-        store.add_chunks("a.md", ["x"], [[0.1, 0.2, 0.3]], "m")  # 3 dimensions
+        collection.upsert([chunk_point("a.md", 0, "x", [0.1, 0.2, 0.3], "m")])  # 3 dimensions
 
         with pytest.raises(VectorStoreError, match="2-dimension vector, but the collection holds 3"):
-            Retrieval(indexation, store, FakeAnswerer()).research("engine")  # the fake embeds in 2
+            Retrieval(indexation, collection, FakeAnswerer()).research("engine")  # the fake embeds in 2
 
 
 class TestGetSources:
@@ -130,34 +131,34 @@ class TestCreatePrompt:
 
 
 class TestGeneration:
-    def test_it_returns_what_the_model_said(self, store: QdrantStore, indexation: FakeIndexation) -> None:
-        retrieval = Retrieval(indexation, store, FakeAnswerer("The rendement is low."))
+    def test_it_returns_what_the_model_said(self, collection: Collection, indexation: FakeIndexation) -> None:
+        retrieval = Retrieval(indexation, collection, FakeAnswerer("The rendement is low."))
 
         assert retrieval.generation([{"role": "user", "content": "x"}]) == "The rendement is low."
 
-    def test_it_sends_the_current_model(self, store: QdrantStore, indexation: FakeIndexation) -> None:
+    def test_it_sends_the_current_model(self, collection: Collection, indexation: FakeIndexation) -> None:
         answerer = FakeAnswerer()
-        retrieval = Retrieval(indexation, store, answerer)
+        retrieval = Retrieval(indexation, collection, answerer)
 
         retrieval.generation([{"role": "user", "content": "x"}])
 
         assert answerer.payloads[0]["model"] == answerer.current_model()
 
-    def test_it_sends_the_messages_it_was_given(self, store: QdrantStore, indexation: FakeIndexation) -> None:
+    def test_it_sends_the_messages_it_was_given(self, collection: Collection, indexation: FakeIndexation) -> None:
         answerer = FakeAnswerer()
         messages = [{"role": "user", "content": "x"}]
 
-        Retrieval(indexation, store, answerer).generation(messages)
+        Retrieval(indexation, collection, answerer).generation(messages)
 
         assert answerer.payloads[0]["messages"] == messages
 
-    def test_an_error_from_the_model_is_reported(self, store: QdrantStore, indexation: FakeIndexation) -> None:
-        retrieval = Retrieval(indexation, store, FakeAnswerer(error="model is gone"))
+    def test_an_error_from_the_model_is_reported(self, collection: Collection, indexation: FakeIndexation) -> None:
+        retrieval = Retrieval(indexation, collection, FakeAnswerer(error="model is gone"))
 
         assert "model is gone" in retrieval.generation([{"role": "user", "content": "x"}])
 
-    def test_an_empty_answer_becomes_an_empty_string(self, store: QdrantStore, indexation: FakeIndexation) -> None:
-        retrieval = Retrieval(indexation, store, SilentAnswerer())
+    def test_an_empty_answer_becomes_an_empty_string(self, collection: Collection, indexation: FakeIndexation) -> None:
+        retrieval = Retrieval(indexation, collection, SilentAnswerer())
 
         assert retrieval.generation([{"role": "user", "content": "x"}]) == ""
 
@@ -175,15 +176,15 @@ class TestAnswer:
         assert "nothing close enough" in answer
         assert sources == []
 
-    def test_nothing_relevant_asks_the_model_nothing(self, store: QdrantStore, indexation: FakeIndexation) -> None:
+    def test_nothing_relevant_asks_the_model_nothing(self, collection: Collection, indexation: FakeIndexation) -> None:
         answerer = FakeAnswerer()
 
-        Retrieval(indexation, store, answerer).answer("anything")
+        Retrieval(indexation, collection, answerer).answer("anything")
 
         assert answerer.payloads == []
 
-    def test_the_chunks_reach_the_model(self, indexed: Retrieval, store: QdrantStore) -> None:
-        del store
+    def test_the_chunks_reach_the_model(self, indexed: Retrieval, collection: Collection) -> None:
+        del collection
         indexed.answer("What about the engine?")
 
         system = indexed._answerer.payloads[0]["messages"][0]["content"]
