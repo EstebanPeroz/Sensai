@@ -4,7 +4,7 @@ import threading
 from typing import TYPE_CHECKING, override
 
 from sensai import ui
-from sensai.ui.tui._dialogs import ConfirmScreen
+from sensai.ui.tui._dialogs import ConfirmScreen, QuestionScreen
 from sensai.ui.tui._textual import ChatApp
 
 if TYPE_CHECKING:
@@ -133,6 +133,13 @@ class UITextualAdapter(ui.UIAdapter):
         """Ask in a dialog whether `tool_name` may run, denying it when the dialog cannot be shown."""
         answer = self._wait_for_screen(ConfirmScreen(tool_name, arguments))
         return ui.Confirmation.DENY if answer is None else answer
+
+    @override
+    def ask_user(self, question: str) -> str | None:
+        """Ask `question` in a dialog, then show the question and the answer in the chat."""
+        answer = self._wait_for_screen(QuestionScreen(question))
+        self.send_system_message(f"Sensai asked: {question}\n> {answer or '(no answer)'}")
+        return answer
 
     def _wait_for_screen[T](self, screen: Screen[T]) -> T | None:
         """Show the modal `screen` and block the calling thread until it closes, returning its result.

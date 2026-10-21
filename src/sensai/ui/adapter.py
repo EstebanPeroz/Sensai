@@ -99,3 +99,10 @@ class UIAdapter(ABC):
 
         Called from the streaming thread. Returns `Confirmation.DENY` when the UI cannot ask.
         """
+
+    @abstractmethod
+    def ask_user(self, question: str) -> str | None:
+        """Ask the user `question` on behalf of the model, blocking until they answer.
+
+        Called from the streaming thread. Returns None when the user cancels or the UI cannot ask.
+        """

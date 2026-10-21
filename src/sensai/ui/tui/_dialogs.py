@@ -6,7 +6,7 @@ from textual.binding import Binding, BindingType
 from textual.containers import HorizontalGroup, VerticalGroup
 from textual.markup import escape
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label
+from textual.widgets import Button, Input, Label
 
 import sensai.ui.tui._effect as fx
 from sensai.ui.adapter import Confirmation
@@ -95,3 +95,41 @@ class ConfirmScreen(ModalScreen[Confirmation]):
     def action_answer(self, answer: str) -> None:
         """Close the dialog with `answer`, denying anything unexpected."""
         self.dismiss(self._ANSWERS.get(answer, Confirmation.DENY))
+
+
+class QuestionScreen(ModalScreen[str | None]):
+    """Asks the user a question from the model, returning their answer, or None when they cancel."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel", show=False)]
+    DEFAULT_CSS = f"QuestionScreen {{ {DIALOG_CSS} }}"
+
+    def __init__(self, question: str) -> None:
+        """Ask `question`."""
+        super().__init__()
+        self._question = question
+
+    def compose(self) -> ComposeResult:
+        """Build the question and the field the answer is typed in."""
+        with VerticalGroup(id="dialog"):
+            yield Label(fx.bold("Sensai asks:") + "\n" + escape(self._question))
+            yield Input(id="answer", placeholder="Your answer (enter to send, escape to skip)")
+
+    def on_mount(self) -> None:
+        """Put the cursor in the answer field."""
+        self.query_one("#answer", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Close the dialog with the answer, None when it is empty.
+
+        The event is stopped so that the chat does not also read the answer as a new message.
+        """
+        event.stop()
+        self.dismiss(event.value.strip() or None)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Keep the typed answer from opening the command completions of the chat."""
+        event.stop()
+
+    def action_cancel(self) -> None:
+        """Close the dialog without an answer."""
+        self.dismiss(None)

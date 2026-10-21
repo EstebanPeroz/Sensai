@@ -14,11 +14,18 @@ class FakeUI(UIAdapter):
         self.thinking_efforts: list[str] = []
         self.confirmations: list[Confirmation] = []
         self.confirmation_requests: list[tuple[str, dict]] = []
+        self.answers: list[str | None] = []
+        self.questions: list[str] = []
 
     @override
     def ask_confirmation(self, tool_name: str, arguments: dict) -> Confirmation:
         self.confirmation_requests.append((tool_name, arguments))
         return self.confirmations.pop(0) if self.confirmations else Confirmation.DENY
+
+    @override
+    def ask_user(self, question: str) -> str | None:
+        self.questions.append(question)
+        return self.answers.pop(0) if self.answers else None
 
     @override
     def open(self) -> bool:
