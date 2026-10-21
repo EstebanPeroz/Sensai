@@ -39,7 +39,7 @@ _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ])")
 _SENTENCE_MAX_NB = 2
 
 
-class Embedder(Protocol):
+class EmbeddingProvider(Protocol):
     """The only thing the indexation needs from a provider: turning texts into vectors."""
 
     def embeddings(self, messages: list[str], model: str) -> list[list]:
@@ -65,12 +65,12 @@ class ChunkStrategy(StrEnum):
 class Indexation:
     """Turn a document into clean, embedded chunks ready to be stored."""
 
-    _embedder: Embedder
+    _provider: EmbeddingProvider
     _model: str
 
-    def __init__(self, embedder: Embedder, model: str = DEFAULT_EMBEDDING_MODEL) -> None:
-        """Keep the `embedder` turning texts into vectors, and the `model` it must use."""
-        self._embedder = embedder
+    def __init__(self, provider: EmbeddingProvider, model: str = DEFAULT_EMBEDDING_MODEL) -> None:
+        """Keep the `provider` turning texts into vectors, and the `model` it must use."""
+        self._provider = provider
         self._model = model
 
     def _collect_file(self, source: str) -> str:
@@ -336,7 +336,7 @@ class Indexation:
 
         """
         try:
-            vectors = self._embedder.embeddings(texts, self._model)
+            vectors = self._provider.embeddings(texts, self._model)
         except SensaiError as error:
             msg = f"model {self._model!r} could not embed {len(texts)} texts: {error}"
             raise EmbeddingError(msg) from error
