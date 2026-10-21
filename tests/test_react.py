@@ -2,6 +2,7 @@ from sensai.llm.responses import ChatResponse, ShowResponse
 from sensai.llm.thinking.react import ReAct
 from sensai.tools.tool import Tool
 from sensai.tools.tool_manager import ToolManager
+from sensai.ui.adapter import Confirmation
 
 
 class SearchTool(Tool[str]):
@@ -46,6 +47,19 @@ class MalformedCallProvider(FakeProvider):
             return super().chat(payload, stream=stream)
         self.payloads.append(payload)
         message = {"role": "assistant", "content": "", "tool_calls": [{"function": "search"}]}
+        return [ChatResponse({"done": True, "message": message})]
+
+
+class ToolCallProvider(FakeProvider):
+    def __init__(self, name: str, arguments: dict | None = None) -> None:
+        super().__init__()
+        self._call = {"function": {"name": name, "arguments": arguments or {}}}
+
+    def chat(self, payload: dict, *, stream: bool) -> list[ChatResponse]:
+        if "tools" not in payload:
+            return super().chat(payload, stream=stream)
+        self.payloads.append(payload)
+        message = {"role": "assistant", "content": "", "tool_calls": [self._call]}
         return [ChatResponse({"done": True, "message": message})]
 
 
@@ -110,3 +124,27 @@ class TestMalformedToolCall:
             "content": "error: malformed tool call, function must be an object",
         } in sent
         assert "-> Using unknown...\n" in [chunk.thinking for chunk in chunks]
+
+
+class TestConfirmation:
+    def run_gated(self, answer: Confirmation) -> tuple[ToolCallProvider, str]:
+        provider = ToolCallProvider("search")
+        tools = ToolManager([SearchTool()], confirm=("search",), approver=lambda _name, _args: answer)
+        react = ReAct(FakeProviderManager(provider), tools, 1)  # type: ignore[arg-type]
+        chunks = list(react.generate_answer([{"role": "user", "content": "Find it"}]))
+        return provider, "".join(chunk.content or "" for chunk in chunks)
+
+    def test_refusal_is_sent_to_the_model_and_the_loop_still_answers(self) -> None:
+        provider, answer = self.run_gated(Confirmation.DENY)
+
+        assert {
+            "role": "tool",
+            "tool_name": "search",
+            "content": "error: the user declined to run 'search'; do not call it again, answer without it",
+        } in provider.payloads[-1]["messages"]
+        assert answer == "Bonjour !"
+
+    def test_allowed_call_sends_the_tool_result_to_the_model(self) -> None:
+        provider, _ = self.run_gated(Confirmation.ALLOW)
+
+        assert {"role": "tool", "tool_name": "search", "content": "a result"} in provider.payloads[-1]["messages"]

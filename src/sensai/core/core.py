@@ -60,7 +60,10 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         self._tool_manager = ToolManager(
-            [*build_tools(), *self._build_web_tools()], disabled=settings.features.disabled_in("tools")
+            [*build_tools(), *self._build_web_tools()],
+            disabled=settings.features.disabled_in("tools"),
+            confirm=settings.features.confirm_in("tools"),
+            approver=self._ui.ask_confirmation,
         )
         self._react = ReAct(self._provider_manager, self._tool_manager)
         self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
@@ -77,6 +80,9 @@ class Core:
         unknown = self._tool_manager.unknown_disabled()
         if unknown:
             self._ui.send_system_message(f"Unknown disabled tools in the settings: {', '.join(unknown)}")
+        unknown = self._tool_manager.unknown_confirm()
+        if unknown:
+            self._ui.send_system_message(f"Unknown tools to confirm in the settings: {', '.join(unknown)}")
 
         self._ui.set_completions(
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}
