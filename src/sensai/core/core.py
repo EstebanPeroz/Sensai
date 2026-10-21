@@ -19,6 +19,7 @@ from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.tools import build_tools
+from sensai.tools.ask_user import AskUserTool
 from sensai.tools.tool_manager import ToolManager
 from sensai.tools.web import web_tools
 
@@ -60,7 +61,7 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         self._tool_manager = ToolManager(
-            [*build_tools(), *self._build_web_tools()],
+            [*build_tools(), *self._build_web_tools(), AskUserTool(self._ui.ask_user)],
             disabled=settings.features.disabled_in("tools"),
             confirm=settings.features.confirm_in("tools"),
             approver=self._ui.ask_confirmation,

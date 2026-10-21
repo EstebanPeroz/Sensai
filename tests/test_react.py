@@ -1,5 +1,6 @@
 from sensai.llm.responses import ChatResponse, ShowResponse
 from sensai.llm.thinking.react import ReAct
+from sensai.tools.ask_user import AskUserTool
 from sensai.tools.tool import Tool
 from sensai.tools.tool_manager import ToolManager
 from sensai.ui.adapter import Confirmation
@@ -148,3 +149,23 @@ class TestConfirmation:
         provider, _ = self.run_gated(Confirmation.ALLOW)
 
         assert {"role": "tool", "tool_name": "search", "content": "a result"} in provider.payloads[-1]["messages"]
+
+
+class TestAskUser:
+    def test_answer_of_the_user_reaches_the_final_request(self) -> None:
+        provider = ToolCallProvider("ask_user", {"question": "Which quarter?"})
+        tools = ToolManager([AskUserTool(lambda _question: "Q2 2026")])
+        react = ReAct(FakeProviderManager(provider), tools, 1)  # type: ignore[arg-type]
+
+        list(react.generate_answer([{"role": "user", "content": "How did we do?"}]))
+
+        assert {"role": "tool", "tool_name": "ask_user", "content": "Q2 2026"} in provider.payloads[-1]["messages"]
+
+    def test_is_listed_in_the_first_think_instruction(self) -> None:
+        provider = FakeProvider()
+        tools = ToolManager([AskUserTool(lambda _question: None)])
+        react = ReAct(FakeProviderManager(provider), tools, 1)  # type: ignore[arg-type]
+
+        list(react.generate_answer([{"role": "user", "content": "How did we do?"}]))
+
+        assert "- ask_user: Ask the user one short question" in provider.payloads[0]["messages"][-1]["content"]
