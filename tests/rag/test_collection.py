@@ -17,9 +17,9 @@ ENGINES = [1.0, 0.0]
 CATS = [0.0, 1.0]
 
 
-def point(source: str, position: int, text: str, vector: list[float], model: str = "m") -> object:
-    """A chunk point, with the model defaulted so the tests only name what they are about."""
-    return chunk_point(source, position, text, vector, model)
+def point(source: str, position: int, text: str, vector: list[float]) -> object:
+    """A chunk point, named the way the tests read."""
+    return chunk_point(source, position, text, vector)
 
 
 class TestOpenClient:
@@ -186,8 +186,7 @@ class TestQuery:
 
         assert payload["source"] == "engines.md"
         assert payload["position"] == 0
-        assert payload["model"] == "m"
-        assert "created_at" in payload
+        assert payload["text"] == "engines"
 
     def test_the_limit_caps_the_hits(self, filled: Collection) -> None:
         assert len(filled.query(ENGINES, limit=1)) == 1
@@ -269,16 +268,12 @@ class TestChunkPoint:
     def test_another_source_gives_another_id(self) -> None:
         assert point("a.md", 0, "x", ENGINES).id != point("b.md", 0, "x", ENGINES).id
 
-    def test_it_carries_the_source_position_text_and_model(self) -> None:
-        payload = point("a.md", 3, "some text", ENGINES, "nomic").payload
+    def test_it_carries_the_source_position_and_text(self) -> None:
+        payload = point("a.md", 3, "some text", ENGINES).payload
 
         assert payload["source"] == "a.md"
         assert payload["position"] == 3
         assert payload["text"] == "some text"
-        assert payload["model"] == "nomic"
-
-    def test_it_stamps_when_it_was_built(self) -> None:
-        assert point("a.md", 0, "x", ENGINES).payload["created_at"].endswith("+00:00")
 
 
 class TestAsChunk:

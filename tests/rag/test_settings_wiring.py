@@ -26,7 +26,7 @@ class TestChosenModel:
     def test_the_shipped_model_is_a_model_ollama_can_serve(self) -> None:
         # The guard that used to forbid nomic-embed-text here was dropped on purpose:
         # it is now the configured model, chosen for its size over its French accuracy.
-        assert load_settings().llm.embedding_model in {"nomic-embed-text", "bge-m3"}
+        assert load_settings().llm.embedding_model in {"nomic-embed-text:latest", "bge-m3:latest"}
 
 
 class TestIndexationUsesIt:
@@ -50,7 +50,7 @@ class TestRagDatabaseLocation:
         settings = Settings(db=DBSettings(rag=RagDBSettings(location=location)))
 
         collection = Collection.open(settings.db.rag.location)
-        collection.upsert([chunk_point("a.md", 0, "x", [0.1], "m")])
+        collection.upsert([chunk_point("a.md", 0, "x", [0.1])])
         collection.close()
 
         assert (tmp_path / "chosen").exists()

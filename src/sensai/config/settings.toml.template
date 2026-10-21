@@ -11,7 +11,7 @@ rag.location = "http://localhost:6333"
 # sharing its memory with the chat model kept evicting. The trade-off is real:
 # on French text, nomic-embed-text separates unrelated topics by about 0.03 of
 # cosine score, against 0.12 for bge-m3, so expect weaker chunking and ranking.
-embedding_model = "nomic-embed-text"
+embedding_model = "nomic-embed-text:latest"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"

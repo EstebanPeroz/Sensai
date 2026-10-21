@@ -46,7 +46,7 @@ class Indexer:
         vectors = self._indexation.vectorize_batch(chunks)
         points = []
         for position, (text, vector) in enumerate(zip(chunks, vectors, strict=True)):
-            points.append(chunk_point(source, position, text, vector, self._indexation.model))
+            points.append(chunk_point(source, position, text, vector))
         self._collection.ensure(len(vectors[0]))
         self._collection.delete(by_source(source))
         return self._collection.upsert(points)

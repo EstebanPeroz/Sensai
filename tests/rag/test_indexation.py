@@ -362,7 +362,7 @@ class TestToChunks:
 
 class TestModel:
     def test_reports_the_model_in_use(self, indexation: Indexation) -> None:
-        assert indexation.model == "nomic-embed-text"
+        assert indexation.model == "nomic-embed-text:latest"
 
     def test_the_model_can_be_chosen(self) -> None:
         assert Indexation(FakeEmbedder(), "another-model").model == "another-model"
@@ -379,7 +379,7 @@ class TestModel:
 
         Indexation(embedder).vectorize_batch(["a"])
 
-        assert embedder.models == ["nomic-embed-text"]
+        assert embedder.models == ["nomic-embed-text:latest"]
 
 
 class TestVectorize:

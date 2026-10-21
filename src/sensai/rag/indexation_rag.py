@@ -20,7 +20,7 @@ from sensai.rag.error import (
     UnsupportedFormatError,
 )
 
-DEFAULT_EMBEDDING_MODEL = "nomic-embed-text"
+DEFAULT_EMBEDDING_MODEL = "nomic-embed-text:latest"
 
 _MAX_WORD_CHUNKS = 50
 _URL_TIMEOUT_SECONDS = 10

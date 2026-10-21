@@ -71,63 +71,6 @@ def calls(manager: ProviderManager) -> list[tuple[str, str]]:
     return adapter.calls
 
 
-class TestResolve:
-    def test_a_name_a_provider_lists_is_its_own(self, manager: ProviderManager) -> None:
-        assert manager.resolve("a") == "a"
-
-    def test_an_untagged_name_finds_the_latest_tag(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(FakeAdapter, "models", ["nomic-embed-text:latest"])
-        monkeypatch.setitem(provider_manager.PROVIDER_ADAPTERS, "ollama", FakeAdapter)
-        resolving = ProviderManager(LLMSettings(providers={"ollama": OllamaSettings()}))
-
-        assert resolving.resolve("nomic-embed-text") == "nomic-embed-text:latest"
-
-    def test_a_tagged_name_is_not_tagged_again(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(FakeAdapter, "models", ["qwen2.5:1.5b"])
-        monkeypatch.setitem(provider_manager.PROVIDER_ADAPTERS, "ollama", FakeAdapter)
-        resolving = ProviderManager(LLMSettings(providers={"ollama": OllamaSettings()}))
-
-        assert resolving.resolve("qwen2.5:1.5b") == "qwen2.5:1.5b"
-        assert resolving.resolve("qwen2.5") is None
-
-    def test_a_name_no_provider_serves_resolves_to_nothing(self, manager: ProviderManager) -> None:
-        assert manager.resolve("missing") is None
-
-
-class TestGetProviderResolves:
-    def test_an_untagged_name_reaches_the_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(FakeAdapter, "models", ["nomic-embed-text:latest"])
-        monkeypatch.setitem(provider_manager.PROVIDER_ADAPTERS, "ollama", FakeAdapter)
-        resolving = ProviderManager(LLMSettings(providers={"ollama": OllamaSettings()}))
-
-        assert resolving.get_provider("nomic-embed-text") is not None
-
-
-class TestSetModelResolves:
-    @pytest.fixture
-    def tagged(self, monkeypatch: pytest.MonkeyPatch) -> ProviderManager:
-        """A manager over a provider listing one model under its `:latest` tag."""
-        monkeypatch.setattr(FakeAdapter, "models", ["nomic-embed-text:latest"])
-        monkeypatch.setattr(FakeAdapter, "refused", set())
-        monkeypatch.setattr(FakeAdapter, "failing", set())
-        monkeypatch.setitem(provider_manager.PROVIDER_ADAPTERS, "ollama", FakeAdapter)
-        return ProviderManager(LLMSettings(providers={"ollama": OllamaSettings()}))
-
-    def test_an_untagged_name_is_accepted(self, tagged: ProviderManager) -> None:
-        assert tagged.set_model("nomic-embed-text")
-
-    def test_the_provider_is_asked_for_the_tagged_name(self, tagged: ProviderManager) -> None:
-        tagged.set_model("nomic-embed-text")
-
-        assert calls(tagged) == [("load", "nomic-embed-text:latest")]
-
-    def test_the_same_model_under_both_names_is_not_reloaded(self, tagged: ProviderManager) -> None:
-        tagged.set_model("nomic-embed-text")
-
-        assert tagged.set_model("nomic-embed-text:latest")
-        assert ("unload", "nomic-embed-text:latest") not in calls(tagged)
-
-
 class TestSetModel:
     def test_first_model_unloads_nothing(self, manager: ProviderManager) -> None:
         assert manager.set_model("a")

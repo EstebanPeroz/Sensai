@@ -10,7 +10,7 @@ def seed(collection: Collection, indexation: Indexation, source: str, *texts: st
     collection.ensure(len(vectors[0]))
     collection.upsert(
         [
-            chunk_point(source, position, text, vector, indexation.model)
+            chunk_point(source, position, text, vector)
             for position, (text, vector) in enumerate(zip(texts, vectors, strict=True))
         ]
     )

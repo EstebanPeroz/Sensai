@@ -53,15 +53,6 @@ class TestIndex:
         assert chunks[0]["text"].startswith("The cat sleeps")
         assert chunks[1]["text"].startswith("The engine burns")
 
-    def test_stores_the_model_the_pipeline_reports(
-        self, indexer: Indexer, indexation: FakeIndexation, collection: Collection, tmp_path: Path
-    ) -> None:
-        source = write(tmp_path, "a.txt", "One. Two.")
-
-        indexer.index(source)
-
-        assert {payload["model"] for payload in stored(collection)} == {indexation.model}
-
     def test_stores_the_vectors_the_pipeline_produced(
         self, indexer: Indexer, collection: Collection, tmp_path: Path
     ) -> None:

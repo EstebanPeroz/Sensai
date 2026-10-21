@@ -30,7 +30,7 @@ class TestPackagedSettings:
         template = resources.files("sensai.config").joinpath("settings.toml.template")
         settings = load_settings(Path(str(template)))
 
-        assert settings.llm.embedding_model == "nomic-embed-text"
+        assert settings.llm.embedding_model == "nomic-embed-text:latest"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
         assert settings.db.rag.location == "http://localhost:6333"
         assert settings.web == WebSettings()

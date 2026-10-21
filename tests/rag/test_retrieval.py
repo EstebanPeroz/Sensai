@@ -71,7 +71,7 @@ class TestResearchFailures:
     def test_a_question_vector_of_the_wrong_size_is_refused(
         self, collection: Collection, indexation: FakeIndexation
     ) -> None:
-        collection.upsert([chunk_point("a.md", 0, "x", [0.1, 0.2, 0.3], "m")])  # 3 dimensions
+        collection.upsert([chunk_point("a.md", 0, "x", [0.1, 0.2, 0.3])])  # 3 dimensions
 
         with pytest.raises(VectorStoreError, match="2-dimension vector, but the collection holds 3"):
             Retrieval(indexation, collection, FakeAnswerer()).research("engine")  # the fake embeds in 2
