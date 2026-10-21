@@ -1,6 +1,4 @@
 persistent.db
-rag.db
-rag_qdrant/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -17,7 +15,7 @@ develop-eggs/
 dist/
 downloads/
 eggs/
-.eggs/
+.eggs/în
 lib/
 lib64/
 parts/
