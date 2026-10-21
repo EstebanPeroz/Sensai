@@ -234,7 +234,9 @@ class ChatApp(App):
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
-        """Handle a user submitting the input widget."""
+        """Handle a user submitting the chat input, ignoring the inputs of dialogs."""
+        if message.input.id != "input":
+            return
         content = message.value.strip()
         message.input.clear()
         if not content:
@@ -284,6 +286,8 @@ class ChatApp(App):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Show the completions of the new input value, or hide the list when there are none."""
+        if event.input.id != "input":
+            return
         dropdown = self.query_one(CompletionList)
         candidates = self._completer.complete(event.value)
         if candidates in ([], [event.value]):
