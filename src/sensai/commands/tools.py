@@ -50,8 +50,15 @@ class ToolsCommand(Command):
             return
 
         lines = ["Available tools:"]
-        lines.extend(f"- {name}: {'enabled' if self._tool_manager.is_enabled(name) else 'disabled'}" for name in names)
+        lines.extend(f"- {name}: {self._status(name)}" for name in names)
         self._ui.send_system_message("\n".join(lines))
+
+    def _status(self, name: str) -> str:
+        """Describe whether the tool `name` is enabled, and whether it asks for confirmation."""
+        status = "enabled" if self._tool_manager.is_enabled(name) else "disabled"
+        if self._tool_manager.needs_confirmation(name):
+            status += ", asks confirmation"
+        return status
 
     def _enable_tool(self, name: str) -> None:
         """Enable a disabled tool if it exists."""
