@@ -136,6 +136,18 @@ cannot be shown, or the app closing while the dialog is open.
 
 `/tools list` shows which tools ask for confirmation.
 
+### Asking the user for missing information (US-20)
+
+`ask_user` (`tools/ask_user.py`) is a tool like the others: the model calls it with
+one `question` when the request lacks information no other tool can find (which
+period, which file). `UIAdapter.ask_user` shows the question in a dialog and returns
+the answer, which becomes the tool result, so the loop keeps what it already found.
+Escape or an empty answer returns `The user did not answer. State the assumption you
+make in your answer.` The question and the answer are also shown in the chat.
+
+It never asks for confirmation, and can be switched off like any tool
+(`[features].disabled = ["tools.ask_user"]`, or `/tools disable ask_user`).
+
 ### Waiting for the user from the streaming thread
 
 Tools run inside the ReAct generator, so on the streaming thread. The answer cannot
@@ -152,6 +164,10 @@ waiting thread checks every 0.1 s that the app still runs, so it never stays blo
   called, so nothing is asked.
 - A refused call is not remembered beyond the tool message: the model may call the
   same tool again in the same answer, and the user is asked again.
+- The question and the answer of `ask_user` are not saved to the history, like every
+  tool exchange: only the final answer is. A later message cannot rely on them.
+- Whether `ask_user` is called depends on the model: small models may ask when they
+  could answer, or guess instead of asking.
 
 ## Detecting hallucination
 
