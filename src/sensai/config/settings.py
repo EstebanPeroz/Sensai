@@ -61,7 +61,7 @@ class LLMSettings:
 class CacheSettings:
     """Settings of the [cache] table: the Redis server backing the semantic cache and when an answer is reused."""
 
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = field(default="redis://localhost:6379/0", repr=False)
     similarity_threshold: float = 0.95
     ttl: int = 86400
 
@@ -239,7 +239,7 @@ def _check_url(value: str, name: str) -> None:
 
 
 def _check_redis_url(value: str, name: str) -> None:
-    msg = f"{name} must be a redis://, rediss:// or unix:// URL, got {value!r}"
+    msg = f"{name} must be a redis://, rediss:// or unix:// URL"
     parts = urlsplit(value)
     try:
         _ = parts.port

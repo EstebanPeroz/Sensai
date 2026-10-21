@@ -161,6 +161,15 @@ class TestCache:
     def test_accepts_redis_urls(self, url: str) -> None:
         assert CacheSettings(redis_url=url).redis_url == url
 
+    def test_redis_url_is_hidden_from_repr(self) -> None:
+        assert "secret" not in repr(CacheSettings(redis_url="rediss://user:secret@cache.example.com"))
+
+    def test_invalid_redis_url_is_not_echoed(self) -> None:
+        with pytest.raises(ValueError, match=r"cache\.redis_url must be a redis://") as error:
+            CacheSettings(redis_url="http://user:secret@cache.example.com")
+
+        assert "secret" not in str(error.value)
+
 
 class TestFileErrors:
     def test_missing_file(self, tmp_path: Path) -> None:
