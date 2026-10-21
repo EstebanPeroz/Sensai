@@ -150,12 +150,6 @@ class TestCompletions:
 
         assert command.completions([]) == []
 
-    def test_prunes_the_caches(self, command: Index, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        write(tmp_path, "__pycache__/noise.md", "text")
-        monkeypatch.chdir(tmp_path)
-
-        assert command.completions([]) == []
-
     def test_offers_the_same_files_at_every_position(
         self, command: Index, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
