@@ -4,6 +4,7 @@
 
 - [uv](https://docs.astral.sh/uv/)
 - `make`
+- Docker, for the vector database the RAG indexes into
 
 ## Quick start
 
@@ -11,6 +12,25 @@
 make          # create .venv, install dependencies and the pre-commit hooks
 make run      # run the program
 ```
+
+## Vector database
+
+`/index` and `/ask` store and read their chunks in Qdrant, which `make run`
+starts for you. On its own:
+
+```sh
+make qdrant
+make qdrant-stop
+```
+
+The documents live in the `sensai_qdrant_data` Docker volume, so a container
+stopped and started again finds them. `docker compose down -v` is what drops
+them.
+
+Without Docker, pointing `db.rag.location` in `settings.toml` at a directory
+(`"rag_qdrant"`) runs Qdrant embedded in the process instead. It needs no
+server, but it locks that directory for one process at a time: the test suite
+and a running sensai cannot share one.
 
 You can also call uv directly, without activating the virtualenv:
 
