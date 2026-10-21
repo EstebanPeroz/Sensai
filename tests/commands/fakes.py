@@ -5,13 +5,20 @@ from unittest.mock import MagicMock
 from sensai.commands.base import Command
 from sensai.llm.message import Role
 from sensai.memory.history import History
-from sensai.ui.adapter import UIAdapter
+from sensai.ui.adapter import Confirmation, UIAdapter
 
 
 class FakeUI(UIAdapter):
     def __init__(self) -> None:
         self.messages: list[str] = []
         self.thinking_efforts: list[str] = []
+        self.confirmations: list[Confirmation] = []
+        self.confirmation_requests: list[tuple[str, dict]] = []
+
+    @override
+    def ask_confirmation(self, tool_name: str, arguments: dict) -> Confirmation:
+        self.confirmation_requests.append((tool_name, arguments))
+        return self.confirmations.pop(0) if self.confirmations else Confirmation.DENY
 
     @override
     def open(self) -> bool:

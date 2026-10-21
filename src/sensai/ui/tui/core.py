@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, override
 
 from sensai import ui
+from sensai.ui.tui._dialogs import ConfirmScreen
 from sensai.ui.tui._textual import ChatApp
 
 if TYPE_CHECKING:
+    from textual.screen import Screen
+
     from sensai.llm.message import Role
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
     from sensai.ui.completion import CompletionSource
+
+DIALOG_POLL_SECONDS = 0.1
+"""How often a thread waiting for a dialog checks that the app is still running."""
 
 
 class UITextualAdapter(ui.UIAdapter):
@@ -120,3 +127,32 @@ class UITextualAdapter(ui.UIAdapter):
         except RuntimeError:
             return False
         return True
+
+    @override
+    def ask_confirmation(self, tool_name: str, arguments: dict) -> ui.Confirmation:
+        """Ask in a dialog whether `tool_name` may run, denying it when the dialog cannot be shown."""
+        answer = self._wait_for_screen(ConfirmScreen(tool_name, arguments))
+        return ui.Confirmation.DENY if answer is None else answer
+
+    def _wait_for_screen[T](self, screen: Screen[T]) -> T | None:
+        """Show the modal `screen` and block the calling thread until it closes, returning its result.
+
+        Returns None when the screen cannot be shown or the app stops before it closes, so the
+        calling thread is never left waiting. The answer does not go through the event queue,
+        where it would be read as a new message interrupting the current answer.
+        """
+        answered = threading.Event()
+        result: list[T | None] = [None]
+
+        def on_dismiss(value: T | None) -> None:
+            result[0] = value
+            answered.set()
+
+        try:
+            self.app.call_from_thread(self.app.open_dialog, screen, on_dismiss)
+        except RuntimeError:
+            return None
+        while not answered.wait(DIALOG_POLL_SECONDS):
+            if not self.app.is_running:
+                return None
+        return result[0]

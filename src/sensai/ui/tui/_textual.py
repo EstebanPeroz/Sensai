@@ -16,6 +16,10 @@ from sensai.llm.message import Role
 from sensai.ui.completion import Completer, CompletionSource
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from textual.screen import Screen
+
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
 
@@ -325,6 +329,14 @@ class ChatApp(App):
         field.value = value
         field.cursor_position = len(value)
         field.focus()
+
+    def open_dialog[T](self, screen: Screen[T], on_dismiss: Callable[[T | None], None]) -> None:
+        """Show the modal `screen` over the chat, `on_dismiss` receiving its result once it closes.
+
+        The completion list is hidden first, so that escape reaches the dialog.
+        """
+        self.query_one(CompletionList).display = False
+        self.push_screen(screen, on_dismiss)
 
     def update_thinking_effort(self, level: str) -> None:
         """Show the thinking effort `level` at the bottom right of the input box."""
