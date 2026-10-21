@@ -23,3 +23,19 @@ class JsonError(SensaiError):
     def __init__(self, message: str = "") -> None:
         """Build the error, optionally with additional context in `message`."""
         super().__init__("[JsonError]" + message)
+
+
+class ModelError(SensaiError):
+    """Base class for exceptions related to model operations."""
+
+    def __init__(self, message: str) -> None:
+        """Build the error from the failing model operation and the underlying exception's message."""
+        super().__init__("[ModelError] " + message)
+
+
+class EmbeddingError(SensaiError):
+    """Raised when texts could not be embedded (embedding model unavailable, failed call, wrong vector count)."""
+
+    def __init__(self, message: str) -> None:
+        """Build the error from the reason the texts could not be embedded."""
+        super().__init__("[EmbeddingError] " + message)

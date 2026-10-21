@@ -18,6 +18,11 @@ def bold(string: str) -> str:
     return _transform(string, "bold")
 
 
+def italic(string: str) -> str:
+    """Wrap `string` in Textual markup so it renders in italic (used for commands and system messages)."""
+    return _transform(string, "italic")
+
+
 def background(string: str, color: str) -> str:
     """Wrap `string` in Textual markup so it renders with `color` as its background."""
     return _transform(string, "on " + color)

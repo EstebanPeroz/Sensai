@@ -6,6 +6,7 @@ if TYPE_CHECKING:
     from sensai.llm.message import Role
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
+    from sensai.ui.completion import CompletionSource
 
 
 class EventType(Enum):
@@ -62,9 +63,24 @@ class UIAdapter(ABC):
         """Forward an error message to the UI for display. Returns whether it was delivered."""
 
     @abstractmethod
-    def send_input(self, role: Role, response: str) -> bool:
+    def send_input(self, role: Role, response: str, *, command: bool = False) -> bool:
         """Forward a user's conversation input to the UI for display. Returns whether it was delivered."""
 
     @abstractmethod
     def load_conversation(self, messages: History) -> None:
         """Load conversation history to the ui."""
+
+    @abstractmethod
+    def send_system_message(self, message: str, *, append_response: bool = False) -> bool:
+        """Forward an application message, such as a command output, to the UI. Returns whether it was delivered."""
+
+    @abstractmethod
+    def set_completions(self, completions: dict[str, CompletionSource]) -> bool:
+        """Give the UI each command and the function fetching its completions, called as the user types.
+
+        Returns whether it was delivered.
+        """
+
+    @abstractmethod
+    def update_thinking_effort(self, level: str) -> bool:
+        """Show the current thinking effort `level` of the model. Returns whether it was delivered."""

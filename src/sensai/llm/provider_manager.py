@@ -1,3 +1,4 @@
+import contextlib
 from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
@@ -18,6 +19,8 @@ class ProviderManager:
 
     _list: list[ProviderAdapter]
     _models: dict[str, ProviderAdapter]
+    _provider: ProviderAdapter
+    _model: str | None = None
 
     def __init__(self, settings: LLMSettings) -> None:
         """Register the known providers and index every model they each expose."""
@@ -54,3 +57,25 @@ class ProviderManager:
         if provider is None and ":" not in model:
             provider = self._models.get(f"{model}:latest")
         return provider
+
+    def set_model(self, model: str) -> bool:
+        """Set the model to use and unload the previous one. Returns True if successful, False otherwise."""
+        provider = self._models.get(model)
+        if provider is None:
+            return False
+        try:
+            loaded = provider.load(model)
+        except SensaiError:
+            return False
+        if not loaded:
+            return False
+        if self._model is not None and self._model != model:
+            with contextlib.suppress(SensaiError):
+                self._models[self._model].unload(self._model)
+        self._provider = provider
+        self._model = model
+        return True
+
+    def provider(self) -> ProviderAdapter:
+        """Return the provider adapter in use."""
+        return self._provider

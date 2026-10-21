@@ -18,7 +18,6 @@ sensai/
     │
     ├── core/                      # Mediator
     │   ├── core.py                # receives every module as a dependency
-    │   ├── reasoning_loop.py      # drives the chain of tool calls
     │   └── events.py              # EventBus, emitter for the Observer side
     │
     ├── ui/
@@ -43,11 +42,14 @@ sensai/
     │   ├── adapter.py              # LLMAdapter interface
     │   ├── ollama.py               # HTTP client, streaming
     │   ├── persona.py
-    │   └── structured_output.py    # decorator around the adapter
+    │   ├── structured_output.py    # decorator around the adapter
+    │   └── thinking/
+    │       └── react.py            # ReAct reasoning loop: think, act, observe
     │
     ├── tools/                     # Strategy + Registry
     │   ├── __init__.py             # defines the entry points
-    │   ├── registry.py
+    │   ├── tool.py                 # tool contract: name, description, parameters, run
+    │   ├── tool_manager.py         # looks tools up by name and runs them
     │   ├── _mcp.py                 # Fetch
     │   ├── _human_in_loop.py
     │   ├── _web_search.py
@@ -57,6 +59,7 @@ sensai/
     ├── commands/                  # Command
     │   ├── __init__.py             # execute()
     │   ├── _model.py                # choose a model
+    │   ├── _effort.py               # thinking effort of the reasoning loop
     │   ├── _branch.py               # branch off the current session
     │   ├── _compress.py
     │   ├── _export.py               # export a conversation
@@ -76,8 +79,8 @@ sensai/
 ## Design patterns, by package
 
 - **`core/` — Mediator.** `core.py` is the hub every other module is wired
-  into; it doesn't own logic itself, it coordinates. `reasoning_loop.py`
-  implements the ReAct-style loop. `events.py` is an
+  into; it doesn't own logic itself, it coordinates: it builds the reasoning
+  loop and its tools, and hands them to the conversation. `events.py` is an
   `EventBus` — the Observer half of the design — so the UX layer (and
   anything else) can react to streaming tokens, tool calls, etc. without the
   core depending on the UI.
@@ -100,15 +103,17 @@ sensai/
   talking to the Ollama HTTP API with streaming. `structured_output.py`
   wraps an adapter to enforce a schema on its output (decorator pattern).
   `persona.py` injects persona system prompts ahead of the adapter call.
+  `thinking/react.py` implements the ReAct-style reasoning loop on top of
+  the adapter (see `technical-notes.md`).
 
 - **`tools/` — Strategy + Registry.** Every tool (`_mcp.py`,
   `_human_in_loop.py`, `_web_search.py`, `_file_access.py`,
   `_rag_retrieval.py`) implements a common tool interface (Strategy) and is
-  looked up by name through `registry.py`, which is what the reasoning loop
-  and `tool_calls` payloads resolve against.
+  looked up by name through `tool_manager.py`, which is what the reasoning
+  loop and `tool_calls` payloads resolve against.
 
 - **`commands/` — Command.** Each user-facing slash-style action
-  (`_model`, `_branch`, `_compress`, `_export`, `_schedule`) is its own
+  (`_model`, `_effort`, `_branch`, `_compress`, `_export`, `_schedule`) is its own
   encapsulated command object with an `execute()` entry point, dispatched
   through `commands/__init__.py`. This is distinct from `tools/`: commands
   are user/session-lifecycle actions, tools are things the *model* invokes

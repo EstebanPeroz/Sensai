@@ -76,12 +76,19 @@ class OllamaAdapter(ProviderAdapter):
     def load(self, model_name: str) -> bool:
         """Load a model with the ollama API."""
         content = self._post("api/generate", {"model": model_name})
-        return content.get("done", False)
+        if content.get("done", False):
+            self._current_model = model_name
+            return True
+        return False
 
     def unload(self, model_name: str) -> bool:
-        """Load a model with the ollama API."""
+        """Unload a model with the ollama API."""
         content = self._post("api/generate", {"model": model_name, "keep_alive": 0})
-        return content.get("done", False)
+        if content.get("done", False):
+            if self._current_model == model_name:
+                self._current_model = None
+            return True
+        return False
 
     def list(self) -> list[str]:
         """List of model given by the provider."""
@@ -120,7 +127,8 @@ class OllamaAdapter(ProviderAdapter):
             raise RequestCallError(" Post -> " + str(err)) from None
         return self._response_to_json(result)
 
-    def _response_to_json(self, response: requests.Response) -> dict:
+    @staticmethod
+    def _response_to_json(response: requests.Response) -> dict:
         if not response.ok:
             response.close()
             raise RequestStatusError(response.status_code)
@@ -132,7 +140,7 @@ class OllamaAdapter(ProviderAdapter):
 
     def _post_stream(self, endpoint: str, payload: dict, *, timeout: int = 10) -> Iterator[dict]:
         try:
-            result = requests.post(
+            response = requests.post(
                 self._base_url + endpoint,
                 json=payload,
                 stream=True,
@@ -141,11 +149,11 @@ class OllamaAdapter(ProviderAdapter):
         except requests.RequestException as err:
             raise RequestCallError(" Post -> " + str(err)) from None
 
-        if not result.ok:
-            result.close()
-            raise RequestStatusError(result.status_code)
+        if not response.ok:
+            response.close()
+            raise RequestStatusError(response.status_code)
 
-        return self._iter_json_lines(result)
+        return self._iter_json_lines(response)
 
     @staticmethod
     def _iter_json_lines(result: requests.Response) -> Iterator[dict]:
@@ -156,7 +164,7 @@ class OllamaAdapter(ProviderAdapter):
                 try:
                     yield json.loads(line)
                 except json.JSONDecodeError:
-                    continue
+                    raise JsonError from None
         except requests.RequestException as err:
             raise RequestCallError(" fail to get stream chunk" + str(err)) from None
         finally:

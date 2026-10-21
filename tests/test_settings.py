@@ -1,3 +1,4 @@
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,8 @@ from sensai.config.settings import (
     LLMSettings,
     OllamaSettings,
     Settings,
+    WebSettings,
+    default_settings_file,
     load_settings,
 )
 
@@ -20,13 +23,34 @@ def write_config(tmp_path: Path, content: str) -> Path:
 
 
 class TestPackagedSettings:
-    def test_loads_packaged_file_by_default(self) -> None:
-        settings = load_settings()
+    def test_loads_default_file_without_path(self) -> None:
+        assert isinstance(load_settings(), Settings)
 
-        assert isinstance(settings, Settings)
+    def test_template_holds_the_defaults(self) -> None:
+        template = resources.files("sensai.config").joinpath("settings.toml.template")
+        settings = load_settings(Path(str(template)))
+
         assert settings.llm.embedding_model == "nomic-embed-text"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
         assert settings.cache == CacheSettings()
+        assert settings.web == WebSettings()
+
+    def test_default_file_is_the_template_without_local_settings(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "settings.toml.template").write_text("")
+        monkeypatch.setattr("sensai.config.settings.resources.files", lambda _: tmp_path)
+
+        assert default_settings_file() == tmp_path / "settings.toml.template"
+
+    def test_default_file_is_the_local_settings_when_present(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (tmp_path / "settings.toml.template").write_text("")
+        (tmp_path / "settings.toml").write_text("")
+        monkeypatch.setattr("sensai.config.settings.resources.files", lambda _: tmp_path)
+
+        assert default_settings_file() == tmp_path / "settings.toml"
 
 
 class TestDefaults:
@@ -60,6 +84,17 @@ class TestEmbeddingModel:
         assert settings.llm.embedding_model == "embeddinggemma"
 
 
+class TestWeb:
+    def test_is_read_from_web_table(self, tmp_path: Path) -> None:
+        content = '[web]\napi_base_url = "https://example.com"\napi_key = "secret"\ntimeout = 3\n'
+        settings = load_settings(write_config(tmp_path, content))
+
+        assert settings.web == WebSettings(api_base_url="https://example.com", api_key="secret", timeout=3)
+
+    def test_api_key_is_hidden_from_repr(self) -> None:
+        assert "secret" not in repr(WebSettings(api_key="secret"))
+
+
 class TestValidation:
     @pytest.mark.parametrize(
         ("content", "reason"),
@@ -90,6 +125,12 @@ class TestValidation:
             ("[cache]\nsimilarity_threshold = 1.5\n", "cache.similarity_threshold must be in"),
             ("[cache]\nttl = 1.5\n", "cache.ttl must be an integer"),
             ("[cache]\nttl = 0\n", "cache.ttl must be a positive number of seconds"),
+            ('web = "x"\n', "web must be a table"),
+            ("[web]\napi_key = 1\n", "web.api_key must be a string"),
+            ('[web]\napi_base_url = "ollama.com"\n', "web.api_base_url must be an http\\(s\\) URL"),
+            ("[web]\ntimeout = 0\n", "web.timeout must be a positive number"),
+            ('[web]\ntimeout = "10"\n', "web.timeout must be a positive number"),
+            ("[web]\ntimeout = true\n", "web.timeout must be a positive number"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:
