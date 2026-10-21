@@ -111,6 +111,48 @@ Measured with `qwen3:1.7b` and `llama3.2` against fake tools:
   but they rarely said they were done, so `max_iterations` became the real
   stop.
 
+## Human in the loop
+
+### Confirmation before a tool runs (US-19)
+
+A tool runs only after the user allows it when it declares `requires_confirmation`
+(for tools with consequences, such as writing a file), or when it is listed in
+`[features].confirm` of the settings (`confirm = ["tools.web_fetch"]`). Nothing is
+gated by default.
+
+The check is in `ToolManager.call`, so the model cannot skip it. Before running a
+gated tool, it calls the approver given by `Core`, `UIAdapter.ask_confirmation`,
+which shows a dialog with the tool name and its arguments:
+
+- **Allow** (`y`): runs this call only.
+- **Always this session** (`a`): runs it and stops asking for that tool until Sensai
+  restarts. `ToolManager` keeps that list.
+- **Deny** (`n`, escape): the tool does not run, and the model receives
+  `error: the user declined to run '<name>'; ...` as the tool result, like any other
+  tool failure. The loop then answers without it.
+
+Deny is also the answer whenever nobody can be asked: no approver, a dialog that
+cannot be shown, or the app closing while the dialog is open.
+
+`/tools list` shows which tools ask for confirmation.
+
+### Waiting for the user from the streaming thread
+
+Tools run inside the ReAct generator, so on the streaming thread. The answer cannot
+come through the input box: `Conversation.chat` reads any new event in the
+`EventQueue` as a new message and stops the current answer. Instead, the Textual
+adapter opens a modal screen (`ui/tui/_dialogs.py`) with `call_from_thread` and blocks
+the streaming thread on a `threading.Event` until the screen is dismissed. The modal
+also covers the input, so no event can interrupt the answer while it waits. The
+waiting thread checks every 0.1 s that the app still runs, so it never stays blocked.
+
+### Limitations
+
+- With `/effort off`, or with a model without the `tools` capability, no tool is
+  called, so nothing is asked.
+- A refused call is not remembered beyond the tool message: the model may call the
+  same tool again in the same answer, and the user is asked again.
+
 ## Detecting hallucination
 
 Proposed approach: **LLM-as-judge**. Send the first model's output to a

@@ -1,6 +1,4 @@
-# Current architecture
-
-State of the code on `main` @ `dadf395`.
+# Architecture
 
 ```mermaid
 flowchart TB
@@ -15,6 +13,8 @@ flowchart TB
 
     CMDS["commands<br/>/help, /model, /persona"]
     CONV["Conversation<br/>+ History"]
+    REACT["ReAct<br/>think / act / observe"]
+    TOOLS["ToolManager<br/>web_search, web_fetch"]
 
     subgraph LLM["llm"]
         PM["ProviderManager"]
@@ -39,7 +39,10 @@ flowchart TB
 
     CMDS <--> LLM
 
-    CONV <--> LLM
+    CONV --> REACT
+    REACT <--> LLM
+    REACT --> TOOLS
+    TOOLS -.->|asks confirmation| UIA
     CONV <--> DB
     CONV <-->|streams responses| UIA
 
@@ -52,3 +55,6 @@ flowchart TB
 Message flow: the TUI pushes the user input into an event queue, and `Core` reads it and hands it to `Conversation`.
 `Conversation` saves the message to the DB, then calls Ollama in streaming mode. The response chunks are sent back to
 the TUI as they arrive.
+
+Before a gated tool runs, `ToolManager` asks the user through `UIAdapter.ask_confirmation`, which opens a modal
+dialog and blocks the streaming thread until it closes (see `technical-notes.md`, "Human in the loop").
