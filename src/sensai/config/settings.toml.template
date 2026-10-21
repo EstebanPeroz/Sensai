@@ -3,7 +3,8 @@
 
 [db]
 persistent.url= "sqlite:///persistent.db"
-rag.location = "rag_qdrant"
+
+rag.location = "http://localhost:6333"
 
 [llm]
 # Chosen for its size: 274 MB, against 1.16 GB for bge-m3, which an Ollama
