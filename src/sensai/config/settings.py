@@ -101,7 +101,7 @@ class RagDBSettings:
     missing [db.rag] table just means the chunks go to a local directory.
     """
 
-    location: str = "rag_qdrant"
+    location: str = "http://localhost:6333"
 
     def __post_init__(self) -> None:
         """Check the location, which comes unchecked from the settings file."""
