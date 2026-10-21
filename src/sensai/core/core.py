@@ -17,8 +17,8 @@ from sensai.llm.message import Role
 from sensai.llm.persona import DuplicatePersonaError
 from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
-from sensai.mcp.client import MCPClient
 from sensai.llm.thinking.react import ReAct
+from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.tools import build_tools
