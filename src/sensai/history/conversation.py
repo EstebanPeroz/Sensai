@@ -1,15 +1,15 @@
 import threading
+from dataclasses import replace
+from functools import partial
 from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
-from sensai.monitoring.interaction import InteractionStatus
-from sensai.monitoring.recorder import InteractionRecorder
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from uuid import UUID
 
     from sensai.core.events import EventBus
@@ -73,41 +73,41 @@ class Conversation:
         self.history.insert(Message(uuid=uuid, role=role, content=content))
         return True
 
-    def _emit_interaction(self, interaction: Interaction, ui: UIAdapter) -> None:
-        """Publish `interaction`; a listener failing to handle it must not break the chat."""
+    def _emit_interaction(self, interaction: Interaction, *, persona: str | None, ui: UIAdapter) -> None:
+        """Publish `interaction`, tagged with this branch and `persona`; a listener failing must not break the chat."""
         try:
-            self._events.emit(interaction)
+            self._events.emit(replace(interaction, branch_id=self.uuid, persona=persona))
         except SensaiError as err:
             ui.send_system_message(f"Failed to log interaction: {err}")
 
     def _stream_chunks(
         self,
-        chunks: Iterator[ChatResponse],
-        recorder: InteractionRecorder,
+        chunks: Generator[ChatResponse],
         stop_streaming: threading.Event,
         stream_done: threading.Event,
         ui: UIAdapter,
     ) -> None:
-        """Forward chunks to the UI until they run out or a stop is requested."""
-        status, error = InteractionStatus.OK, None
+        """Forward chunks to the UI until they run out or a stop is requested.
+
+        `chunks` is closed on the way out, so that a stopped stream ends its pending calls to the model.
+        """
         try:
+            content: str = ""
             for chunk in chunks:
                 if stop_streaming.is_set():
-                    status = InteractionStatus.INTERRUPTED
                     return
-                recorder.add_chunk(chunk)
+                if chunk.content is not None:
+                    content += chunk.content
                 ui.send_ai_response(chunk)
 
                 if chunk.error is not None:
-                    status, error = InteractionStatus.ERROR, chunk.error
                     break
-            self.add_message(Role.ASSISTANT, recorder.content, ui)
+            self.add_message(Role.ASSISTANT, content, ui)
         except SensaiError as err:
-            status, error = InteractionStatus.ERROR, str(err)
             ui.send_error(str(err))
         finally:
             try:
-                self._emit_interaction(recorder.finish(status, error), ui)
+                chunks.close()
             finally:
                 stream_done.set()
 
@@ -120,21 +120,14 @@ class Conversation:
         persona = self._persona_manager.active_persona()
         if persona is not None:
             messages = [persona.to_payload(), *messages]
-        recorder = InteractionRecorder(
-            model=self._provider_manager.provider().current_model(),
-            request=messages.copy(),
-            branch_id=self.uuid,
-            persona=persona.name if persona is not None else None,
-        )
-        chunks = self._react.generate_answer(messages)
-        if chunks is None:
-            return
+        on_interaction = partial(self._emit_interaction, persona=persona.name if persona is not None else None, ui=ui)
+        chunks = self._react.generate_answer(messages, on_interaction)
 
         stop_streaming = threading.Event()
         stream_done = threading.Event()
         threading.Thread(
             target=self._stream_chunks,
-            args=(chunks, recorder, stop_streaming, stream_done, ui),
+            args=(chunks, stop_streaming, stream_done, ui),
             daemon=True,
         ).start()
 

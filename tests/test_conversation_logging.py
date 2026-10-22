@@ -12,7 +12,7 @@ from sensai.history.conversation import Conversation
 from sensai.llm.error import RequestCallError
 from sensai.llm.persona import Persona
 from sensai.llm.responses import ChatResponse
-from sensai.llm.thinking.react import ReAct
+from sensai.llm.thinking.react import ANSWER_INSTRUCTION, ReAct
 from sensai.memory.persistent_db.error import DatabaseError
 from sensai.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai.monitoring.interaction import Interaction, InteractionStatus
@@ -81,17 +81,30 @@ def test_logs_the_full_payload_response_and_metrics(logged: Harness) -> None:
     logged.conversation.chat("first", FakeUI())
     logged.conversation.chat("second", FakeUI())
 
-    second = logged.db.get_interactions()[1]
-    assert second.request == [
+    answer = logged.db.get_interactions()[-1]
+    assert answer.request == logged.provider.chat.call_args.args[0]["messages"]
+    assert answer.request == [
         {"role": "system", "content": "You are an analyst."},
         {"role": "user", "content": "first"},
         {"role": "assistant", "content": "A"},
         {"role": "user", "content": "second"},
+        {"role": "assistant", "content": "Second."},
+        {"role": "user", "content": ANSWER_INSTRUCTION},
     ]
-    assert (second.status, second.response, second.persona) == (InteractionStatus.OK, "B", "analyst")
-    assert second.branch_id == logged.conversation.uuid
-    assert (second.metrics.prompt_tokens, second.metrics.completion_tokens) == (11, 2)
-    assert second.first_token_ms is not None
+    assert (answer.status, answer.response, answer.persona) == (InteractionStatus.OK, "B", "analyst")
+    assert answer.branch_id == logged.conversation.uuid
+    assert (answer.metrics.prompt_tokens, answer.metrics.completion_tokens) == (11, 2)
+    assert answer.first_token_ms is not None
+
+
+def test_logs_every_call_of_a_turn(logged: Harness) -> None:
+    logged.provider.chat.side_effect = turn("Hello.", "Hi!")
+
+    logged.conversation.chat("hi", FakeUI())
+
+    interactions = logged.db.get_interactions()
+    assert [interaction.response for interaction in interactions] == ["Hello.", "Hi!"]
+    assert all(interaction.status is InteractionStatus.OK for interaction in interactions)
 
 
 def test_logs_a_connection_failure(logged: Harness) -> None:
@@ -120,7 +133,7 @@ def _cut_stream() -> Iterator[ChatResponse]:
 def test_logs_a_stream_ending_in_error(
     logged: Harness, chunks: Callable[[], Iterator[ChatResponse]], error: str
 ) -> None:
-    logged.provider.chat.side_effect = [iter([chunk("Thought."), _DONE]), chunks()]
+    logged.provider.chat.return_value = chunks()
 
     logged.conversation.chat("hi", FakeUI())
 
