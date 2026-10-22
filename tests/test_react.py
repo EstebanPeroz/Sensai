@@ -1,5 +1,6 @@
 from sensai.llm.responses import ChatResponse, ShowResponse
 from sensai.llm.thinking.react import ReAct
+from sensai.monitoring.interaction import Interaction, InteractionStatus
 from sensai.tools.tool import Tool
 from sensai.tools.tool_manager import ToolManager
 
@@ -110,3 +111,28 @@ class TestMalformedToolCall:
             "content": "error: malformed tool call, function must be an object",
         } in sent
         assert "-> Using unknown...\n" in [chunk.thinking for chunk in chunks]
+
+
+class TestInteractions:
+    def test_records_every_call_with_its_request(self) -> None:
+        provider = MalformedCallProvider()
+        react = ReAct(FakeProviderManager(provider), ToolManager([SearchTool()]), 1)  # type: ignore[arg-type]
+        interactions: list[Interaction] = []
+
+        list(react.generate_answer([{"role": "user", "content": "Find it"}], interactions.append))
+
+        assert [interaction.request for interaction in interactions] == [
+            payload["messages"] for payload in provider.payloads
+        ]
+        assert [interaction.status for interaction in interactions] == [InteractionStatus.OK] * len(provider.payloads)
+        assert interactions[1].tool_calls == [{"function": "search"}]
+
+    def test_records_a_call_closed_before_its_end_as_interrupted(self) -> None:
+        react = ReAct(FakeProviderManager(FakeProvider()), ToolManager(), 1)  # type: ignore[arg-type]
+        interactions: list[Interaction] = []
+
+        chunks = react.generate_answer([{"role": "user", "content": "Bonjour"}], interactions.append)
+        next(chunks)
+        chunks.close()
+
+        assert [interaction.status for interaction in interactions] == [InteractionStatus.INTERRUPTED]
