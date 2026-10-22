@@ -12,10 +12,12 @@ from sensai.history.conversation import Conversation
 from sensai.llm.error import RequestCallError
 from sensai.llm.persona import Persona
 from sensai.llm.responses import ChatResponse
+from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.error import DatabaseError
 from sensai.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai.monitoring.interaction import Interaction, InteractionStatus
 from sensai.monitoring.logger import InteractionLogger
+from sensai.tools.tool_manager import ToolManager
 from tests.commands.fakes import FakeUI
 
 _TIMEOUT = 5
@@ -24,6 +26,11 @@ _DONE = ChatResponse({"model": "m", "message": {}, "done": True, "prompt_eval_co
 
 def chunk(content: str) -> ChatResponse:
     return ChatResponse({"model": "m", "message": {"role": "assistant", "content": content}, "done": False})
+
+
+def turn(thought: str, answer: str) -> list[Iterator[ChatResponse]]:
+    """The two calls of a turn without tools: the model thinks, then answers."""
+    return [iter([chunk(thought), _DONE]), iter([chunk(answer), _DONE])]
 
 
 class InterruptingUI(FakeUI):
@@ -35,7 +42,7 @@ class InterruptingUI(FakeUI):
 
 
 class Harness:
-    """A conversation on a real SQLite database, logged through a real bus, with a mocked provider."""
+    """A conversation without tools on a real SQLite database, logged through a real bus, with a mocked provider."""
 
     def __init__(self, db: SqlAlchemy) -> None:
         self.db, self.bus, self.provider = db, EventBus(), MagicMock()
@@ -44,7 +51,8 @@ class Harness:
         self.persona_manager.active_persona.return_value = None
         provider_manager = MagicMock()
         provider_manager.provider.return_value = self.provider
-        self.conversation = Conversation(provider_manager, self.persona_manager, self.bus)
+        react = ReAct(provider_manager, ToolManager())
+        self.conversation = Conversation(provider_manager, self.persona_manager, react, self.bus)
         self.conversation.add_conv_to_db(None, "test")
 
     def only(self) -> Interaction:
@@ -68,13 +76,12 @@ def logged(harness: Harness) -> Harness:
 
 def test_logs_the_full_payload_response_and_metrics(logged: Harness) -> None:
     logged.persona_manager.active_persona.return_value = Persona(None, "analyst", "desc", "You are an analyst.")
-    logged.provider.chat.side_effect = [iter([chunk("A"), _DONE]), iter([chunk("B"), _DONE])]
+    logged.provider.chat.side_effect = [*turn("Hello.", "A"), *turn("Second.", "B")]
 
     logged.conversation.chat("first", FakeUI())
     logged.conversation.chat("second", FakeUI())
 
     second = logged.db.get_interactions()[1]
-    assert second.request == logged.provider.chat.call_args.args[0]["messages"]
     assert second.request == [
         {"role": "system", "content": "You are an analyst."},
         {"role": "user", "content": "first"},
@@ -87,11 +94,10 @@ def test_logs_the_full_payload_response_and_metrics(logged: Harness) -> None:
     assert second.first_token_ms is not None
 
 
-def test_logs_a_connection_failure_and_reraises(logged: Harness) -> None:
+def test_logs_a_connection_failure(logged: Harness) -> None:
     logged.provider.chat.side_effect = RequestCallError("connection refused")
 
-    with pytest.raises(RequestCallError):
-        logged.conversation.chat("hi", FakeUI())
+    logged.conversation.chat("hi", FakeUI())
 
     assert logged.only().status is InteractionStatus.ERROR
     assert "connection refused" in (logged.only().error or "")
@@ -114,7 +120,7 @@ def _cut_stream() -> Iterator[ChatResponse]:
 def test_logs_a_stream_ending_in_error(
     logged: Harness, chunks: Callable[[], Iterator[ChatResponse]], error: str
 ) -> None:
-    logged.provider.chat.return_value = chunks()
+    logged.provider.chat.side_effect = [iter([chunk("Thought."), _DONE]), chunks()]
 
     logged.conversation.chat("hi", FakeUI())
 
@@ -143,7 +149,7 @@ def test_a_storage_failure_does_not_break_the_chat(harness: Harness) -> None:
     failing_db = MagicMock()
     failing_db.add_interaction.side_effect = DatabaseError("disk full")
     InteractionLogger(failing_db, LoggingSettings()).attach(harness.bus)
-    harness.provider.chat.return_value = iter([chunk("Hello"), _DONE])
+    harness.provider.chat.side_effect = turn("Greeting.", "Hello")
     ui = FakeUI()
 
     harness.conversation.chat("hi", ui)
@@ -161,7 +167,7 @@ def test_an_unexpected_listener_crash_does_not_hang_the_chat(harness: Harness, m
         raise RuntimeError
 
     harness.bus.subscribe(Interaction, crash)
-    harness.provider.chat.return_value = iter([chunk("Hello"), _DONE])
+    harness.provider.chat.side_effect = turn("Greeting.", "Hello")
     chat = threading.Thread(target=harness.conversation.chat, args=("hi", FakeUI()), daemon=True)
 
     chat.start()

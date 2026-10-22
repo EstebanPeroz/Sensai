@@ -1,0 +1,57 @@
+"""Invariants of the tool composition root.
+
+`build_tools()` returns no tool yet, so these tests are mostly forward-looking guards:
+they fail the day a tool is added with a name clashing with another one, or with a
+`tool_rule` advertising a name the `ToolManager` cannot look up.
+"""
+
+from sensai.tools import build_tools
+from sensai.tools.tool import Tool
+from sensai.tools.tool_manager import ToolManager
+
+
+class TestBuildTools:
+    def test_returns_a_list(self) -> None:
+        assert isinstance(build_tools(), list)
+
+    def test_every_built_object_is_a_tool(self) -> None:
+        assert all(isinstance(tool, Tool) for tool in build_tools())
+
+    def test_every_tool_has_a_non_empty_name(self) -> None:
+        assert all(tool.name for tool in build_tools())
+
+    def test_tool_names_are_unique(self) -> None:
+        names = [tool.name for tool in build_tools()]
+
+        assert sorted(names) == sorted(set(names))
+
+    def test_each_rule_advertises_the_name_the_manager_registers(self) -> None:
+        # A rule naming anything else would let the model call a name `ToolManager.call` cannot resolve.
+        for tool in build_tools():
+            assert tool.tool_rule["function"]["name"] == tool.name
+
+    def test_each_call_returns_a_fresh_list(self) -> None:
+        assert build_tools() is not build_tools()
+
+
+class TestBuildToolsFeedsTheManager:
+    def test_the_manager_accepts_the_built_tools(self) -> None:
+        manager = ToolManager(build_tools())
+
+        assert manager.names() == sorted(tool.name for tool in build_tools())
+
+    def test_every_built_tool_starts_enabled(self) -> None:
+        manager = ToolManager(build_tools())
+
+        assert all(manager.is_enabled(name) for name in manager.names())
+
+    def test_every_built_tool_is_advertised_to_the_model(self) -> None:
+        manager = ToolManager(build_tools())
+
+        assert len(manager.get_tool_call_rules()) == len(build_tools())
+
+    def test_built_tools_can_all_be_disabled_by_name(self) -> None:
+        manager = ToolManager(build_tools())
+
+        assert all(manager.disable(name) for name in manager.names())
+        assert manager.get_tool_call_rules() == []

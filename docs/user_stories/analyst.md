@@ -27,7 +27,7 @@ Current pain points Sensai must address:
 | 2 | Framing | Needing a tone/expertise adapted to the subject (e.g. finance vs. HR) | Persona · System Prompt Extension via Subject/Project |
 | 3 | Internal research | Querying internal reports already ingested | RAG Basic / Advanced · File Access |
 | 4 | External research | Needing a figure or a recent news item | Web Search · MCP |
-| 5 | Multi-step reasoning | The question requires several chained lookups | Reasoning loops · Human in the loop |
+| 5 | Multi-step reasoning | The question requires several chained lookups | Reasoning loops · Thinking effort · Human in the loop |
 | 6 | Long context | The investigation accumulates a lot of history/documents | Token Budgeting & Semantic Compression |
 | 7 | Reliability check | Needing to trust the answer before citing it | Automated Eval & Hallucination Detection |
 | 8 | Confidentiality | The data being handled is sensitive | Content & Privacy Guardrails · Adversarial testing |
@@ -385,3 +385,51 @@ to set up a new subject/project myself, so that onboarding a new analysis
 domain doesn't require waiting on a developer.
 Example: You want to set up a brand-new type of project yourself today,
 without waiting on a developer.
+
+### 3.7 Thinking effort
+
+**US-47** — As an analyst, I want to choose how much the assistant thinks
+before answering (off, low, medium, high), so that I can trade answer speed
+for thoroughness depending on the question.
+Example: A quick definition doesn't need any research, so you lower the
+effort to get an instant answer; a market comparison deserves a higher one.
+
+**US-48** — As an analyst, I want the current thinking effort to always be
+visible, so that I know whether an answer was a quick reply or the result of
+research, without having to ask.
+Example: An answer comes back instantly with no source, and a glance at the
+input box tells you the effort was set to off.
+
+## 4. User Scenarios
+
+### Scenario 1 — Adjusting the thinking effort during an investigation
+
+**Persona:** the Analyst, preparing a weekly market note.
+**Goal:** get quick answers to simple questions, and researched answers to
+the ones that depend on current data, within the same session.
+**Covers:** US-47, US-48, US-07.
+
+1. **Starting the session.** The analyst opens Sensai. The bottom right of
+   the input box shows `effort: high`, the default.
+2. **Checking the levels.** Before starting, the analyst types `/effort`.
+   Sensai lists the current effort and the four available levels, with what
+   each one does: `off` answers directly, `low`, `medium` and `high` allow
+   up to 1, 3 and 5 thinking steps.
+3. **Lowering the effort for definitions.** The analyst has a batch of
+   vocabulary questions. They type `/effort o`, press Tab to complete it to
+   `/effort off`, and submit. Sensai confirms the change and the input box
+   now shows `effort: off`.
+4. **Getting quick answers.** The analyst asks "What does EBITDA stand
+   for?". The answer arrives right away, with no reasoning displayed and no
+   web search.
+5. **Noticing the limit.** The analyst then asks "How did NVIDIA and AMD
+   stocks move this week?". The answer comes back just as fast, but with no
+   source and figures that may be outdated. The input box still shows
+   `effort: off`, which explains why no search was made.
+6. **Raising the effort.** The analyst types `/effort high` and asks the
+   question again. This time the assistant's reasoning is shown step by
+   step, followed by `-> Using web_search...`, and the final answer is built
+   from current results.
+7. **Outcome.** The analyst keeps a low effort for simple questions and a
+   high effort for questions that depend on recent data, and always knows
+   which mode produced a given answer.

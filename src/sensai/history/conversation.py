@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
+    from sensai.llm.thinking.react import ReAct
     from sensai.monitoring.interaction import Interaction
     from sensai.ui.adapter import UIAdapter
 
@@ -26,14 +27,18 @@ class Conversation:
     Every call to the model, whatever its outcome, is emitted on `events` as an `Interaction`.
     """
 
-    _provider_manager: ProviderManager
+    _react: ReAct
     _persona_manager: PersonaManager
+    _provider_manager: ProviderManager
     _events: EventBus
     history: History
     uuid: UUID | None = None
 
-    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager, events: EventBus) -> None:
+    def __init__(
+        self, provider_manager: ProviderManager, persona_manager: PersonaManager, react: ReAct, events: EventBus
+    ) -> None:
         """Init method to create the conversation callss."""
+        self._react = react
         self._provider_manager = provider_manager
         self.history = History()
         self._persona_manager = persona_manager
@@ -115,18 +120,13 @@ class Conversation:
         persona = self._persona_manager.active_persona()
         if persona is not None:
             messages = [persona.to_payload(), *messages]
-        model = self._provider_manager.provider().current_model()
         recorder = InteractionRecorder(
-            model=model,
-            request=messages,
+            model=self._provider_manager.provider().current_model(),
+            request=messages.copy(),
             branch_id=self.uuid,
             persona=persona.name if persona is not None else None,
         )
-        try:
-            chunks = self._provider_manager.provider().chat({"model": model, "messages": messages}, stream=True)
-        except SensaiError as err:
-            self._emit_interaction(recorder.finish(InteractionStatus.ERROR, str(err)), ui)
-            raise
+        chunks = self._react.generate_answer(messages)
         if chunks is None:
             return
 
