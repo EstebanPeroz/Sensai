@@ -4,11 +4,11 @@ from typing import TYPE_CHECKING, override
 
 from sensai.commands.base import Command
 from sensai.rag.error import RagError
+from sensai.rag.indexation_rag import Indexation
 
 if TYPE_CHECKING:
     from sensai.rag.indexer import Indexer
 
-_INDEXABLE_SUFFIXES = (".txt", ".md", ".pdf", ".html", ".htm")
 _MAX_COMPLETIONS = 50
 # How often the dispatch thread looks for a UI event while indexing runs.
 _POLL_SECONDS = 0.05
@@ -91,16 +91,12 @@ class Index(Command):
 
     @staticmethod
     def _indexable_files() -> list[str]:
-        """Relative paths of the indexable files under the working directory.
-
-        Hidden directories and caches are pruned before being walked, so a
-        virtualenv does not get crawled, and the list is capped to stay usable.
-        """
+        """Relative paths of the indexable files under the working directory."""
         found: list[str] = []
         for directory, subdirectories, files in Path().walk():
             subdirectories[:] = [name for name in subdirectories if not name.startswith(".")]
             for name in sorted(files):
-                if Path(name).suffix.lower() in _INDEXABLE_SUFFIXES:
+                if Path(name).suffix.lower() in Indexation.READERS:
                     found.append(str(directory / name))
                     if len(found) >= _MAX_COMPLETIONS:
                         return found

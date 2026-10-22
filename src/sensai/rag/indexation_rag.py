@@ -6,7 +6,7 @@ import urllib.request
 from enum import StrEnum
 from http.client import HTTPException
 from pathlib import Path
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 import pypdf
 from bs4 import BeautifulSoup
@@ -89,14 +89,11 @@ class Indexation:
             msg = f"no such file: {source}"
             raise SourceNotFoundError(msg)
         ext = path.suffix.lower()
-        if ext in (".txt", ".md"):
-            return self._read_text(path)
-        if ext in (".html", ".htm"):
-            return self._extract_text_from_html(self._read_text(path))
-        if ext == ".pdf":
-            return self._read_pdf(path)
-        msg = f"unsupported format: {ext or '(no extension)'}"
-        raise UnsupportedFormatError(msg)
+        reader = self.READERS.get(ext)
+        if reader is None:
+            msg = f"unsupported format: {ext or '(no extension)'}"
+            raise UnsupportedFormatError(msg)
+        return reader(self, path)
 
     def _collect_url(self, source: str) -> str:
         """Fetch `source` over HTTP and return the text of the page.
@@ -154,6 +151,23 @@ class Indexation:
         for element in soup(["script", "style", "nav", "footer", "header", "noscript"]):
             element.decompose()
         return soup.get_text(separator="\n", strip=True)
+
+    def _read_html(self, source: Path) -> str:
+        """Read an HTML file and return the text of the page.
+
+        Raises:
+            SourceFetchError: If the file cannot be read or decoded.
+
+        """
+        return self._extract_text_from_html(self._read_text(source))
+
+    READERS: ClassVar = {
+        ".txt": _read_text,
+        ".md": _read_text,
+        ".html": _read_html,
+        ".htm": _read_html,
+        ".pdf": _read_pdf,
+    }
 
     def to_chunks(self, source: str, *, strategy: ChunkStrategy = ChunkStrategy.AUTO) -> list[str]:
         """Collect `source`, clean it and cut it into chunks. Makes no network call.
