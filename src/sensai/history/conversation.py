@@ -96,6 +96,8 @@ class Conversation:
         if persona is not None:
             messages = [persona.to_payload(), *messages]
         chunks = self._react.generate_answer(messages)
+        if chunks is None:
+            return
 
         stop_streaming = threading.Event()
         stream_done = threading.Event()
