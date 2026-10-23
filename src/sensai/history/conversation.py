@@ -102,7 +102,13 @@ class Conversation:
                     failed = True
                     break
             self.add_message(Role.ASSISTANT, content, ui)
-            if self._cache is not None and not failed and not used_tools and content.strip():
+            if (
+                self._cache is not None
+                and not failed
+                and not used_tools
+                # A blank answer, whitespace only, is not worth serving again.
+                and content.strip() != ""
+            ):
                 self._cache.store(key.query, key.scope, content, key.context)
         except SensaiError as err:
             ui.send_error(str(err))
@@ -114,9 +120,7 @@ class Conversation:
         ui.send_input(Role.USER, user_input)
         persona = self._persona_manager.active_persona()
         key = cache_key(user_input, self._provider_manager.provider().current_model(), persona, self.history)
-        if self.add_message(Role.USER, user_input, ui) is False:
-            return
-        if self._reply_from_cache(key, ui):
+        if self.add_message(Role.USER, user_input, ui) is False or self._reply_from_cache(key, ui):
             return
         messages = self.history.to_json()
         if persona is not None:
