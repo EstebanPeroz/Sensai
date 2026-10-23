@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import redis
 
 from sensai.error import SensaiError
+from sensai.semantic.cache_repository import SemanticCacheRepository
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -25,7 +26,7 @@ SCAN_COUNT = 1000
 _FIELDS = ("embedding", "context_embedding", "answer")
 
 
-class RedisSemanticCache:
+class RedisSemanticCache(SemanticCacheRepository):
     """Semantic cache kept in Redis: one hash per answer, holding the query, its embedding and the answer.
 
     Entries expire after the configured TTL. Lookups compare the query embedding with every entry of the scope;
@@ -61,11 +62,11 @@ class RedisSemanticCache:
         for stored, stored_context, answer in entries:
             if not isinstance(stored, bytes) or not isinstance(stored_context, bytes) or not isinstance(answer, bytes):
                 continue
-            score = _cosine_similarity(embedding, _unpack(stored))
+            score = self._cosine_similarity(embedding, self._unpack(stored))
             if stored_context:
                 if not context_embedding:
                     continue
-                score = min(score, _cosine_similarity(context_embedding, _unpack(stored_context)))
+                score = min(score, self._cosine_similarity(context_embedding, self._unpack(stored_context)))
             if score >= best_score:
                 best_answer, best_score = answer.decode(), score
         return best_answer
@@ -79,9 +80,9 @@ class RedisSemanticCache:
         key = self._scope_prefix(scope) + uuid.uuid4().hex
         entry: dict[FieldT, EncodableT] = {
             "query": query,
-            "embedding": _pack(embedding),
+            "embedding": self._pack(embedding),
             "context": context,
-            "context_embedding": _pack(context_embedding),
+            "context_embedding": self._pack(context_embedding),
             "answer": answer,
         }
         with contextlib.suppress(redis.RedisError):
@@ -117,23 +118,23 @@ class RedisSemanticCache:
         digest = hashlib.sha256("\0".join(fields).encode()).hexdigest()[:16]
         return f"{KEY_PREFIX}{digest}:"
 
+    @staticmethod
+    def _pack(vector: Sequence[float]) -> bytes:
+        return array("f", vector).tobytes()
 
-def _pack(vector: Sequence[float]) -> bytes:
-    return array("f", vector).tobytes()
+    @staticmethod
+    def _unpack(data: bytes) -> list[float]:
+        """Decode a stored vector, or return an empty one, similar to nothing, if Redis holds malformed bytes."""
+        try:
+            return array("f", data).tolist()
+        except ValueError:
+            return []
 
-
-def _unpack(data: bytes) -> list[float]:
-    """Decode a stored vector, or return an empty one, similar to nothing, if Redis holds malformed bytes."""
-    try:
-        return array("f", data).tolist()
-    except ValueError:
-        return []
-
-
-def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
-    if len(a) != len(b):
-        return 0.0
-    norms = math.hypot(*a) * math.hypot(*b)
-    if norms == 0:
-        return 0.0
-    return math.sumprod(a, b) / norms
+    @staticmethod
+    def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
+        if len(a) != len(b):
+            return 0.0
+        norms = math.hypot(*a) * math.hypot(*b)
+        if norms == 0:
+            return 0.0
+        return math.sumprod(a, b) / norms
