@@ -3,11 +3,8 @@ from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
-from sensai.mcp.request import add_tool_result, add_tool_schemas, execute_one_tool_call
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
-
-_MAX_TOOL_ROUNDS = 3
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -16,7 +13,7 @@ if TYPE_CHECKING:
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
-    from sensai.tools.tool_manager import ToolManager
+    from sensai.llm.thinking.react import ReAct
     from sensai.ui.adapter import UIAdapter
 
 
@@ -26,18 +23,15 @@ class Conversation:
     _persona_manager: PersonaManager
     _provider_manager: ProviderManager
     history: History
-    _tool_manager: ToolManager
-    _pending_tool_result: dict | None = None
+    _react: ReAct
     uuid: UUID | None = None
 
-    def __init__(
-        self, provider_manager: ProviderManager, persona_manager: PersonaManager, tool_manager: ToolManager
-    ) -> None:
+    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager, react: ReAct) -> None:
         """Init method to create the conversation callss."""
         self._provider_manager = provider_manager
         self.history = History()
         self._persona_manager = persona_manager
-        self._tool_manager = tool_manager
+        self._react = react
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Init the conversation in the DB if first message."""
@@ -68,39 +62,12 @@ class Conversation:
         self.history.insert(Message(uuid=uuid, role=role, content=content))
         return True
 
-    def _stream_follow_up(
-        self,
-        payload: dict,
-        tool_call: dict,
-        tool_result: dict | None,
-        stop_streaming: threading.Event,
-        ui: UIAdapter,
-    ) -> tuple[str, dict | None, dict]:
-        """Stream one follow-up request after a tool call."""
-        follow_up = add_tool_result(payload, tool_call, tool_result)
-        chunks = self._provider_manager.provider().chat(follow_up, stream=True)
-        content = ""
-        next_tool_call = None
-        if chunks is None:
-            return content, next_tool_call, follow_up
-        for chunk in chunks:
-            if stop_streaming.is_set():
-                return content, next_tool_call, follow_up
-            if chunk.content is not None:
-                content += chunk.content
-            ui.send_ai_response(chunk)
-            if chunk.tool_calls:
-                next_tool_call = chunk.tool_calls[0]
-                break
-        return content, next_tool_call, follow_up
-
     def _stream_chunks(
         self,
         chunks: Iterator[ChatResponse],
         stop_streaming: threading.Event,
         stream_done: threading.Event,
         ui: UIAdapter,
-        payload: dict,
     ) -> None:
         """Forward chunks to the UI until they run out or a stop is requested."""
         try:
@@ -111,23 +78,6 @@ class Conversation:
                 if chunk.content is not None:
                     content += chunk.content
                 ui.send_ai_response(chunk)
-
-                if chunk.tool_calls:
-                    current_payload = payload
-                    tool_call = chunk.tool_calls[0]
-                    for _ in range(_MAX_TOOL_ROUNDS):
-                        self._pending_tool_result = execute_one_tool_call([tool_call], self._tool_manager)
-                        content_part, tool_call, current_payload = self._stream_follow_up(
-                            current_payload,
-                            tool_call,
-                            self._pending_tool_result,
-                            stop_streaming,
-                            ui,
-                        )
-                        content += content_part
-                        if tool_call is None:
-                            break
-                    break
                 if chunk.error is not None:
                     break
             self.add_message(Role.ASSISTANT, content, ui)
@@ -145,17 +95,13 @@ class Conversation:
         persona = self._persona_manager.active_persona()
         if persona is not None:
             messages = [persona.to_payload(), *messages]
-        payload: dict = {"model": self._provider_manager.provider().current_model(), "messages": messages}
-        add_tool_schemas(payload, self._tool_manager)
-        chunks = self._provider_manager.provider().chat(payload, stream=True)
-        if chunks is None:
-            return
+        chunks = self._react.generate_answer(messages)
 
         stop_streaming = threading.Event()
         stream_done = threading.Event()
         threading.Thread(
             target=self._stream_chunks,
-            args=(chunks, stop_streaming, stream_done, ui, payload),
+            args=(chunks, stop_streaming, stream_done, ui),
             daemon=True,
         ).start()
 

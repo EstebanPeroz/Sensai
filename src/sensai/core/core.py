@@ -73,7 +73,7 @@ class Core:
             tools.extend(anyio.run(self._mcp_client.start))
         self._tool_manager = ToolManager(tools, disabled=settings.features.disabled_in("tools"))
         self._react = ReAct(self._provider_manager, self._tool_manager)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._tool_manager)
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
