@@ -25,7 +25,6 @@ from sensai.rag.retrievial_rag import Retrieval
 from sensai.semantic.connection import connect_cache
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
-from sensai.tools.web import web_tools
 
 if TYPE_CHECKING:
     import argparse
@@ -64,8 +63,9 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         embedder = self._build_embedder()
-        web = web_tools(settings.web, embedder) if embedder is not None else []
-        self._tool_manager = ToolManager([*build_tools(), *web], disabled=settings.features.disabled_in("tools"))
+        self._tool_manager = ToolManager(
+            build_tools(settings, embedder), disabled=settings.features.disabled_in("tools")
+        )
         self._react = ReAct(self._provider_manager, self._tool_manager)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
         self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, cache)
