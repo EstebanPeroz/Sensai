@@ -16,6 +16,9 @@ if TYPE_CHECKING:
     from sensai.config.settings import ProviderSettings
 
 
+_EMBED_TIMEOUT = 30
+
+
 class OllamaAdapter(ProviderAdapter):
     """Ollama API wrapper to call needed endpoints."""
 
@@ -54,7 +57,10 @@ class OllamaAdapter(ProviderAdapter):
         content = self._post(
             endpoint="api/embed",
             payload={"model": model, "input": messages},
-            timeout=5,
+            # Generous, because an embedding model evicted from memory by the chat
+            # model is reloaded on the next call, and reading it back from disk
+            # takes far longer than the embedding itself.
+            timeout=_EMBED_TIMEOUT,
         )
 
         return content.get("embeddings", [])

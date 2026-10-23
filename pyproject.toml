@@ -13,6 +13,9 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "pypdf>=6.21.1",
+    "qdrant-client==1.18.0",
     "ddgs>=9.16.0",
     "redis>=8.1.0",
     "requests>=2.34.2",
@@ -67,6 +70,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/persistent_db/**"= ["SLF001"]
+"tests/rag/**" = ["SLF001"]
 "tests/**" = [
     "S101",
     "INP001",
