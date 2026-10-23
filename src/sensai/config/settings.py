@@ -93,10 +93,27 @@ class PersistentDBSettings:
 
 
 @dataclass
+class RagDBSettings:
+    """Settings of the [db.rag] table: the Qdrant database holding the RAG chunks.
+
+    `location` is a server URL, ":memory:", or a directory holding an embedded
+    database. Unlike the persistent database, this one has a usable default: a
+    missing [db.rag] table just means the chunks go to a local directory.
+    """
+
+    location: str = "http://localhost:6333"
+
+    def __post_init__(self) -> None:
+        """Check the location, which comes unchecked from the settings file."""
+        _check_name(self.location, "db.rag.location")
+
+
+@dataclass
 class DBSettings:
     """Settings of the [db] table."""
 
     persistent: PersistentDBSettings = field(default_factory=PersistentDBSettings)
+    rag: RagDBSettings = field(default_factory=RagDBSettings)
 
 
 @dataclass
@@ -171,11 +188,12 @@ def load_settings(path: Path | None = None) -> Settings:
             web = WebSettings(**_pop_table(data, "web"))
             db = _pop_table(data, "db")
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
+            rag = RagDBSettings(**_pop_table(db, "rag"))
             features = FeatureSettings(**_pop_table(data, "features"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
                 web=web,
-                db=DBSettings(**db, persistent=persistent),
+                db=DBSettings(**db, persistent=persistent, rag=rag),
                 features=features,
                 **data,
             )

@@ -2,7 +2,7 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from sensai import ui
-from sensai.commands import Branch, Command, Help, Model, PersonaCommand, StateCommand
+from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.effort import Effort
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
@@ -18,6 +18,10 @@ from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.rag.collection import Collection
+from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
+from sensai.rag.indexer import Indexer
+from sensai.rag.retrievial_rag import Retrieval
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
 from sensai.tools.web import web_tools
@@ -102,6 +106,7 @@ class Core:
         """Build a command registry with all available commands."""
         Command.bind_ui(self._ui)
         StateCommand.bind_db(db)
+        indexer, retrieval = self._build_rag()
         registry = CommandRegistry(
             [
                 Model(self._provider_manager),
@@ -111,10 +116,33 @@ class Core:
                 Effort(self._react),
                 Export(self.conversation),
                 Import(),
+                Index(indexer),
+                Ask(retrieval),
             ]
         )
         registry.register_command(Help(registry))
         return registry
+
+    def _build_rag(self) -> tuple[Indexer, Retrieval]:
+        """Build the RAG indexer and retrieval, on the embedding model the settings ask for.
+
+        Both share one collection, and so one client: an embedded Qdrant locks
+        its directory for a single client, so a second one on the same location
+        could not open it.
+
+        Raises:
+            ModelError: If no provider serves the embedding model the settings
+                ask for, which indexing or asking anything would need.
+
+        """
+        model = self._settings.llm.embedding_model or DEFAULT_EMBEDDING_MODEL
+        provider = self._provider_manager.get_provider(model=model)
+        if provider is None:
+            msg = f"the RAG needs the embedding model '{model}', which no provider serves"
+            raise ModelError(msg)
+        indexation = Indexation(provider, model)
+        collection = Collection.open(self._settings.db.rag.location)
+        return Indexer(indexation, collection), Retrieval(indexation, collection, provider)
 
     def _build_web_tools(self) -> list[Tool]:
         """Build the web search and fetch tools, which need an embedding model."""
@@ -123,7 +151,7 @@ class Core:
             return []
         provider = self._provider_manager.get_provider(embedding_model)
         if provider is None:
-            err = f"embedding model '{embedding_model}' not found in provider manager"
+            err = f"the web tools need the embedding model '{embedding_model}', which no provider serves"
             raise ModelError(err)
         embedder = Embedder(provider, embedding_model)
         return web_tools(self._settings.web, embedder)

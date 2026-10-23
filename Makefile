@@ -12,8 +12,14 @@ install: $(SETTINGS)
 $(SETTINGS):
 	cp $(SETTINGS).template $(SETTINGS)
 
-run:
+run: qdrant
 	uv run $(NAME) --model ${MODEL}
+
+qdrant:
+	docker compose up -d --wait
+
+qdrant-stop:
+	docker compose down
 
 help:
 	uv run $(NAME) --help
@@ -31,4 +37,4 @@ format:
 lock:
 	uv lock
 
-.PHONY: all install run tests lint format lock
+.PHONY: all install run qdrant qdrant-stop tests lint format lock
