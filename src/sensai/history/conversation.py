@@ -1,12 +1,11 @@
 import threading
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
-from sensai.llm.responses import ChatResponse
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
-from sensai.semantic.cache_repository import CacheScope
+from sensai.semantic.cache_key import cache_key, cached_response
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -14,22 +13,11 @@ if TYPE_CHECKING:
 
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
+    from sensai.llm.responses import ChatResponse
     from sensai.llm.thinking.react import ReAct
+    from sensai.semantic.cache_key import CacheKey
     from sensai.semantic.cache_repository import SemanticCacheRepository
     from sensai.ui.adapter import UIAdapter
-
-# Persona a cached answer is scoped to when none is active.
-NO_PERSONA = ""
-# Previous user messages a query is cached with: the same question can call for another answer in another context.
-CACHE_CONTEXT_TURNS = 2
-
-
-class CacheKey(NamedTuple):
-    """What a query is looked up and cached with: the query itself, its scope and the previous user messages."""
-
-    query: str
-    scope: CacheScope
-    context: str
 
 
 class Conversation:
@@ -91,7 +79,7 @@ class Conversation:
         stop_streaming: threading.Event,
         stream_done: threading.Event,
         ui: UIAdapter,
-        cache_key: CacheKey | None,
+        key: CacheKey,
     ) -> None:
         """Forward chunks to the UI until they run out or a stop is requested, then cache a complete answer.
 
@@ -114,8 +102,8 @@ class Conversation:
                     failed = True
                     break
             self.add_message(Role.ASSISTANT, content, ui)
-            if self._cache is not None and cache_key is not None and not failed and not used_tools and content.strip():
-                self._cache.store(cache_key.query, cache_key.scope, content, cache_key.context)
+            if self._cache is not None and not failed and not used_tools and content.strip():
+                self._cache.store(key.query, key.scope, content, key.context)
         except SensaiError as err:
             ui.send_error(str(err))
         finally:
@@ -125,10 +113,10 @@ class Conversation:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
         ui.send_input(Role.USER, user_input)
         persona = self._persona_manager.active_persona()
-        cache_key = self._cache_key(user_input, persona.name if persona is not None else NO_PERSONA)
+        key = cache_key(user_input, self._provider_manager.provider().current_model(), persona, self.history)
         if self.add_message(Role.USER, user_input, ui) is False:
             return
-        if cache_key is not None and self._answer_from_cache(cache_key, ui):
+        if self._reply_from_cache(key, ui):
             return
         messages = self.history.to_json()
         if persona is not None:
@@ -141,7 +129,7 @@ class Conversation:
         stream_done = threading.Event()
         threading.Thread(
             target=self._stream_chunks,
-            args=(chunks, stop_streaming, stream_done, ui, cache_key),
+            args=(chunks, stop_streaming, stream_done, ui, key),
             daemon=True,
         ).start()
 
@@ -151,25 +139,11 @@ class Conversation:
             stop_streaming.set()
             break
 
-    def _cache_key(self, query: str, persona: str) -> CacheKey | None:
-        """Return what `query` is looked up and cached with, or None without a cache.
-
-        The scope is read on every query, as /model and /persona change the model and persona mid-conversation.
-        """
-        if self._cache is None:
-            return None
-        previous = [message.content for message in self.history.messages() if message.role is Role.USER]
-        scope = CacheScope(model=self._provider_manager.provider().current_model(), persona=persona)
-        return CacheKey(query, scope, "\n".join(previous[-CACHE_CONTEXT_TURNS:]))
-
-    def _answer_from_cache(self, key: CacheKey, ui: UIAdapter) -> bool:
-        """Send the cached answer to the query of `key` to the UI, if there is one, and return whether there was."""
-        if self._cache is None:
+    def _reply_from_cache(self, key: CacheKey, ui: UIAdapter) -> bool:
+        """Send the cached answer to the query of `key` to the UI and save it, if any, and return whether there was."""
+        response = cached_response(self._cache, key) if self._cache is not None else None
+        if response is None:
             return False
-        answer = self._cache.lookup(key.query, key.scope, key.context)
-        if answer is None:
-            return False
-        message = {"role": Role.ASSISTANT.value, "content": answer}
-        ui.send_ai_response(ChatResponse({"model": key.scope.model, "done": True, "message": message}))
-        self.add_message(Role.ASSISTANT, answer, ui)
+        ui.send_ai_response(response)
+        self.add_message(Role.ASSISTANT, response.content or "", ui)
         return True

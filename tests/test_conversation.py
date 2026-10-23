@@ -6,9 +6,10 @@ from uuid import uuid4
 
 import pytest
 
-from sensai.history.conversation import CACHE_CONTEXT_TURNS, NO_PERSONA, Conversation
+from sensai.history.conversation import Conversation
 from sensai.llm.persona import Persona
 from sensai.llm.responses import ChatResponse
+from sensai.semantic.cache_key import CACHE_CONTEXT_TURNS, NO_PERSONA
 from sensai.semantic.cache_repository import CacheScope
 
 if TYPE_CHECKING:
