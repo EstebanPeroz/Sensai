@@ -77,10 +77,7 @@ async def test_starts_fixture_discovers_tool_and_creates_adapter() -> None:
         ),
     )
 
-    try:
-        tools = await client.start()
-    finally:
-        await client.close()
+    tools = await client.start()
 
     assert len(tools) == 1
     assert tools[0].name == "echo"

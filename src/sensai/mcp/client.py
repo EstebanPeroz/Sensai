@@ -15,7 +15,6 @@ class MCPClient:
     def __init__(self, config: MCPServerConfig) -> None:
         """Store the server configuration without starting it."""
         self._config = config
-        self._session: MCPServerSession | None = None
 
     async def start(self) -> list[MCPTool]:
         """Start the configured server and return its discovered tools."""
@@ -31,6 +30,3 @@ class MCPClient:
             raise
         await session.close()
         return [MCPTool(info, session) for info in tools]
-
-    async def close(self) -> None:
-        """Keep shutdown compatible with callers after discovery has completed."""

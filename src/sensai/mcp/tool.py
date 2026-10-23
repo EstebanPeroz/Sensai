@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from sensai.mcp.session import MCPServerSession
 
 
-class MCPTool(Tool[object]):
+class MCPTool(Tool[str]):
     """Expose an MCP tool through Sensai's existing tool contract."""
 
     def __init__(self, info: MCPToolInfo, session: MCPServerSession) -> None:

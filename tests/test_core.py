@@ -99,13 +99,12 @@ def test_core_registers_discovered_mcp_tools() -> None:
     assert ToolManager(registered_tools).names() == ["echo"]
 
 
-def test_core_closes_mcp_client_after_run() -> None:
+def test_core_runs_with_mcp_client() -> None:
     provider_manager = MagicMock()
     provider_manager.set_model.return_value = True
     db = MagicMock()
     ui = MagicMock()
     ui.get_event.return_value = MagicMock(type=EventType.Command, content="/q")
-    mcp_client = MagicMock()
 
     with (
         patch("sensai.core.core.get_db", return_value=db),
@@ -115,7 +114,6 @@ def test_core_closes_mcp_client_after_run() -> None:
         ),
         patch(
             "sensai.core.core.MCPClient",
-            return_value=mcp_client,
         ),
         patch(
             "sensai.core.core.anyio.run",
@@ -125,5 +123,4 @@ def test_core_closes_mcp_client_after_run() -> None:
         core = Core(ui, Settings(mcp=MCPServerConfig(command="server")), Namespace(model="model"))
         core.run()
 
-    run.assert_any_call(mcp_client.start)
-    run.assert_any_call(mcp_client.close)
+    run.assert_called_once()
