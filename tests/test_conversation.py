@@ -9,7 +9,7 @@ import pytest
 from sensai.history.conversation import CACHE_CONTEXT_TURNS, NO_PERSONA, Conversation
 from sensai.llm.persona import Persona
 from sensai.llm.responses import ChatResponse
-from sensai.memory.semantic_cache_repository import CacheScope
+from sensai.semantic.cache_repository import CacheScope
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator

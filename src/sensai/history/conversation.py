@@ -6,7 +6,7 @@ from sensai.llm.message import Message, Role
 from sensai.llm.responses import ChatResponse
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
-from sensai.memory.semantic_cache_repository import CacheScope
+from sensai.semantic.cache_repository import CacheScope
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.thinking.react import ReAct
-    from sensai.memory.semantic_cache_repository import SemanticCacheRepository
+    from sensai.semantic.cache_repository import SemanticCacheRepository
     from sensai.ui.adapter import UIAdapter
 
 # Persona a cached answer is scoped to when none is active.

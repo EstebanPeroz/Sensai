@@ -68,12 +68,14 @@ sensai/
     └── memory/                    # Repository + Memento
         ├── history_repository.py   # conversation history interface
         ├── history.py              # DB-backed conversation history
-        ├── semantic_cache_repository.py  # semantic cache interface
-        ├── semantic_cache.py       # Redis-backed semantic cache
         ├── profile.py
         ├── vector_index.py
         ├── ingest.py                # chunking + embeddings for RAG
         └── memento.py               # snapshots backing /branch and /export
+    │
+    └── semantic/                  # Repository
+        ├── cache_repository.py     # semantic cache interface
+        └── cache.py                # Redis-backed semantic cache
 ```
 
 ## Design patterns, by package
@@ -123,14 +125,17 @@ sensai/
   storage interface (`history_repository.py` for the conversation history),
   so the history, user profile and RAG stores stay independent;
   `history.py` (conversation history) and `profile.py` (user profile) are
-  concrete repositories. `semantic_cache.py` stores past answers in Redis
-  with their query embedding and a TTL, scoped by model, persona and subject
-  (`semantic_cache_repository.py` is its interface); the
-  `precompute/semantic_cache.py` link looks it up and short-circuits the
-  inbound chain on a hit. `vector_index.py` + `ingest.py` back
+  concrete repositories. `vector_index.py` + `ingest.py` back
   the RAG feature (chunking and embedding on ingest, similarity search at
   query time). `memento.py` captures session snapshots, which is what
   `/branch` (fork a session) and `/export` (serialize a session) operate on.
+
+- **`semantic/` — Repository.** Everything the semantic cache needs is grouped
+  here, apart from the conversation and the core. `cache.py` stores past
+  answers in Redis with their query embedding and a TTL, scoped by model,
+  persona and subject (`cache_repository.py` is its interface); the
+  `precompute/semantic_cache.py` link looks it up and short-circuits the
+  inbound chain on a hit.
 
 ## Configuration surface
 

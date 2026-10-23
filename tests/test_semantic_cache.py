@@ -9,8 +9,8 @@ import redis
 from sensai.config.settings import CacheSettings
 from sensai.error import SensaiError
 from sensai.llm.embedder import Embedder
-from sensai.memory.semantic_cache import KEY_PREFIX, RedisSemanticCache
-from sensai.memory.semantic_cache_repository import CacheScope, SemanticCacheRepository
+from sensai.semantic.cache import KEY_PREFIX, RedisSemanticCache
+from sensai.semantic.cache_repository import CacheScope, SemanticCacheRepository
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence

@@ -10,7 +10,7 @@ import redis
 from sensai.config.settings import LLMSettings, OllamaSettings, Settings
 from sensai.core.core import Core
 from sensai.llm.error import ModelError
-from sensai.memory.semantic_cache import RedisSemanticCache
+from sensai.semantic.cache import RedisSemanticCache
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

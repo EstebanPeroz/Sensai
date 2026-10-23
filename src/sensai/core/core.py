@@ -20,11 +20,11 @@ from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
-from sensai.memory.semantic_cache import RedisSemanticCache
 from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
 from sensai.rag.indexer import Indexer
 from sensai.rag.retrievial_rag import Retrieval
+from sensai.semantic.cache import RedisSemanticCache
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
 from sensai.tools.web import web_tools
@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
     from sensai.config.settings import Settings
     from sensai.memory.persistent_db.adapter import PersistentDatabase
-    from sensai.memory.semantic_cache_repository import SemanticCacheRepository
+    from sensai.semantic.cache_repository import SemanticCacheRepository
 
 REDIS_TIMEOUT = 1
 

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
     from sensai.config.settings import CacheSettings
     from sensai.llm.embedder import Embedder
-    from sensai.memory.semantic_cache_repository import CacheScope
+    from sensai.semantic.cache_repository import CacheScope
 
 KEY_PREFIX = "sensai:cache:"
 SCAN_COUNT = 1000
