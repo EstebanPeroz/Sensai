@@ -38,7 +38,7 @@ def db() -> Iterator[MagicMock]:
 @pytest.fixture
 def redis_client() -> Iterator[MagicMock]:
     client = MagicMock()
-    with patch("sensai.core.core.redis.Redis.from_url", return_value=client):
+    with patch("sensai.semantic.connection.redis.Redis.from_url", return_value=client):
         yield client
 
 

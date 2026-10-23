@@ -1,8 +1,6 @@
 import contextlib
 from typing import TYPE_CHECKING
 
-import redis
-
 from sensai import ui
 from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
@@ -24,7 +22,7 @@ from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
 from sensai.rag.indexer import Indexer
 from sensai.rag.retrievial_rag import Retrieval
-from sensai.semantic.cache import RedisSemanticCache
+from sensai.semantic.connection import connect_cache
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
 from sensai.tools.web import web_tools
@@ -34,9 +32,6 @@ if TYPE_CHECKING:
 
     from sensai.config.settings import Settings
     from sensai.memory.persistent_db.adapter import PersistentDatabase
-    from sensai.semantic.cache_repository import SemanticCacheRepository
-
-REDIS_TIMEOUT = 1
 
 
 class Core:
@@ -72,7 +67,7 @@ class Core:
         web = web_tools(settings.web, embedder) if embedder is not None else []
         self._tool_manager = ToolManager([*build_tools(), *web], disabled=settings.features.disabled_in("tools"))
         self._react = ReAct(self._provider_manager, self._tool_manager)
-        cache = self._connect_cache(embedder) if embedder is not None else None
+        cache = connect_cache(settings.cache, embedder) if embedder is not None else None
         self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, cache)
         self._command_registry = self._build_command_registry(db)
 
@@ -163,20 +158,6 @@ class Core:
             )
             raise ModelError(err)
         return Embedder(provider, embedding_model)
-
-    def _connect_cache(self, embedder: Embedder) -> SemanticCacheRepository | None:
-        """Build the semantic cache, or None if its Redis server is unreachable: answers are then not cached."""
-        client = redis.Redis.from_url(
-            self._settings.cache.redis_url,
-            socket_connect_timeout=REDIS_TIMEOUT,
-            socket_timeout=REDIS_TIMEOUT,
-        )
-        try:
-            client.ping()
-        except redis.RedisError:
-            client.close()
-            return None
-        return RedisSemanticCache(client, self._settings.cache, embedder)
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""
