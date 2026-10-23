@@ -1,0 +1,26 @@
+# Qdrant, the vector database holding the RAG chunks.
+#
+# Started with `docker compose up -d`, it answers on localhost:6333 and keeps
+# its data in the `qdrant_data` volume: a container removed and recreated finds
+# the indexed documents again, which `docker run` without a volume does not.
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.18.1
+    container_name: sensai-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"  # REST API, and the dashboard on /dashboard
+      - "6334:6334"  # gRPC, which the client uses with prefer_grpc=True
+    volumes:
+      - qdrant_data:/qdrant/storage
+    # The image carries no curl or wget, so the check opens the port through
+    # bash instead: a listening REST API is all this needs to know.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/6333"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  qdrant_data:

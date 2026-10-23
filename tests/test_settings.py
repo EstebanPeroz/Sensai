@@ -8,6 +8,7 @@ from sensai.config.settings import (
     ConfigError,
     LLMSettings,
     OllamaSettings,
+    RagDBSettings,
     Settings,
     WebSettings,
     default_settings_file,
@@ -29,8 +30,9 @@ class TestPackagedSettings:
         template = resources.files("sensai.config").joinpath("settings.toml.template")
         settings = load_settings(Path(str(template)))
 
-        assert settings.llm.embedding_model == "nomic-embed-text"
+        assert settings.llm.embedding_model == "nomic-embed-text:latest"
         assert settings.llm.providers == {"ollama": OllamaSettings()}
+        assert settings.db.rag.location == "http://localhost:6333"
         assert settings.web == WebSettings()
 
     def test_default_file_is_the_template_without_local_settings(
@@ -82,6 +84,27 @@ class TestEmbeddingModel:
         assert settings.llm.embedding_model == "embeddinggemma"
 
 
+class TestRagDatabase:
+    def test_is_read_from_the_db_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[db]\nrag.location = "http://qdrant:6333"\n'))
+
+        assert settings.db.rag.location == "http://qdrant:6333"
+
+    def test_a_missing_table_is_not_an_error(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "")).db.rag == RagDBSettings()
+
+    def test_the_default_is_a_usable_url(self) -> None:
+        assert RagDBSettings().location == "http://localhost:6333"
+
+    def test_it_does_not_disturb_the_persistent_database(self, tmp_path: Path) -> None:
+        content = '[db]\npersistent.url = "sqlite:///main.db"\nrag.location = "chunks_qdrant"\n'
+
+        settings = load_settings(write_config(tmp_path, content))
+
+        assert settings.db.persistent.url == "sqlite:///main.db"
+        assert settings.db.rag.location == "chunks_qdrant"
+
+
 class TestWeb:
     def test_is_read_from_web_table(self, tmp_path: Path) -> None:
         content = '[web]\napi_base_url = "https://example.com"\napi_key = "secret"\ntimeout = 3\n'
@@ -105,6 +128,9 @@ class TestValidation:
             ('llm = "x"\n', "llm must be a table"),
             ('[llm]\nollama = "x"\n', "ollama must be a table"),
             ('[llm]\nembedding_model = ""\n', "llm.embedding_model must be a non-empty string"),
+            ('[db]\nrag.location = ""\n', "db.rag.location must be a non-empty string"),
+            ('[db]\nrag.url = "x"\n', "unexpected keyword argument 'url'"),
+            ('[db]\nrag = "x"\n', "rag must be a table"),
             ('[llm.ollama]\nbase_url = ["a"]\n', "llm.ollama.base_url must be a non-empty string"),
             ('[llm.ollama]\nbase_url = "http://"\n', "llm.ollama.base_url must be an http\\(s\\) URL with a host"),
             ('[llm.ollama]\nbase_url = "localhost:11434"\n', "llm.ollama.base_url must be an http\\(s\\) URL"),
