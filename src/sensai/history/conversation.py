@@ -1,4 +1,6 @@
 import threading
+from dataclasses import replace
+from functools import partial
 from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
@@ -7,31 +9,40 @@ from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from uuid import UUID
 
+    from sensai.core.events import EventBus
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
     from sensai.llm.thinking.react import ReAct
+    from sensai.monitoring.interaction import Interaction
     from sensai.ui.adapter import UIAdapter
 
 
 class Conversation:
-    """Drives a chat exchange with a provider, streaming its response back to a UI."""
+    """Drives a chat exchange with a provider, streaming its response back to a UI.
+
+    Every call to the model, whatever its outcome, is emitted on `events` as an `Interaction`.
+    """
 
     _react: ReAct
     _persona_manager: PersonaManager
     _provider_manager: ProviderManager
+    _events: EventBus
     history: History
     uuid: UUID | None = None
 
-    def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager, react: ReAct) -> None:
+    def __init__(
+        self, provider_manager: ProviderManager, persona_manager: PersonaManager, react: ReAct, events: EventBus
+    ) -> None:
         """Init method to create the conversation callss."""
         self._react = react
         self._provider_manager = provider_manager
         self.history = History()
         self._persona_manager = persona_manager
+        self._events = events
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Init the conversation in the DB if first message."""
@@ -62,14 +73,24 @@ class Conversation:
         self.history.insert(Message(uuid=uuid, role=role, content=content))
         return True
 
+    def _emit_interaction(self, interaction: Interaction, *, persona: str | None, ui: UIAdapter) -> None:
+        """Publish `interaction`, tagged with this branch and `persona`; a listener failing must not break the chat."""
+        try:
+            self._events.emit(replace(interaction, branch_id=self.uuid, persona=persona))
+        except SensaiError as err:
+            ui.send_system_message(f"Failed to log interaction: {err}")
+
     def _stream_chunks(
         self,
-        chunks: Iterator[ChatResponse],
+        chunks: Generator[ChatResponse],
         stop_streaming: threading.Event,
         stream_done: threading.Event,
         ui: UIAdapter,
     ) -> None:
-        """Forward chunks to the UI until they run out or a stop is requested."""
+        """Forward chunks to the UI until they run out or a stop is requested.
+
+        `chunks` is closed on the way out, so that a stopped stream ends its pending calls to the model.
+        """
         try:
             content: str = ""
             for chunk in chunks:
@@ -85,7 +106,10 @@ class Conversation:
         except SensaiError as err:
             ui.send_error(str(err))
         finally:
-            stream_done.set()
+            try:
+                chunks.close()
+            finally:
+                stream_done.set()
 
     def chat(self, user_input: str, ui: UIAdapter) -> None:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
@@ -96,9 +120,8 @@ class Conversation:
         persona = self._persona_manager.active_persona()
         if persona is not None:
             messages = [persona.to_payload(), *messages]
-        chunks = self._react.generate_answer(messages)
-        if chunks is None:
-            return
+        on_interaction = partial(self._emit_interaction, persona=persona.name if persona is not None else None, ui=ui)
+        chunks = self._react.generate_answer(messages, on_interaction)
 
         stop_streaming = threading.Event()
         stream_done = threading.Event()

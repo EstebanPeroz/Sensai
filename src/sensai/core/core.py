@@ -7,6 +7,7 @@ from sensai.commands.data_transfer import Export, Import
 from sensai.commands.effort import Effort
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.commands.tools import ToolsCommand
+from sensai.core.events import EventBus
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.embedder import Embedder
@@ -18,6 +19,7 @@ from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.monitoring.logger import InteractionLogger
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
 from sensai.tools.web import web_tools
@@ -39,6 +41,7 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _events: EventBus
     _tool_manager: ToolManager
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
@@ -59,11 +62,13 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
+        self._events = EventBus()
+        InteractionLogger(db, settings.logging).attach(self._events)
         self._tool_manager = ToolManager(
             [*build_tools(), *self._build_web_tools()], disabled=settings.features.disabled_in("tools")
         )
         self._react = ReAct(self._provider_manager, self._tool_manager)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, self._events)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
