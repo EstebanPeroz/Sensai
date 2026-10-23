@@ -1,6 +1,8 @@
 import contextlib
 from typing import TYPE_CHECKING
 
+import redis
+
 from sensai import ui
 from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
@@ -18,6 +20,7 @@ from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.memory.semantic_cache import RedisSemanticCache
 from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
 from sensai.rag.indexer import Indexer
@@ -31,7 +34,9 @@ if TYPE_CHECKING:
 
     from sensai.config.settings import Settings
     from sensai.memory.persistent_db.adapter import PersistentDatabase
-    from sensai.tools.tool import Tool
+    from sensai.memory.semantic_cache_repository import SemanticCacheRepository
+
+REDIS_TIMEOUT = 1
 
 
 class Core:
@@ -63,11 +68,12 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        self._tool_manager = ToolManager(
-            [*build_tools(), *self._build_web_tools()], disabled=settings.features.disabled_in("tools")
-        )
+        embedder = self._build_embedder()
+        web = web_tools(settings.web, embedder) if embedder is not None else []
+        self._tool_manager = ToolManager([*build_tools(), *web], disabled=settings.features.disabled_in("tools"))
         self._react = ReAct(self._provider_manager, self._tool_manager)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
+        cache = self._connect_cache(embedder) if embedder is not None else None
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, cache)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
@@ -144,17 +150,33 @@ class Core:
         collection = Collection.open(self._settings.db.rag.location)
         return Indexer(indexation, collection), Retrieval(indexation, collection, provider)
 
-    def _build_web_tools(self) -> list[Tool]:
-        """Build the web search and fetch tools, which need an embedding model."""
+    def _build_embedder(self) -> Embedder | None:
+        """Build the embedder shared by the web tools and the semantic cache, or None without an embedding model."""
         embedding_model = self._settings.llm.embedding_model
         if embedding_model is None:
-            return []
+            return None
         provider = self._provider_manager.get_provider(embedding_model)
         if provider is None:
-            err = f"the web tools need the embedding model '{embedding_model}', which no provider serves"
+            err = (
+                f"the web tools and the semantic cache need the embedding model '{embedding_model}',"
+                " which no provider serves"
+            )
             raise ModelError(err)
-        embedder = Embedder(provider, embedding_model)
-        return web_tools(self._settings.web, embedder)
+        return Embedder(provider, embedding_model)
+
+    def _connect_cache(self, embedder: Embedder) -> SemanticCacheRepository | None:
+        """Build the semantic cache, or None if its Redis server is unreachable: answers are then not cached."""
+        client = redis.Redis.from_url(
+            self._settings.cache.redis_url,
+            socket_connect_timeout=REDIS_TIMEOUT,
+            socket_timeout=REDIS_TIMEOUT,
+        )
+        try:
+            client.ping()
+        except redis.RedisError:
+            client.close()
+            return None
+        return RedisSemanticCache(client, self._settings.cache, embedder)
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""
