@@ -104,7 +104,8 @@ class MCPServerSession:
 
     def call_tool_sync(self, name: str, arguments: dict[str, object]) -> str:
         """Call one MCP tool synchronously in a self-contained MCP lifecycle."""
-        return anyio.run(self._call_tool_in_new_session, name, arguments)
+        with anyio.from_thread.start_blocking_portal() as portal:
+            return portal.call(self._call_tool_in_new_session, name, arguments)
 
     async def _call_tool_in_new_session(self, name: str, arguments: dict[str, object]) -> str:
         """Start, call, and close a temporary session in one event loop."""

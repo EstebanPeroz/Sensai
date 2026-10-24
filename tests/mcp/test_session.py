@@ -141,6 +141,28 @@ async def test_calls_tool_and_returns_one_text_result() -> None:
 
 
 @pytest.mark.anyio
+async def test_calls_tool_sync_from_an_active_event_loop() -> None:
+    client = FakeClientSession()
+    client.call_result = type(
+        "CallResult",
+        (),
+        {"isError": False, "content": [type("Text", (), {"type": "text", "text": "Echoed message"})()]},
+    )()
+    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    client_context = AsyncContext(client)
+
+    with (
+        patch("sensai.mcp.session.stdio_client", return_value=AsyncContext(("read", "write"))),
+        patch("sensai.mcp.session.ClientSession", return_value=client_context),
+    ):
+        result = session.call_tool_sync("echo", {"message": "hello"})
+
+    assert result == "Echoed message"
+    assert client.initialized is True
+    assert client_context.closed is True
+
+
+@pytest.mark.anyio
 async def test_converts_invalid_arguments_to_mcp_call_error() -> None:
     client = FakeClientSession()
     client.call_error = ValueError("invalid arguments")
