@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlsplit
 
 from sensai.error import SensaiError
+from sensai.mcp.config import MCPServerConfig
 
 if TYPE_CHECKING:
     from importlib.resources.abc import Traversable
@@ -144,6 +145,7 @@ class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
     llm: LLMSettings = field(default_factory=LLMSettings)
+    mcp: MCPServerConfig | None = None
     web: WebSettings = field(default_factory=WebSettings)
     db: DBSettings = field(default_factory=DBSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
@@ -180,18 +182,21 @@ def load_settings(path: Path | None = None) -> Settings:
     else:
         try:
             llm = _pop_table(data, "llm")
+            mcp_data = _pop_table(data, "mcp")
+            db = _pop_table(data, "db")
             providers: dict[str, ProviderSettings] = {
                 provider.name: provider(**_pop_table(llm, provider.name))
                 for provider in PROVIDERS
                 if provider.name in llm
             }
+            mcp = MCPServerConfig(**mcp_data) if mcp_data else None
             web = WebSettings(**_pop_table(data, "web"))
-            db = _pop_table(data, "db")
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
             rag = RagDBSettings(**_pop_table(db, "rag"))
             features = FeatureSettings(**_pop_table(data, "features"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
+                mcp=mcp,
                 web=web,
                 db=DBSettings(**db, persistent=persistent, rag=rag),
                 features=features,
