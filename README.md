@@ -38,6 +38,36 @@ You can also call uv directly, without activating the virtualenv:
 uv run sensai             # run the program
 ```
 
+## MCP server configuration
+
+Sensai currently starts one MCP server over stdio. Configure it in the settings file with
+`command`, `args`, `enabled`, `startup_timeout`, and `call_timeout`.
+
+The local deterministic test server exposes an `echo` tool:
+
+```toml
+[mcp]
+command = "uv"
+args = ["run", "python", "tests/mcp/fixtures/tiny_server.py"]
+enabled = true
+startup_timeout = 10
+call_timeout = 30
+```
+
+The tested pre-existing MCP server is the official filesystem server. It exposes tools such as
+`list_allowed_directories` and is started with `npx`:
+
+```toml
+[mcp]
+command = "npx"
+args = ["--yes", "@modelcontextprotocol/server-filesystem", "/tmp/sensai-mcp-demo"]
+enabled = true
+startup_timeout = 30
+call_timeout = 30
+```
+
+The configured directory must exist and is the only directory the filesystem server may access.
+
 ## Development
 
 ```sh

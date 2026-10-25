@@ -20,18 +20,18 @@ if TYPE_CHECKING:
 class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
-    _react: ReAct
     _persona_manager: PersonaManager
     _provider_manager: ProviderManager
     history: History
+    _react: ReAct
     uuid: UUID | None = None
 
     def __init__(self, provider_manager: ProviderManager, persona_manager: PersonaManager, react: ReAct) -> None:
         """Init method to create the conversation callss."""
-        self._react = react
         self._provider_manager = provider_manager
         self.history = History()
         self._persona_manager = persona_manager
+        self._react = react
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Init the conversation in the DB if first message."""
@@ -78,7 +78,6 @@ class Conversation:
                 if chunk.content is not None:
                     content += chunk.content
                 ui.send_ai_response(chunk)
-
                 if chunk.error is not None:
                     break
             self.add_message(Role.ASSISTANT, content, ui)
