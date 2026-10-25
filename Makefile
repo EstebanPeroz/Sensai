@@ -6,7 +6,7 @@ all: install
 SETTINGS := src/sensai/config/settings.toml
 
 install: $(SETTINGS)
-	uv sync --locked
+	uv sync --locked --all-packages
 	uv run pre-commit install
 
 $(SETTINGS):
@@ -14,6 +14,12 @@ $(SETTINGS):
 
 run: qdrant
 	uv run $(NAME) --model ${MODEL}
+
+run-server:
+	uv run --package sensai-server sensai-server
+
+run-tui:
+	uv run --package sensai-tui sensai-tui
 
 qdrant:
 	docker compose up -d --wait
@@ -37,4 +43,4 @@ format:
 lock:
 	uv lock
 
-.PHONY: all install run qdrant qdrant-stop tests lint format lock
+.PHONY: all install run run-server run-tui qdrant qdrant-stop tests lint format lock
