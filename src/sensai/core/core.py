@@ -1,6 +1,8 @@
 import contextlib
 from typing import TYPE_CHECKING
 
+import anyio
+
 from sensai import ui
 from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
@@ -16,6 +18,7 @@ from sensai.llm.persona import DuplicatePersonaError
 from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
+from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.rag.collection import Collection
@@ -42,12 +45,14 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _mcp_client: MCPClient | None
     _tool_manager: ToolManager
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
         self._ui = ui
         self._settings = settings
+        self._mcp_client = MCPClient(settings.mcp) if settings.mcp is not None else None
 
         db = get_db()
         if db is None:
@@ -63,15 +68,20 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         embedder = self._build_embedder()
-        self._tool_manager = ToolManager(
-            build_tools(settings, embedder), disabled=settings.features.disabled_in("tools")
-        )
+        tools = build_tools(settings, embedder)
+        if self._mcp_client is not None:
+            tools.extend(anyio.run(self._mcp_client.start))
+        self._tool_manager = ToolManager(tools, disabled=settings.features.disabled_in("tools"))
         self._react = ReAct(self._provider_manager, self._tool_manager)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
         self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, cache)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
+        """Run the application."""
+        self._run_application()
+
+    def _run_application(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
 
         Meant to run off the main thread, since it blocks on `ui` being open, which

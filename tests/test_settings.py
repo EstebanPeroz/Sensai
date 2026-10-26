@@ -65,6 +65,44 @@ class TestDefaults:
     def test_empty_file_gives_defaults(self, tmp_path: Path) -> None:
         assert load_settings(write_config(tmp_path, "")) == Settings()
 
+    def test_missing_mcp_configuration_gives_no_mcp_server(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "")).mcp is None
+
+
+class TestMCP:
+    def test_loads_one_configured_server(self, tmp_path: Path) -> None:
+        settings = load_settings(
+            write_config(
+                tmp_path,
+                '[mcp]\ncommand = "uv"\nargs = ["run", "server.py"]\nstartup_timeout = 5\ncall_timeout = 20\n',
+            ),
+        )
+
+        assert settings.mcp is not None
+        assert settings.mcp.command == "uv"
+        assert settings.mcp.args == ["run", "server.py"]
+        assert settings.mcp.enabled is True
+        assert settings.mcp.startup_timeout == 5
+        assert settings.mcp.call_timeout == 20
+
+    def test_loads_disabled_server(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[mcp]\ncommand = "server"\nenabled = false\n'))
+
+        assert settings.mcp is not None
+        assert settings.mcp.enabled is False
+
+    @pytest.mark.parametrize(
+        ("content", "reason"),
+        [
+            ('[mcp]\ncommand = ""\n', "command must be a non-empty string"),
+            ('[mcp]\ncommand = "server"\nstartup_timeout = 0\n', "startup timeout must be greater than zero"),
+            ('[mcp]\ncommand = "server"\ncall_timeout = -1\n', "call timeout must be greater than zero"),
+        ],
+    )
+    def test_invalid_mcp_values_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:
+        with pytest.raises(ConfigError, match=f"invalid settings in .*{reason}"):
+            load_settings(write_config(tmp_path, content))
+
 
 class TestProviders:
     def test_no_provider_table_gives_no_provider(self, tmp_path: Path) -> None:

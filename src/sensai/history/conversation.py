@@ -23,11 +23,11 @@ if TYPE_CHECKING:
 class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI."""
 
-    _react: ReAct
     _persona_manager: PersonaManager
     _provider_manager: ProviderManager
     _cache: SemanticCacheRepository | None
     history: History
+    _react: ReAct
     uuid: UUID | None = None
 
     def __init__(
@@ -97,7 +97,6 @@ class Conversation:
                 if chunk.content is not None:
                     content += chunk.content
                 ui.send_ai_response(chunk)
-
                 if chunk.error is not None:
                     failed = True
                     break
