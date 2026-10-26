@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
 from sensai.llm.responses import ChatResponse
-from sensai.monitoring.interaction import InteractionStatus
+from sensai.monitoring.interaction import InteractionStatus, ignore_interaction
 from sensai.monitoring.recorder import InteractionRecorder
 
 if TYPE_CHECKING:
@@ -36,10 +36,6 @@ TOOL_REFUSAL = "tool needed: no"
 SEARCH_AGAIN = "answer found: no"
 
 
-def _discard(_: Interaction) -> None:
-    """Ignore a call to the model, when nobody records them."""
-
-
 class ReAct:
     """Answer with the ReAct method: the model thinks, acts with a tool, observes the result, then starts again."""
 
@@ -59,7 +55,7 @@ class ReAct:
         self._max_iterations = max_iterations
 
     def generate_answer(
-        self, messages: list[dict], on_interaction: Callable[[Interaction], None] = _discard
+        self, messages: list[dict], on_interaction: Callable[[Interaction], None] = ignore_interaction
     ) -> Generator[ChatResponse]:
         """Stream the answer to `messages`, repeating Think, Act and Observe until the model answers.
 

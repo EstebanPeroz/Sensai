@@ -35,3 +35,7 @@ class Interaction:
     metrics: ChatMetrics = field(default_factory=ChatMetrics)
     id: UUID = field(default_factory=uuid4)
     created_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
+
+
+def ignore_interaction(_: Interaction) -> None:
+    """Ignore a call to the model, when nobody records them."""

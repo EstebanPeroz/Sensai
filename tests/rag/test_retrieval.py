@@ -1,10 +1,12 @@
 import pytest
 
+from sensai.llm.error import RequestCallError
+from sensai.monitoring.interaction import Interaction, InteractionStatus
 from sensai.rag.collection import Collection, chunk_point
 from sensai.rag.error import EmbeddingError, VectorStoreError
 from sensai.rag.indexation_rag import Indexation
 from sensai.rag.retrievial_rag import Retrieval
-from tests.rag.fakes import FailingEmbedder, FakeAnswerer, FakeIndexation, SilentAnswerer
+from tests.rag.fakes import FailingEmbedder, FakeAnswerer, FakeIndexation, SilentAnswerer, UnreachableAnswerer
 from tests.rag.seeding import seed
 
 ABOUT_ENGINES = "The engine burns fuel."
@@ -189,3 +191,43 @@ class TestAnswer:
 
         system = indexed._answerer.payloads[0]["messages"][0]["content"]
         assert ABOUT_ENGINES in system
+
+
+class TestLogging:
+    def test_a_call_is_logged_with_its_prompt_and_answer(
+        self, collection: Collection, indexation: FakeIndexation
+    ) -> None:
+        logged: list[Interaction] = []
+        messages = [{"role": "user", "content": "x"}]
+
+        Retrieval(indexation, collection, FakeAnswerer("Low."), logged.append).generation(messages)
+
+        assert len(logged) == 1
+        assert (logged[0].status, logged[0].model) == (InteractionStatus.OK, "qwen2.5:1.5b")
+        assert (logged[0].request, logged[0].response) == (messages, "Low.")
+
+    def test_an_error_from_the_model_is_logged(self, collection: Collection, indexation: FakeIndexation) -> None:
+        logged: list[Interaction] = []
+
+        Retrieval(indexation, collection, FakeAnswerer(error="model is gone"), logged.append).generation([])
+
+        assert (logged[0].status, logged[0].error) == (InteractionStatus.ERROR, "model is gone")
+
+    def test_an_unreachable_model_is_logged_then_raised(
+        self, collection: Collection, indexation: FakeIndexation
+    ) -> None:
+        logged: list[Interaction] = []
+        retrieval = Retrieval(indexation, collection, UnreachableAnswerer(), logged.append)
+
+        with pytest.raises(RequestCallError):
+            retrieval.generation([])
+
+        assert logged[0].status is InteractionStatus.ERROR
+        assert "connection refused" in (logged[0].error or "")
+
+    def test_nothing_found_logs_nothing(self, collection: Collection, indexation: FakeIndexation) -> None:
+        logged: list[Interaction] = []
+
+        Retrieval(indexation, collection, FakeAnswerer(), logged.append).answer("anything")
+
+        assert logged == []

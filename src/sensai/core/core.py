@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
     from sensai.config.settings import Settings
     from sensai.memory.persistent_db.adapter import PersistentDatabase
+    from sensai.monitoring.interaction import Interaction
 
 
 class Core:
@@ -160,7 +161,14 @@ class Core:
             raise ModelError(msg)
         indexation = Indexation(provider, model)
         collection = Collection.open(self._settings.db.rag.location)
-        return Indexer(indexation, collection), Retrieval(indexation, collection, provider)
+        return Indexer(indexation, collection), Retrieval(indexation, collection, provider, self._emit_interaction)
+
+    def _emit_interaction(self, interaction: Interaction) -> None:
+        """Publish `interaction` on the event bus; a listener failing must not lose the answer it records."""
+        try:
+            self._events.emit(interaction)
+        except SensaiError as err:
+            self._ui.send_system_message(f"Failed to log interaction: {err}")
 
     def _build_embedder(self) -> Embedder | None:
         """Build the embedder shared by the web tools and the semantic cache, or None without an embedding model."""
