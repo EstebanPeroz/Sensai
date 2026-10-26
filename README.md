@@ -4,7 +4,7 @@
 
 - [uv](https://docs.astral.sh/uv/)
 - `make`
-- Docker, for the vector database the RAG indexes into
+- Docker, for the vector database the RAG indexes into and the Redis server of the semantic cache
 
 ## Quick start
 
@@ -31,6 +31,12 @@ Without Docker, pointing `db.rag.location` in `settings.toml` at a directory
 (`"rag_qdrant"`) runs Qdrant embedded in the process instead. It needs no
 server, but it locks that directory for one process at a time: the test suite
 and a running sensai cannot share one.
+
+## Semantic cache
+
+Answers are cached in Redis, which `make run` starts along with Qdrant (`make qdrant` and `make qdrant-stop` start and
+stop both). The cached answers live in the `sensai_redis-data` Docker volume. Without a reachable Redis server, sensai
+runs without the cache.
 
 You can also call uv directly, without activating the virtualenv:
 

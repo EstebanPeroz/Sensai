@@ -36,6 +36,7 @@ Current pain points Sensai must address:
 | 11 | Delivery | Sharing the result with stakeholders | Export & Publication · Web UI |
 | 12 | Automation | The same report needs to go out every week | Scheduling |
 | 13 | Continuous improvement | Prompts get refined over time based on feedback | Prompt versioning · Semantics · Automated Prompt Optimization |
+| 14 | Repeated questions | Asking again a question already answered, possibly worded differently | Semantic cache |
 
 Sections 3.x below detail, feature by feature, at least two user stories
 covering this workflow.
@@ -400,6 +401,27 @@ research, without having to ask.
 Example: An answer comes back instantly with no source, and a glance at the
 input box tells you the effort was set to off.
 
+### 3.8 Semantic cache
+
+**US-49** — As an analyst, I want a question I already asked, even worded
+differently, to be answered instantly from the previous answer, so that I
+don't wait for the model to produce the same answer twice.
+Example: You asked "What is the EBITDA margin?" this morning; asking "what's
+the EBITDA margin?" in the afternoon returns the same answer right away.
+
+**US-50** — As an analyst, I want a cached answer to be reused only when it
+still fits, meaning the same model, the same persona and a similar preceding
+discussion, so that the cache never hands me an answer meant for another
+context.
+Example: "Give me an example" after a question about Redis must not return
+the example given earlier after a question about PostgreSQL.
+
+**US-51** — As an analyst, I want Sensai to keep working normally when the
+cache is unavailable, so that a missing cache server only costs speed, never
+an answer.
+Example: The Redis server is not running; every question still gets an
+answer from the model, just without the cache speed-up.
+
 ## 4. User Scenarios
 
 ### Scenario 1 — Adjusting the thinking effort during an investigation
@@ -433,3 +455,35 @@ the ones that depend on current data, within the same session.
 7. **Outcome.** The analyst keeps a low effort for simple questions and a
    high effort for questions that depend on recent data, and always knows
    which mode produced a given answer.
+
+### Scenario 2 — Asking the same questions across a day
+
+**Persona:** the Analyst, answering stakeholder questions about the same
+quarterly report throughout the day.
+**Goal:** get instant answers to questions already answered, without ever
+getting an answer that does not fit the current context.
+**Covers:** US-49, US-50, US-51.
+
+1. **Starting the session.** The analyst runs `docker compose up redis`,
+   then opens Sensai. The semantic cache is on, as an embedding model is
+   configured and the Redis server answers.
+2. **First answer.** The analyst asks "What is the EBITDA margin?". The
+   model answers as usual, and the complete answer is stored in the cache
+   for 24 hours.
+3. **Same question, other words.** Later, a colleague asks the same thing
+   and the analyst types "what's the EBITDA margin?". The query is close
+   enough to the first one, so the answer comes back instantly, and is saved
+   to the conversation like any other.
+4. **Follow-up in another context.** The analyst asks "What is the net
+   margin?" then "Give me an example". Although "Give me an example" was
+   already asked earlier in the day, it followed another question: the
+   previous user messages differ, so the cache misses and the model answers.
+5. **Changing persona.** The analyst switches to another persona with
+   `/persona`. Answers cached under the previous persona are no longer
+   served: the same question gets a new answer, written in the new
+   persona's style.
+6. **Cache down.** The next day, the analyst forgets to start Redis. Sensai
+   opens normally and every question is answered by the model, only without
+   the instant answers.
+7. **Outcome.** Repeated questions cost nothing, and the analyst never
+   receives a cached answer meant for another model, persona or discussion.

@@ -128,3 +128,14 @@ class TestSetModel:
 
         assert calls(manager) == [("load", "a"), ("load", "b"), ("unload", "a")]
         assert manager.provider().current_model() == "b"
+
+
+class TestGetProvider:
+    def test_untagged_model_resolves_to_latest(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(FakeAdapter, "models", ["qwen3:1.7b", "nomic-embed-text:latest"])
+        monkeypatch.setitem(provider_manager.PROVIDER_ADAPTERS, "ollama", FakeAdapter)
+        manager = ProviderManager(LLMSettings(providers={"ollama": OllamaSettings()}))
+
+        assert manager.get_provider("nomic-embed-text") is not None
+        assert manager.get_provider("qwen3:1.7b") is not None
+        assert manager.get_provider("qwen3") is None

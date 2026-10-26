@@ -59,6 +59,32 @@ class LLMSettings:
 
 
 @dataclass
+class CacheSettings:
+    """Settings of the [cache] table: the Redis server backing the semantic cache and when an answer is reused."""
+
+    redis_url: str = field(default="redis://localhost:6379/0", repr=False)
+    similarity_threshold: float = 0.95
+    ttl: int = 86400
+
+    def __post_init__(self) -> None:
+        """Check the values, which come unchecked from the settings file."""
+        _check_name(self.redis_url, "cache.redis_url")
+        _check_redis_url(self.redis_url, "cache.redis_url")
+        if isinstance(self.similarity_threshold, bool) or not isinstance(self.similarity_threshold, (int, float)):
+            msg = "cache.similarity_threshold must be a number"
+            raise TypeError(msg)
+        if not 0 < self.similarity_threshold <= 1:
+            msg = f"cache.similarity_threshold must be in ]0, 1], got {self.similarity_threshold}"
+            raise ValueError(msg)
+        if isinstance(self.ttl, bool) or not isinstance(self.ttl, int):
+            msg = "cache.ttl must be an integer"
+            raise TypeError(msg)
+        if self.ttl <= 0:
+            msg = f"cache.ttl must be a positive number of seconds, got {self.ttl}"
+            raise ValueError(msg)
+
+
+@dataclass
 class WebSettings:
     """Settings of the [web] table, used by the web_search and web_fetch tools.
 
@@ -145,6 +171,7 @@ class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
     llm: LLMSettings = field(default_factory=LLMSettings)
+    cache: CacheSettings = field(default_factory=CacheSettings)
     mcp: MCPServerConfig | None = None
     web: WebSettings = field(default_factory=WebSettings)
     db: DBSettings = field(default_factory=DBSettings)
@@ -189,6 +216,7 @@ def load_settings(path: Path | None = None) -> Settings:
                 for provider in PROVIDERS
                 if provider.name in llm
             }
+            cache = CacheSettings(**_pop_table(data, "cache"))
             mcp = MCPServerConfig(**mcp_data) if mcp_data else None
             web = WebSettings(**_pop_table(data, "web"))
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
@@ -196,6 +224,7 @@ def load_settings(path: Path | None = None) -> Settings:
             features = FeatureSettings(**_pop_table(data, "features"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
+                cache=cache,
                 mcp=mcp,
                 web=web,
                 db=DBSettings(**db, persistent=persistent, rag=rag),
@@ -229,4 +258,18 @@ def _check_url(value: str, name: str) -> None:
     except ValueError:
         raise ValueError(msg) from None
     if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ValueError(msg)
+
+
+def _check_redis_url(value: str, name: str) -> None:
+    msg = f"{name} must be a redis://, rediss:// or unix:// URL"
+    parts = urlsplit(value)
+    try:
+        _ = parts.port
+    except ValueError:
+        raise ValueError(msg) from None
+    if parts.scheme == "unix":
+        if not parts.path:
+            raise ValueError(msg)
+    elif parts.scheme not in {"redis", "rediss"} or not parts.hostname:
         raise ValueError(msg)
