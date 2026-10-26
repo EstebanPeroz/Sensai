@@ -10,7 +10,6 @@ class CacheScope:
 
     model: str
     persona: str
-    subject: str | None = None
 
 
 class SemanticCacheRepository(Protocol):
@@ -22,6 +21,3 @@ class SemanticCacheRepository(Protocol):
 
     def store(self, query: str, scope: CacheScope, answer: str, context: str = "") -> None:
         """Cache the answer to a query asked after the given context, within its scope."""
-
-    def clear(self) -> None:
-        """Remove every cached answer."""

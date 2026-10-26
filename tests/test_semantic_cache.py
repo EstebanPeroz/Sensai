@@ -63,11 +63,6 @@ class FakeRedis:
         entry = self.hashes.get(key, {})
         return [entry.get(name) for name in fields]
 
-    def delete(self, *keys: str) -> None:
-        self._check()
-        for key in keys:
-            self.hashes.pop(key, None)
-
     def pipeline(self, *, transaction: bool = True) -> FakePipeline:  # noqa: ARG002
         return FakePipeline(self)
 
@@ -142,6 +137,13 @@ class TestLookup:
 
         assert cache.lookup("explain redis", SCOPE) == "An in-memory store."
 
+    def test_undecodable_answer_misses(self, client: FakeRedis) -> None:
+        cache = make_cache(client)
+        cache.store("what is redis?", SCOPE, "An in-memory store.")
+        next(iter(client.hashes.values()))["answer"] = b"\xff"
+
+        assert cache.lookup("what is redis?", SCOPE) is None
+
     def test_most_similar_answer_wins(self, client: FakeRedis) -> None:
         cache = make_cache(client, similarity_threshold=0.5)
         cache.store("explain redis", SCOPE, "far")
@@ -154,7 +156,6 @@ class TestLookup:
         [
             CacheScope(model="mistral", persona="analyst"),
             CacheScope(model="llama3", persona="teacher"),
-            CacheScope(model="llama3", persona="analyst", subject="databases"),
         ],
     )
     def test_answer_is_not_served_out_of_its_scope(self, client: FakeRedis, other: CacheScope) -> None:
@@ -271,35 +272,8 @@ class TestStore:
 
         assert client.hashes == {}
 
-
-class TestClear:
-    def test_removes_every_scope(self, client: FakeRedis) -> None:
+    def test_text_that_is_not_valid_utf8_round_trips(self, client: FakeRedis) -> None:
         cache = make_cache(client)
-        other = CacheScope(model="mistral", persona="analyst")
-        cache.store("what is redis?", SCOPE, "a")
-        cache.store("what is redis?", other, "b")
+        cache.store("what is redis?", SCOPE, "caf\udce9")
 
-        cache.clear()
-
-        assert cache.lookup("what is redis?", SCOPE) is None
-        assert cache.lookup("what is redis?", other) is None
-
-    def test_removes_every_embedding_model(self, client: FakeRedis) -> None:
-        make_cache(client).store("what is redis?", SCOPE, "a")
-        make_cache(client, embedding_model="mxbai-embed-large").store("what is redis?", SCOPE, "b")
-
-        make_cache(client).clear()
-
-        assert client.hashes == {}
-
-    def test_keeps_keys_outside_the_cache(self, client: FakeRedis) -> None:
-        client.hashes["other:key"] = {}
-
-        make_cache(client).clear()
-
-        assert list(client.hashes) == ["other:key"]
-
-    def test_redis_failure_is_ignored(self, client: FakeRedis) -> None:
-        client.fail = True
-
-        make_cache(client).clear()
+        assert cache.lookup("what is redis?", SCOPE) == "caf\udce9"

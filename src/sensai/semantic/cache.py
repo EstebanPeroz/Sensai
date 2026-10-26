@@ -24,14 +24,16 @@ if TYPE_CHECKING:
 KEY_PREFIX = "sensai:cache:"
 SCAN_COUNT = 1000
 _FIELDS = ("embedding", "context_embedding", "answer")
+# Lets texts holding lone surrogates, such as undecodable terminal input, be cached and read back unchanged.
+_ENCODING_ERRORS = "surrogatepass"
 
 
 class RedisSemanticCache(SemanticCacheRepository):
     """Semantic cache kept in Redis: one hash per answer, holding the query, its embedding and the answer.
 
     Entries expire after the configured TTL. Lookups compare the query embedding with every entry of the scope;
-    a Redis or embedding failure is treated as a miss, so the chat keeps working without the cache. Keys also carry
-    the embedding model, since vectors from different models are not comparable.
+    a Redis or embedding failure, or an answer that cannot be decoded, is treated as a miss, so the chat keeps working
+    without the cache. Keys also carry the embedding model, since vectors from different models are not comparable.
     """
 
     def __init__(self, client: redis.Redis, settings: CacheSettings, embedder: Embedder) -> None:
@@ -68,7 +70,8 @@ class RedisSemanticCache(SemanticCacheRepository):
                     continue
                 score = min(score, self._cosine_similarity(context_embedding, self._unpack(stored_context)))
             if score >= best_score:
-                best_answer, best_score = answer.decode(), score
+                with contextlib.suppress(UnicodeDecodeError):
+                    best_answer, best_score = answer.decode(errors=_ENCODING_ERRORS), score
         return best_answer
 
     def store(self, query: str, scope: CacheScope, answer: str, context: str = "") -> None:
@@ -79,24 +82,17 @@ class RedisSemanticCache(SemanticCacheRepository):
         embedding, context_embedding = embeddings
         key = self._scope_prefix(scope) + uuid.uuid4().hex
         entry: dict[FieldT, EncodableT] = {
-            "query": query,
+            "query": self._encode(query),
             "embedding": self._pack(embedding),
-            "context": context,
+            "context": self._encode(context),
             "context_embedding": self._pack(context_embedding),
-            "answer": answer,
+            "answer": self._encode(answer),
         }
         with contextlib.suppress(redis.RedisError):
             pipeline = self._client.pipeline()
             pipeline.hset(key, mapping=entry)
             pipeline.expire(key, self._ttl)
             pipeline.execute()
-
-    def clear(self) -> None:
-        """Remove every cached answer, whatever its scope or embedding model."""
-        with contextlib.suppress(redis.RedisError):
-            keys = list(self._client.scan_iter(match=KEY_PREFIX + "*", count=SCAN_COUNT))
-            if keys:
-                self._client.delete(*keys)
 
     def _scope_entries(self, scope: CacheScope) -> list[list[bytes | None]]:
         """Return the fields compared on lookup of every entry of the scope, read in a single round trip."""
@@ -114,9 +110,13 @@ class RedisSemanticCache(SemanticCacheRepository):
         return vectors[0], vectors[1] if context else []
 
     def _scope_prefix(self, scope: CacheScope) -> str:
-        fields = (self._embedder.model, scope.model, scope.persona, scope.subject or "")
+        fields = (self._embedder.model, scope.model, scope.persona)
         digest = hashlib.sha256("\0".join(fields).encode()).hexdigest()[:16]
         return f"{KEY_PREFIX}{digest}:"
+
+    @staticmethod
+    def _encode(text: str) -> bytes:
+        return text.encode(errors=_ENCODING_ERRORS)
 
     @staticmethod
     def _pack(vector: Sequence[float]) -> bytes:

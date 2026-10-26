@@ -58,9 +58,6 @@ class FakeCache:
     def store(self, query: str, scope: CacheScope, answer: str, context: str = "") -> None:
         self.stored.append((query, scope, answer, context))
 
-    def clear(self) -> None:
-        self.answers.clear()
-
 
 def chunks(*contents: str, error: str | None = None) -> Iterator[ChatResponse]:
     for content in contents:
