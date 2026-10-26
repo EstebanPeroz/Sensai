@@ -439,8 +439,9 @@ the next pages open without asking until you restart Sensai.
 
 **US-54** — As an analyst, I want a refused tool call to still end with an
 answer, so that saying no doesn't leave my investigation stuck.
-Example: You deny opening a page; the assistant answers from what it had
-already found instead of stopping or trying the same page again.
+Example: You deny opening a page; the assistant is told not to try it again
+and answers from what it had already found instead of stopping. If it still
+asks for the same page, you are asked again and can deny again.
 
 **US-55** — As an analyst, I want to be able to skip a question the
 assistant asks me, so that it can continue when I don't know or don't care
