@@ -1,8 +1,11 @@
-# Qdrant, the vector database holding the RAG chunks.
+# Qdrant, the vector database holding the RAG chunks, and Redis, the store of
+# the semantic cache.
 #
-# Started with `docker compose up -d`, it answers on localhost:6333 and keeps
+# Started with `docker compose up -d`, Qdrant answers on localhost:6333 and keeps
 # its data in the `qdrant_data` volume: a container removed and recreated finds
 # the indexed documents again, which `docker run` without a volume does not.
+# Redis answers on localhost:6379 only, and keeps the cached answers in the
+# `redis-data` volume.
 services:
   qdrant:
     image: qdrant/qdrant:v1.18.1
@@ -22,5 +25,21 @@ services:
       retries: 5
       start_period: 10s
 
+  redis:
+    image: redis:8-alpine
+    container_name: sensai-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
+  redis-data:
