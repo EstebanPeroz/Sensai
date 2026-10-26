@@ -400,6 +400,32 @@ research, without having to ask.
 Example: An answer comes back instantly with no source, and a glance at the
 input box tells you the effort was set to off.
 
+### 3.8 Human in the loop
+
+**US-49** — As an analyst, I want to choose in my settings which tools must
+ask me before they run, so that I decide which actions need my approval
+without changing the code.
+Example: You add `tools.web_fetch` to `[features].confirm`; from then on,
+`/tools list` shows it as asking confirmation, and Sensai shows you the page
+it wants to open and waits for your answer.
+
+**US-50** — As an analyst, I want to allow a tool for the rest of my session
+with a single answer, so that a long investigation doesn't ask me the same
+question for every call.
+Example: Sensai asks to open a page; you choose "Always this session", and
+the next pages open without asking until you restart Sensai.
+
+**US-51** — As an analyst, I want a refused tool call to still end with an
+answer, so that saying no doesn't leave my investigation stuck.
+Example: You deny opening a page; the assistant answers from what it had
+already found instead of stopping or trying the same page again.
+
+**US-52** — As an analyst, I want to be able to skip a question the
+assistant asks me, so that it can continue when I don't know or don't care
+about the detail.
+Example: The assistant asks which region you mean; you press Escape, and it
+answers anyway, stating the assumption it made.
+
 ## 4. User Scenarios
 
 ### Scenario 1 — Adjusting the thinking effort during an investigation
@@ -433,3 +459,45 @@ the ones that depend on current data, within the same session.
 7. **Outcome.** The analyst keeps a low effort for simple questions and a
    high effort for questions that depend on recent data, and always knows
    which mode produced a given answer.
+
+### Scenario 2 — Keeping control over the tools during an investigation
+
+**Persona:** the Analyst, checking a competitor's pricing for a client note.
+**Goal:** let the assistant research on its own, but approve each page it
+opens, and give it the details it is missing instead of letting it guess.
+**Covers:** US-19, US-20, US-49, US-50, US-51, US-52.
+
+1. **Choosing what needs approval.** In `settings.toml`, the analyst sets
+   `confirm = ["tools.web_fetch"]` under `[features]`. Searching stays free;
+   opening a page must be approved.
+2. **Checking the setup.** In Sensai, `/tools list` shows
+   `web_fetch: enabled, asks confirmation`, while `web_search` and
+   `ask_user` are simply `enabled`. The effort is set to `medium`.
+3. **Researching freely.** The analyst asks "What is the current price of
+   the competitor's Pro plan?". The reasoning is shown, then
+   `-> Using web_search...`: searching runs without asking.
+4. **Approving a page.** The assistant wants to read the pricing page. A
+   dialog opens over the chat with the tool name and the URL. The analyst
+   recognizes the official site and presses `y`. The page is read and the
+   answer cites it.
+5. **Refusing a page.** On a follow-up question, the assistant wants to
+   open an unknown blog. The analyst presses `n`. The assistant answers from
+   the search results it already has, without reading the blog.
+6. **Stopping the interruptions.** For a batch of questions about the same
+   site, the analyst chooses "Always this session" (`a`) on the next dialog.
+   The following pages open without asking, until Sensai is restarted.
+7. **Being asked instead of guessed.** The analyst asks "Compare it with
+   last quarter". The assistant doesn't know which quarter is meant and asks
+   "Which quarter do you want to compare with?" in a dialog. The analyst
+   types "Q2 2026", and the question and answer appear in the chat before
+   the final answer.
+8. **Skipping a question.** Later, the assistant asks which currency to use.
+   The analyst presses Escape; the assistant answers in euros and says it
+   assumed euros.
+9. **Outcome.** The assistant researched on its own, but no page was read
+   without the analyst's approval, and no missing detail was silently
+   guessed.
+
+Note: whether the assistant opens a page or asks a question is decided by
+the model. Small models often answer from the search snippets without
+calling `web_fetch`, in which case no dialog appears.
