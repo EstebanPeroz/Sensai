@@ -71,7 +71,7 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         self._events = EventBus()
-        InteractionLogger(db, settings.logging).attach(self._events)
+        InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder)
         if self._mcp_client is not None:

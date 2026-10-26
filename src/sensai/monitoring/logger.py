@@ -6,18 +6,18 @@ from sensai.monitoring.interaction import Interaction
 if TYPE_CHECKING:
     from sensai.config.settings import LoggingSettings
     from sensai.core.events import EventBus
-    from sensai.memory.persistent_db import PersistentDatabase
+    from sensai.monitoring.interaction_repository import InteractionRepository
 
 
 class InteractionLogger:
-    """Observer of the `EventBus` writing every emitted `Interaction` to the persistent database."""
+    """Observer of the `EventBus` writing every emitted `Interaction` to an `InteractionRepository`."""
 
-    _db: PersistentDatabase
+    _repository: InteractionRepository
     _settings: LoggingSettings
 
-    def __init__(self, db: PersistentDatabase, settings: LoggingSettings) -> None:
-        """Store `interaction`s in `db`, as configured by `settings`."""
-        self._db = db
+    def __init__(self, repository: InteractionRepository, settings: LoggingSettings) -> None:
+        """Store `interaction`s in `repository`, as configured by `settings`."""
+        self._repository = repository
         self._settings = settings
 
     def attach(self, bus: EventBus) -> None:
@@ -34,7 +34,7 @@ class InteractionLogger:
         """
         if not self._settings.log_content:
             interaction = self._without_content(interaction)
-        self._db.add_interaction(interaction)
+        self._repository.add(interaction)
 
     @staticmethod
     def _without_content(interaction: Interaction) -> Interaction:

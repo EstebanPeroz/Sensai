@@ -7,17 +7,10 @@ from sqlalchemy.orm import Session
 
 from sensai.llm.message import Message, Role
 from sensai.llm.persona import Persona
-from sensai.llm.responses import ChatMetrics
 from sensai.memory.persistent_db.adapter import PersistentDatabase
 from sensai.memory.persistent_db.error import DatabaseError, DbConnectionError, InvalidInstanceError
-from sensai.memory.persistent_db.sql_alchemy.table import (
-    Base,
-    BranchTable,
-    InteractionTable,
-    MessageTable,
-    PersonaTable,
-)
-from sensai.monitoring.interaction import Interaction
+from sensai.memory.persistent_db.sql_alchemy.interaction import SqlInteractionRepository
+from sensai.memory.persistent_db.sql_alchemy.table import Base, BranchTable, MessageTable, PersonaTable
 
 if TYPE_CHECKING:
     import sqlite3
@@ -32,6 +25,7 @@ class SqlAlchemy(PersistentDatabase):
 
     _engine: Engine
     _conn: Connection
+    _interactions: SqlInteractionRepository
     _uuid_error_essage: str = "given uuid is invalid"
     _update_error_message: str = "the update could not be stored"
     _import_error_message: str = "the branch could not be imported, the config is invalid"
@@ -53,6 +47,13 @@ class SqlAlchemy(PersistentDatabase):
         event.listen(self._engine, "connect", self._enable_foreign_keys)
         self._conn = self._engine.connect()
         Base.metadata.create_all(self._engine)
+        self._interactions = SqlInteractionRepository(self._engine)
+
+    @property
+    @override
+    def interactions(self) -> SqlInteractionRepository:
+        """Logged calls to the model, stored in this database."""
+        return self._interactions
 
     @staticmethod
     def _enable_foreign_keys(dbapi_conn: sqlite3.Connection, _: object) -> None:
@@ -372,82 +373,3 @@ class SqlAlchemy(PersistentDatabase):
     def _persona_from_row(persona: PersonaTable) -> Persona:
         """Convert a stored persona into a Persona object. Without this method we can'ut use Persona a all."""
         return Persona(persona.id, persona.name, persona.description, persona.prompt, persona.created_at)
-
-    @override
-    def add_interaction(self, interaction: Interaction) -> None:
-        """Store `interaction`, the record of one call to the model.
-
-        A branch id that matches no stored branch is dropped instead of failing the insert.
-
-        Raises:
-            DatabaseError: If it could not be stored.
-
-        """
-        metrics = interaction.metrics
-        with Session(self._engine) as session:
-            try:
-                branch_id = interaction.branch_id
-                if branch_id is not None and session.get(BranchTable, branch_id) is None:
-                    branch_id = None
-                session.add(
-                    InteractionTable(
-                        id=interaction.id,
-                        created_at=interaction.created_at,
-                        model=interaction.model,
-                        status=interaction.status,
-                        latency_ms=interaction.latency_ms,
-                        branch_id=branch_id,
-                        persona=interaction.persona,
-                        request=interaction.request,
-                        response=interaction.response,
-                        thinking=interaction.thinking,
-                        tool_calls=interaction.tool_calls,
-                        error=interaction.error,
-                        first_token_ms=interaction.first_token_ms,
-                        prompt_tokens=metrics.prompt_tokens,
-                        completion_tokens=metrics.completion_tokens,
-                        total_duration_ms=metrics.total_duration_ms,
-                        load_duration_ms=metrics.load_duration_ms,
-                        prompt_eval_duration_ms=metrics.prompt_eval_duration_ms,
-                        eval_duration_ms=metrics.eval_duration_ms,
-                    )
-                )
-                session.commit()
-            except SQLAlchemyError:
-                msg = "the interaction could not be stored"
-                raise DatabaseError(msg) from None
-
-    @override
-    def get_interactions(self) -> list[Interaction]:
-        """Return every stored interaction, oldest first."""
-        with Session(self._engine) as session:
-            rows = session.scalars(select(InteractionTable).order_by(InteractionTable.created_at)).all()
-            return [self._interaction_from_row(row) for row in rows]
-
-    @staticmethod
-    def _interaction_from_row(row: InteractionTable) -> Interaction:
-        """Convert a stored interaction back into an Interaction (SQLite drops the timezone: it is UTC)."""
-        created_at = row.created_at if row.created_at.tzinfo else row.created_at.replace(tzinfo=UTC)
-        return Interaction(
-            id=row.id,
-            created_at=created_at,
-            model=row.model,
-            status=row.status,
-            latency_ms=row.latency_ms,
-            branch_id=row.branch_id,
-            persona=row.persona,
-            request=row.request,
-            response=row.response,
-            thinking=row.thinking,
-            tool_calls=row.tool_calls,
-            error=row.error,
-            first_token_ms=row.first_token_ms,
-            metrics=ChatMetrics(
-                prompt_tokens=row.prompt_tokens,
-                completion_tokens=row.completion_tokens,
-                total_duration_ms=row.total_duration_ms,
-                load_duration_ms=row.load_duration_ms,
-                prompt_eval_duration_ms=row.prompt_eval_duration_ms,
-                eval_duration_ms=row.eval_duration_ms,
-            ),
-        )

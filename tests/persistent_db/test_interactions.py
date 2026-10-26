@@ -34,25 +34,25 @@ class TestInteractions:
         newer = make_interaction(branch_id=db.create_branch(), created_at=now)
         older = make_interaction(status=InteractionStatus.ERROR, error="refused", created_at=now - timedelta(minutes=5))
 
-        db.add_interaction(newer)
-        db.add_interaction(older)
+        db.interactions.add(newer)
+        db.interactions.add(older)
 
-        assert db.get_interactions() == [older, newer]
+        assert db.interactions.get_all() == [older, newer]
 
     def test_unknown_branch_is_dropped(self, db: SqlAlchemy) -> None:
-        db.add_interaction(make_interaction(branch_id=uuid4()))
+        db.interactions.add(make_interaction(branch_id=uuid4()))
 
-        assert db.get_interactions()[0].branch_id is None
+        assert db.interactions.get_all()[0].branch_id is None
 
     def test_kept_when_its_branch_is_removed(self, db: SqlAlchemy) -> None:
         branch = db.create_branch()
         assert branch is not None
-        db.add_interaction(make_interaction(branch_id=branch))
+        db.interactions.add(make_interaction(branch_id=branch))
 
         db.remove_branch(branch)
 
-        assert [i.branch_id for i in db.get_interactions()] == [None]
+        assert [i.branch_id for i in db.interactions.get_all()] == [None]
 
     def test_raises_database_error_when_commit_fails(self, db: SqlAlchemy) -> None:
         with patch.object(Session, "commit", side_effect=SQLAlchemyError), pytest.raises(DatabaseError):
-            db.add_interaction(make_interaction())
+            db.interactions.add(make_interaction())

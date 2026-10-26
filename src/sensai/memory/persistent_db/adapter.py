@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from sensai.llm.message import Message, Role
     from sensai.llm.persona import Persona
     from sensai.llm.provider_manager import ProviderManager
-    from sensai.monitoring.interaction import Interaction
+    from sensai.monitoring.interaction_repository import InteractionRepository
 
 
 class PersistentDatabase(ABC):
@@ -146,15 +146,7 @@ class PersistentDatabase(ABC):
 
         """
 
+    @property
     @abstractmethod
-    def add_interaction(self, interaction: Interaction) -> None:
-        """Store `interaction`, the record of one call to the model.
-
-        Raises:
-            DatabaseError: If it could not be stored.
-
-        """
-
-    @abstractmethod
-    def get_interactions(self) -> list[Interaction]:
-        """Return every stored interaction, oldest first."""
+    def interactions(self) -> InteractionRepository:
+        """Logged calls to the model, stored alongside the rest of the persistent data."""

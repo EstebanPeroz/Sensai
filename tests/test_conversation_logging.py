@@ -56,7 +56,7 @@ class Harness:
         self.conversation.add_conv_to_db(None, "test")
 
     def only(self) -> Interaction:
-        interactions = self.db.get_interactions()
+        interactions = self.db.interactions.get_all()
         assert len(interactions) == 1
         return interactions[0]
 
@@ -70,7 +70,7 @@ def harness(tmp_path: Path) -> Iterator[Harness]:
 
 @pytest.fixture
 def logged(harness: Harness) -> Harness:
-    InteractionLogger(harness.db, LoggingSettings()).attach(harness.bus)
+    InteractionLogger(harness.db.interactions, LoggingSettings()).attach(harness.bus)
     return harness
 
 
@@ -81,7 +81,7 @@ def test_logs_the_full_payload_response_and_metrics(logged: Harness) -> None:
     logged.conversation.chat("first", FakeUI())
     logged.conversation.chat("second", FakeUI())
 
-    answer = logged.db.get_interactions()[-1]
+    answer = logged.db.interactions.get_all()[-1]
     assert answer.request == logged.provider.chat.call_args.args[0]["messages"]
     assert answer.request == [
         {"role": "system", "content": "You are an analyst."},
@@ -102,7 +102,7 @@ def test_logs_every_call_of_a_turn(logged: Harness) -> None:
 
     logged.conversation.chat("hi", FakeUI())
 
-    interactions = logged.db.get_interactions()
+    interactions = logged.db.interactions.get_all()
     assert [interaction.response for interaction in interactions] == ["Hello.", "Hi!"]
     assert all(interaction.status is InteractionStatus.OK for interaction in interactions)
 
@@ -159,9 +159,9 @@ def test_logs_an_interrupted_stream(logged: Harness) -> None:
 
 
 def test_a_storage_failure_does_not_break_the_chat(harness: Harness) -> None:
-    failing_db = MagicMock()
-    failing_db.add_interaction.side_effect = DatabaseError("disk full")
-    InteractionLogger(failing_db, LoggingSettings()).attach(harness.bus)
+    failing_repository = MagicMock()
+    failing_repository.add.side_effect = DatabaseError("disk full")
+    InteractionLogger(failing_repository, LoggingSettings()).attach(harness.bus)
     harness.provider.chat.side_effect = turn("Greeting.", "Hello")
     ui = FakeUI()
 
