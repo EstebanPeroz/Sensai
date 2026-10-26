@@ -1,8 +1,10 @@
 import contextlib
 from typing import TYPE_CHECKING
 
+import anyio
+
 from sensai import ui
-from sensai.commands import Branch, Command, Help, Model, PersonaCommand, StateCommand
+from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.effort import Effort
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
@@ -16,19 +18,23 @@ from sensai.llm.persona import DuplicatePersonaError
 from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
+from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.rag.collection import Collection
+from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
+from sensai.rag.indexer import Indexer
+from sensai.rag.retrievial_rag import Retrieval
+from sensai.semantic.connection import connect_cache
 from sensai.tools import build_tools
 from sensai.tools.ask_user import AskUserTool
 from sensai.tools.tool_manager import ToolManager
-from sensai.tools.web import web_tools
 
 if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
     from sensai.memory.persistent_db.adapter import PersistentDatabase
-    from sensai.tools.tool import Tool
 
 
 class Core:
@@ -40,12 +46,14 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _mcp_client: MCPClient | None
     _tool_manager: ToolManager
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
         self._ui = ui
         self._settings = settings
+        self._mcp_client = MCPClient(settings.mcp) if settings.mcp is not None else None
 
         db = get_db()
         if db is None:
@@ -60,17 +68,27 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
+        embedder = self._build_embedder()
+        tools = build_tools(settings, embedder)
+        if self._mcp_client is not None:
+            tools.extend(anyio.run(self._mcp_client.start))
+        tools.append(AskUserTool(self._ui.ask_user))
         self._tool_manager = ToolManager(
-            [*build_tools(), *self._build_web_tools(), AskUserTool(self._ui.ask_user)],
+            tools,
             disabled=settings.features.disabled_in("tools"),
             confirm=settings.features.confirm_in("tools"),
             approver=self._ui.ask_confirmation,
         )
         self._react = ReAct(self._provider_manager, self._tool_manager)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
+        cache = connect_cache(settings.cache, embedder) if embedder is not None else None
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, cache)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
+        """Run the application."""
+        self._run_application()
+
+    def _run_application(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
 
         Meant to run off the main thread, since it blocks on `ui` being open, which
@@ -109,6 +127,7 @@ class Core:
         """Build a command registry with all available commands."""
         Command.bind_ui(self._ui)
         StateCommand.bind_db(db)
+        indexer, retrieval = self._build_rag()
         registry = CommandRegistry(
             [
                 Model(self._provider_manager),
@@ -118,22 +137,47 @@ class Core:
                 Effort(self._react),
                 Export(self.conversation),
                 Import(),
+                Index(indexer),
+                Ask(retrieval),
             ]
         )
         registry.register_command(Help(registry))
         return registry
 
-    def _build_web_tools(self) -> list[Tool]:
-        """Build the web search and fetch tools, which need an embedding model."""
+    def _build_rag(self) -> tuple[Indexer, Retrieval]:
+        """Build the RAG indexer and retrieval, on the embedding model the settings ask for.
+
+        Both share one collection, and so one client: an embedded Qdrant locks
+        its directory for a single client, so a second one on the same location
+        could not open it.
+
+        Raises:
+            ModelError: If no provider serves the embedding model the settings
+                ask for, which indexing or asking anything would need.
+
+        """
+        model = self._settings.llm.embedding_model or DEFAULT_EMBEDDING_MODEL
+        provider = self._provider_manager.get_provider(model=model)
+        if provider is None:
+            msg = f"the RAG needs the embedding model '{model}', which no provider serves"
+            raise ModelError(msg)
+        indexation = Indexation(provider, model)
+        collection = Collection.open(self._settings.db.rag.location)
+        return Indexer(indexation, collection), Retrieval(indexation, collection, provider)
+
+    def _build_embedder(self) -> Embedder | None:
+        """Build the embedder shared by the web tools and the semantic cache, or None without an embedding model."""
         embedding_model = self._settings.llm.embedding_model
         if embedding_model is None:
-            return []
+            return None
         provider = self._provider_manager.get_provider(embedding_model)
         if provider is None:
-            err = f"embedding model '{embedding_model}' not found in provider manager"
+            err = (
+                f"the web tools and the semantic cache need the embedding model '{embedding_model}',"
+                " which no provider serves"
+            )
             raise ModelError(err)
-        embedder = Embedder(provider, embedding_model)
-        return web_tools(self._settings.web, embedder)
+        return Embedder(provider, embedding_model)
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""

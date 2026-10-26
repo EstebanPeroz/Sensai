@@ -36,6 +36,7 @@ Current pain points Sensai must address:
 | 11 | Delivery | Sharing the result with stakeholders | Export & Publication · Web UI |
 | 12 | Automation | The same report needs to go out every week | Scheduling |
 | 13 | Continuous improvement | Prompts get refined over time based on feedback | Prompt versioning · Semantics · Automated Prompt Optimization |
+| 14 | Repeated questions | Asking again a question already answered, possibly worded differently | Semantic cache |
 
 Sections 3.x below detail, feature by feature, at least two user stories
 covering this workflow.
@@ -400,27 +401,48 @@ research, without having to ask.
 Example: An answer comes back instantly with no source, and a glance at the
 input box tells you the effort was set to off.
 
-### 3.8 Human in the loop
+### 3.8 Semantic cache
 
-**US-49** — As an analyst, I want to choose in my settings which tools must
+**US-49** — As an analyst, I want a question I already asked, even worded
+differently, to be answered instantly from the previous answer, so that I
+don't wait for the model to produce the same answer twice.
+Example: You asked "What is the EBITDA margin?" this morning; asking "what's
+the EBITDA margin?" in the afternoon returns the same answer right away.
+
+**US-50** — As an analyst, I want a cached answer to be reused only when it
+still fits, meaning the same model, the same persona and a similar preceding
+discussion, so that the cache never hands me an answer meant for another
+context.
+Example: "Give me an example" after a question about Redis must not return
+the example given earlier after a question about PostgreSQL.
+
+**US-51** — As an analyst, I want Sensai to keep working normally when the
+cache is unavailable, so that a missing cache server only costs speed, never
+an answer.
+Example: The Redis server is not running; every question still gets an
+answer from the model, just without the cache speed-up.
+
+### 3.9 Human in the loop
+
+**US-52** — As an analyst, I want to choose in my settings which tools must
 ask me before they run, so that I decide which actions need my approval
 without changing the code.
 Example: You add `tools.web_fetch` to `[features].confirm`; from then on,
 `/tools list` shows it as asking confirmation, and Sensai shows you the page
 it wants to open and waits for your answer.
 
-**US-50** — As an analyst, I want to allow a tool for the rest of my session
+**US-53** — As an analyst, I want to allow a tool for the rest of my session
 with a single answer, so that a long investigation doesn't ask me the same
 question for every call.
 Example: Sensai asks to open a page; you choose "Always this session", and
 the next pages open without asking until you restart Sensai.
 
-**US-51** — As an analyst, I want a refused tool call to still end with an
+**US-54** — As an analyst, I want a refused tool call to still end with an
 answer, so that saying no doesn't leave my investigation stuck.
 Example: You deny opening a page; the assistant answers from what it had
 already found instead of stopping or trying the same page again.
 
-**US-52** — As an analyst, I want to be able to skip a question the
+**US-55** — As an analyst, I want to be able to skip a question the
 assistant asks me, so that it can continue when I don't know or don't care
 about the detail.
 Example: The assistant asks which region you mean; you press Escape, and it
@@ -460,12 +482,44 @@ the ones that depend on current data, within the same session.
    high effort for questions that depend on recent data, and always knows
    which mode produced a given answer.
 
-### Scenario 2 — Keeping control over the tools during an investigation
+### Scenario 2 — Asking the same questions across a day
+
+**Persona:** the Analyst, answering stakeholder questions about the same
+quarterly report throughout the day.
+**Goal:** get instant answers to questions already answered, without ever
+getting an answer that does not fit the current context.
+**Covers:** US-49, US-50, US-51.
+
+1. **Starting the session.** The analyst runs `docker compose up redis`,
+   then opens Sensai. The semantic cache is on, as an embedding model is
+   configured and the Redis server answers.
+2. **First answer.** The analyst asks "What is the EBITDA margin?". The
+   model answers as usual, and the complete answer is stored in the cache
+   for 24 hours.
+3. **Same question, other words.** Later, a colleague asks the same thing
+   and the analyst types "what's the EBITDA margin?". The query is close
+   enough to the first one, so the answer comes back instantly, and is saved
+   to the conversation like any other.
+4. **Follow-up in another context.** The analyst asks "What is the net
+   margin?" then "Give me an example". Although "Give me an example" was
+   already asked earlier in the day, it followed another question: the
+   previous user messages differ, so the cache misses and the model answers.
+5. **Changing persona.** The analyst switches to another persona with
+   `/persona`. Answers cached under the previous persona are no longer
+   served: the same question gets a new answer, written in the new
+   persona's style.
+6. **Cache down.** The next day, the analyst forgets to start Redis. Sensai
+   opens normally and every question is answered by the model, only without
+   the instant answers.
+7. **Outcome.** Repeated questions cost nothing, and the analyst never
+   receives a cached answer meant for another model, persona or discussion.
+
+### Scenario 3 — Keeping control over the tools during an investigation
 
 **Persona:** the Analyst, checking a competitor's pricing for a client note.
 **Goal:** let the assistant research on its own, but approve each page it
 opens, and give it the details it is missing instead of letting it guess.
-**Covers:** US-19, US-20, US-49, US-50, US-51, US-52.
+**Covers:** US-19, US-20, US-52, US-53, US-54, US-55.
 
 1. **Choosing what needs approval.** In `settings.toml`, the analyst sets
    `confirm = ["tools.web_fetch"]` under `[features]`. Searching stays free;
