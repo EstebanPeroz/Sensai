@@ -15,7 +15,7 @@ develop-eggs/
 dist/
 downloads/
 eggs/
-.eggs/
+.eggs/în
 lib/
 lib64/
 parts/
@@ -222,3 +222,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 src/sensai/config/settings.toml
+
+# avoid commit test file.pdf for the rag
+*.pdf

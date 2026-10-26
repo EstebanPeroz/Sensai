@@ -4,11 +4,23 @@
 [db]
 persistent.url= "sqlite:///persistent.db"
 
+rag.location = "http://localhost:6333"
+
 [llm]
-embedding_model = "nomic-embed-text"
+# Chosen for its size: 274 MB, against 1.16 GB for bge-m3, which an Ollama
+# sharing its memory with the chat model kept evicting. The trade-off is real:
+# on French text, nomic-embed-text separates unrelated topics by about 0.03 of
+# cosine score, against 0.12 for bge-m3, so expect weaker chunking and ranking.
+embedding_model = "nomic-embed-text:latest"
 
 [llm.ollama]
 base_url = "http://localhost:11434/"
+
+[cache]
+# Redis server of the semantic cache (`docker compose up redis`); without it, answers are not cached.
+redis_url = "redis://localhost:6379/0"
+similarity_threshold = 0.95
+ttl = 86400
 
 [web]
 api_base_url = "https://ollama.com/"

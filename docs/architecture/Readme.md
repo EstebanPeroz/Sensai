@@ -65,13 +65,19 @@ sensai/
     │   ├── _export.py               # export a conversation
     │   └── _schedule.py             # schedule a task (time / action)
     │
-    └── memory/                    # Repository + Memento
-        ├── history_repository.py   # conversation history interface
-        ├── history.py              # DB-backed conversation history
-        ├── profile.py
-        ├── vector_index.py
-        ├── ingest.py                # chunking + embeddings for RAG
-        └── memento.py               # snapshots backing /branch and /export
+    ├── memory/                    # Repository + Memento
+    │   ├── history_repository.py   # conversation history interface
+    │   ├── history.py              # DB-backed conversation history
+    │   ├── profile.py
+    │   ├── vector_index.py
+    │   ├── ingest.py                # chunking + embeddings for RAG
+    │   └── memento.py               # snapshots backing /branch and /export
+    │
+    └── semantic/                  # Repository
+        ├── cache_repository.py     # semantic cache interface and its scope
+        ├── cache.py                # Redis-backed semantic cache
+        ├── cache_key.py            # what a query is cached under, and the cached response
+        └── connection.py           # connects to Redis, or no cache if unreachable
 ```
 
 ## Design patterns, by package
@@ -125,6 +131,15 @@ sensai/
   the RAG feature (chunking and embedding on ingest, similarity search at
   query time). `memento.py` captures session snapshots, which is what
   `/branch` (fork a session) and `/export` (serialize a session) operate on.
+
+- **`semantic/` — Repository.** Everything the semantic cache needs is grouped
+  here, apart from the conversation and the core. `cache.py` stores past
+  answers in Redis with their query and context embeddings and a TTL, scoped
+  by model, persona and embedding model (`cache_repository.py` is its
+  interface). `cache_key.py` builds what a query is cached under from the
+  history, and `connection.py` gives the core no cache when Redis is
+  unreachable. The conversation looks the query up before calling the model
+  and answers from the cache on a hit.
 
 ## Configuration surface
 
