@@ -1,13 +1,26 @@
 """Invariants of the tool composition root.
 
-`build_tools()` returns no tool yet, so these tests are mostly forward-looking guards:
-they fail the day a tool is added with a name clashing with another one, or with a
+They fail the day a tool is added with a name clashing with another one, or with a
 `tool_rule` advertising a name the `ToolManager` cannot look up.
 """
 
-from sensai.tools import build_tools
+from sensai.config.settings import Settings
+from sensai.llm.embedder import Embedder
+from sensai.tools import build_tools as build_tools_from
 from sensai.tools.tool import Tool
 from sensai.tools.tool_manager import ToolManager
+
+
+class FakeEmbedder(Embedder):
+    def __init__(self) -> None:
+        pass
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return [[1.0] for _ in texts]
+
+
+def build_tools() -> list[Tool]:
+    return build_tools_from(Settings(), FakeEmbedder())
 
 
 class TestBuildTools:
@@ -32,6 +45,12 @@ class TestBuildTools:
 
     def test_each_call_returns_a_fresh_list(self) -> None:
         assert build_tools() is not build_tools()
+
+    def test_builds_the_web_tools_with_an_embedder(self) -> None:
+        assert sorted(tool.name for tool in build_tools()) == ["web_fetch", "web_search"]
+
+    def test_leaves_the_web_tools_out_without_an_embedder(self) -> None:
+        assert build_tools_from(Settings(), None) == []
 
 
 class TestBuildToolsFeedsTheManager:

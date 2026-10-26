@@ -25,16 +25,15 @@ from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
 from sensai.rag.indexer import Indexer
 from sensai.rag.retrievial_rag import Retrieval
+from sensai.semantic.connection import connect_cache
 from sensai.tools import build_tools
 from sensai.tools.tool_manager import ToolManager
-from sensai.tools.web import web_tools
 
 if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
     from sensai.memory.persistent_db.adapter import PersistentDatabase
-    from sensai.tools.tool import Tool
 
 
 class Core:
@@ -68,12 +67,14 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
-        tools = [*build_tools(), *self._build_web_tools()]
+        embedder = self._build_embedder()
+        tools = build_tools(settings, embedder)
         if self._mcp_client is not None:
             tools.extend(anyio.run(self._mcp_client.start))
         self._tool_manager = ToolManager(tools, disabled=settings.features.disabled_in("tools"))
         self._react = ReAct(self._provider_manager, self._tool_manager)
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react)
+        cache = connect_cache(settings.cache, embedder) if embedder is not None else None
+        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, cache)
         self._command_registry = self._build_command_registry(db)
 
     def run(self) -> None:
@@ -154,17 +155,19 @@ class Core:
         collection = Collection.open(self._settings.db.rag.location)
         return Indexer(indexation, collection), Retrieval(indexation, collection, provider)
 
-    def _build_web_tools(self) -> list[Tool]:
-        """Build the web search and fetch tools, which need an embedding model."""
+    def _build_embedder(self) -> Embedder | None:
+        """Build the embedder shared by the web tools and the semantic cache, or None without an embedding model."""
         embedding_model = self._settings.llm.embedding_model
         if embedding_model is None:
-            return []
+            return None
         provider = self._provider_manager.get_provider(embedding_model)
         if provider is None:
-            err = f"the web tools need the embedding model '{embedding_model}', which no provider serves"
+            err = (
+                f"the web tools and the semantic cache need the embedding model '{embedding_model}',"
+                " which no provider serves"
+            )
             raise ModelError(err)
-        embedder = Embedder(provider, embedding_model)
-        return web_tools(self._settings.web, embedder)
+        return Embedder(provider, embedding_model)
 
     def _launch_command(self, content: str) -> None:
         """Parse `content` as a `/name args...` command and run it, reporting unknown commands to the UI."""
