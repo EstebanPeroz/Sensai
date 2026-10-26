@@ -25,7 +25,8 @@ class AskUserTool(Tool[str]):
         """What the tool does, read by the model to decide when to call it."""
         return (
             "Ask the user one short question when their request is missing information that no other tool can "
-            "find, such as which period, which file or which product they mean. Returns their answer."
+            "find, such as which period, which file or which product they mean. Returns their answer. To use when"
+            " you are unsure what the user wants, and you need to ask them for clarification."
         )
 
     @property
