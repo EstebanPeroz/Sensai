@@ -21,6 +21,9 @@ from sensai.llm.thinking.react import ReAct
 from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.pipeline import ChatPipeline
+from sensai.pipeline.modules import ModelStage, PersonaStage, RagStage
+from sensai.pipeline.modules.guardrails import BadWordsGuard
 from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
 from sensai.rag.indexer import Indexer
@@ -74,8 +77,11 @@ class Core:
         self._tool_manager = ToolManager(tools, disabled=settings.features.disabled_in("tools"))
         self._react = ReAct(self._provider_manager, self._tool_manager)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, cache)
-        self._command_registry = self._build_command_registry(db)
+        indexer, retrieval = self._build_rag()
+        self.conversation = Conversation(
+            self._provider_manager, self._persona_manager, self._build_pipeline(retrieval), cache
+        )
+        self._command_registry = self._build_command_registry(db, indexer, retrieval)
 
     def run(self) -> None:
         """Run the application."""
@@ -113,11 +119,20 @@ class Core:
 
         self._ui.close()
 
-    def _build_command_registry(self, db: PersistentDatabase) -> CommandRegistry:
+    def _build_pipeline(self, retrieval: Retrieval) -> ChatPipeline:
+        """Build the chain every chat exchange goes through, from the first guard down to the model."""
+        pipeline = ChatPipeline(ModelStage(self._react))
+        pipeline.use(BadWordsGuard())
+        pipeline.use(PersonaStage(self._persona_manager))
+        pipeline.use(RagStage(retrieval))
+        return pipeline
+
+    def _build_command_registry(
+        self, db: PersistentDatabase, indexer: Indexer, retrieval: Retrieval
+    ) -> CommandRegistry:
         """Build a command registry with all available commands."""
         Command.bind_ui(self._ui)
         StateCommand.bind_db(db)
-        indexer, retrieval = self._build_rag()
         registry = CommandRegistry(
             [
                 Model(self._provider_manager),
