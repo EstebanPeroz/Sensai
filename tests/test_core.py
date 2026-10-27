@@ -14,7 +14,6 @@ from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.tool import MCPTool
 from sensai.semantic.cache import RedisSemanticCache
-from sensai.tools.ask_user import AskUserTool
 from sensai.tools.tool_manager import ToolManager
 from sensai.ui.adapter import EventType
 
@@ -117,11 +116,9 @@ def test_core_does_not_create_mcp_client_without_configuration() -> None:
         Core(ui, settings, Namespace(model="model"))
 
     mcp_client.assert_not_called()
-    build_tools.assert_called_once_with(settings, None)
+    build_tools.assert_called_once_with(settings, None, ui.ask_user)
     tool_manager.assert_called_once()
-    tools = tool_manager.call_args.args[0]
-    assert tools[0] is built_in_tool
-    assert isinstance(tools[-1], AskUserTool)
+    assert tool_manager.call_args.args[0] == [built_in_tool]
     assert tool_manager.call_args.kwargs == {
         "disabled": {"example"},
         "confirm": {"web_fetch"},
@@ -183,7 +180,7 @@ def test_core_registers_discovered_mcp_tools() -> None:
     run.assert_called_once_with(mcp_client_type.return_value.start)
     tool_manager_type.assert_called_once()
     registered_tools = tool_manager_type.call_args.args[0]
-    assert registered_tools[0] is mcp_tool
+    assert registered_tools[-1] is mcp_tool
     assert ToolManager(registered_tools).names() == ["ask_user", "echo"]
 
 

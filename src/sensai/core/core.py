@@ -27,7 +27,6 @@ from sensai.rag.indexer import Indexer
 from sensai.rag.retrievial_rag import Retrieval
 from sensai.semantic.connection import connect_cache
 from sensai.tools import build_tools
-from sensai.tools.ask_user import AskUserTool
 from sensai.tools.tool_manager import ToolManager
 
 if TYPE_CHECKING:
@@ -69,10 +68,9 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         embedder = self._build_embedder()
-        tools = build_tools(settings, embedder)
+        tools = build_tools(settings, embedder, self._ui.ask_user)
         if self._mcp_client is not None:
             tools.extend(anyio.run(self._mcp_client.start))
-        tools.append(AskUserTool(self._ui.ask_user))
         self._tool_manager = ToolManager(
             tools,
             disabled=settings.features.disabled_in("tools"),
