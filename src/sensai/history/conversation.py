@@ -7,6 +7,7 @@ from sensai.error import SensaiError
 from sensai.llm.message import Message, Role
 from sensai.memory.history import History
 from sensai.memory.persistent_db import get_db
+from sensai.pipeline import ChatContext
 from sensai.semantic.cache_key import cache_key, cached_response
 
 if TYPE_CHECKING:
@@ -17,8 +18,8 @@ if TYPE_CHECKING:
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
-    from sensai.llm.thinking.react import ReAct
     from sensai.monitoring.interaction import Interaction
+    from sensai.pipeline import ChatPipeline
     from sensai.semantic.cache_key import CacheKey
     from sensai.semantic.cache_repository import SemanticCacheRepository
     from sensai.ui.adapter import UIAdapter
@@ -35,19 +36,19 @@ class Conversation:
     _events: EventBus
     _cache: SemanticCacheRepository | None
     history: History
-    _react: ReAct
+    _pipeline: ChatPipeline
     uuid: UUID | None = None
 
     def __init__(
         self,
         provider_manager: ProviderManager,
         persona_manager: PersonaManager,
-        react: ReAct,
+        pipeline: ChatPipeline,
         events: EventBus,
         cache: SemanticCacheRepository | None = None,
     ) -> None:
-        """Init method to create the conversation callss, with the semantic cache answers are served from, if any."""
-        self._react = react
+        """Init the conversation on the `pipeline` it chats through, the `events` it reports on, and its cache."""
+        self._pipeline = pipeline
         self._provider_manager = provider_manager
         self.history = History()
         self._persona_manager = persona_manager
@@ -142,11 +143,15 @@ class Conversation:
         key = cache_key(user_input, self._provider_manager.provider().current_model(), persona, self.history)
         if self.add_message(Role.USER, user_input, ui) is False or self._reply_from_cache(key, ui):
             return
-        messages = self.history.to_json()
-        if persona is not None:
-            messages = [persona.to_payload(), *messages]
-        on_interaction = partial(self._emit_interaction, persona=persona.name if persona is not None else None, ui=ui)
-        chunks = self._react.generate_answer(messages, on_interaction)
+        context = ChatContext(
+            message=user_input,
+            ui=ui,
+            messages=self.history.to_json(),
+            on_interaction=partial(
+                self._emit_interaction, persona=persona.name if persona is not None else None, ui=ui
+            ),
+        )
+        chunks = self._pipeline.execute(context)
 
         stop_streaming = threading.Event()
         stream_done = threading.Event()
