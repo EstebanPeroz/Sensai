@@ -20,6 +20,11 @@ class Embedder:
         self._provider = provider
         self._model = model
 
+    @property
+    def model(self) -> str:
+        """Name of the embedding model, as vectors from different models are not comparable."""
+        return self._model
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Return one vector per text, raising EmbeddingError when the model is unavailable or the call fails."""
         if not texts:

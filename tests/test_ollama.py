@@ -9,6 +9,10 @@ from sensai.config.settings import OllamaSettings
 from sensai.llm.error import JsonError, RequestCallError, RequestStatusError
 from sensai.llm.ollama import OllamaAdapter
 from sensai.llm.responses import ChatResponse, ShowResponse
+from sensai.mcp.discovery import MCPToolInfo
+from sensai.mcp.request import add_tool_schemas
+from sensai.mcp.tool import MCPTool
+from sensai.tools.tool_manager import ToolManager
 
 _API_PATH = "http://localhost:11434/"
 _EMBEDDING_MODEL = "nomic-embed-text"
@@ -49,6 +53,48 @@ class TestSettings:
 
 
 class TestChatNonStreaming:
+    def test_sends_discovered_mcp_tool_schema(self, adapter: OllamaAdapter) -> None:
+        tool = MCPTool(
+            MCPToolInfo(
+                name="echo",
+                description="Echo text",
+                input_schema={
+                    "type": "object",
+                    "properties": {"message": {"type": "string"}},
+                    "required": ["message"],
+                },
+            ),
+            MagicMock(),
+        )
+        request = {"model": "qwen2.5:1.5b", "messages": []}
+        add_tool_schemas(request, ToolManager([tool]))
+
+        with patch(
+            "sensai.llm.ollama.requests.post",
+            return_value=mock_response(json_data={"done": True}),
+        ) as mock_post:
+            adapter.chat(request, stream=False)
+
+        assert mock_post.call_args.kwargs["json"] == {
+            "model": "qwen2.5:1.5b",
+            "messages": [],
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "echo",
+                        "description": "Echo text",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {"message": {"type": "string"}},
+                            "required": ["message"],
+                        },
+                    },
+                },
+            ],
+            "stream": False,
+        }
+
     def test_returns_chat_response_on_success(self, adapter: OllamaAdapter) -> None:
         payload = {
             "model": "qwen2.5:1.5b",
@@ -214,7 +260,8 @@ class TestEmbedding:
             return_value=mock_response(json_data={"embeddings": [[0.1], [0.2]]}),
         ) as mock_post:
             assert adapter.embeddings(["a", "b"], _EMBEDDING_MODEL) == [[0.1], [0.2]]
-        assert mock_post.call_args.kwargs["json"]["model"] == _EMBEDDING_MODEL
+        assert mock_post.call_args.args == (_API_PATH + "api/embed",)
+        assert mock_post.call_args.kwargs["json"] == {"model": _EMBEDDING_MODEL, "input": ["a", "b"]}
 
     def test_embeddings_returns_empty_list_when_model_unavailable(self, adapter: OllamaAdapter) -> None:
         """embeddings() probes the model via show() first, and bails out without embedding if that fails."""
