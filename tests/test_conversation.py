@@ -11,6 +11,8 @@ from sensai.llm.message import Role
 from sensai.llm.persona import Persona
 from sensai.llm.responses import ChatResponse
 from sensai.llm.thinking.react import ReAct
+from sensai.pipeline import ChatPipeline
+from sensai.pipeline.modules import ModelStage
 from sensai.semantic.cache_key import CACHE_CONTEXT_TURNS, NO_PERSONA
 from sensai.semantic.cache_repository import CacheScope
 
@@ -102,7 +104,8 @@ def make_conversation(
     react: MagicMock, provider_manager: MagicMock, persona_manager: MagicMock
 ) -> Callable[[FakeCache | None], Conversation]:
     def make(cache: FakeCache | None = None) -> Conversation:
-        conversation = Conversation(provider_manager, persona_manager, react, cache)
+        pipeline = ChatPipeline(ModelStage(react))
+        conversation = Conversation(provider_manager, persona_manager, pipeline, cache)
         conversation.uuid = uuid4()
         return conversation
 
@@ -278,7 +281,7 @@ def test_conversation_delegates_generation_to_react() -> None:
     react.generate_answer.return_value = iter(
         [ChatResponse({"message": {"role": "assistant", "content": "Hello"}})],
     )
-    conversation = Conversation(provider_manager, persona_manager, react)
+    conversation = Conversation(provider_manager, persona_manager, ChatPipeline(ModelStage(react)))
 
     def record_message(role: Role, content: str, ui: object) -> bool:
         del ui
