@@ -4,10 +4,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from sensai.llm.responses import ChatResponse
+from sensai.monitoring.interaction import ignore_interaction
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from sensai.monitoring.interaction import Interaction
     from sensai.ui.adapter import UIAdapter
 
 
@@ -18,6 +20,8 @@ class ChatContext:
     message: str
     ui: UIAdapter
     messages: list[dict] = field(default_factory=list)
+    on_interaction: Callable[[Interaction], None] = ignore_interaction
+    """Called once for every call to the model this exchange makes, whatever its outcome."""
 
 
 type Next = Callable[[ChatContext], Iterator[ChatResponse]]

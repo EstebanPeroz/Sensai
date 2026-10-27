@@ -73,11 +73,17 @@ sensai/
     │   ├── ingest.py                # chunking + embeddings for RAG
     │   └── memento.py               # snapshots backing /branch and /export
     │
-    └── semantic/                  # Repository
-        ├── cache_repository.py     # semantic cache interface and its scope
-        ├── cache.py                # Redis-backed semantic cache
-        ├── cache_key.py            # what a query is cached under, and the cached response
-        └── connection.py           # connects to Redis, or no cache if unreachable
+    ├── semantic/                  # Repository
+    │   ├── cache_repository.py     # semantic cache interface and its scope
+    │   ├── cache.py                # Redis-backed semantic cache
+    │   ├── cache_key.py            # what a query is cached under, and the cached response
+    │   └── connection.py           # connects to Redis, or no cache if unreachable
+    │
+    └── monitoring/                # Observer + Repository
+        ├── interaction.py          # record of one call to the model, the event emitted on the bus
+        ├── recorder.py             # builds that record from the chunks of a call
+        ├── interaction_repository.py # storage interface of the logged calls
+        └── logger.py               # bus subscriber storing every call, with or without its content
 ```
 
 ## Design patterns, by package
@@ -140,6 +146,18 @@ sensai/
   history, and `connection.py` gives the core no cache when Redis is
   unreachable. The conversation looks the query up before calling the model
   and answers from the cache on a hit.
+
+- **`monitoring/` — Observer + Repository.** Every call to the model, whatever
+  its outcome (done, failed, interrupted), becomes an `Interaction`: what was
+  sent, what came back, the tools called, the latency and the token counts.
+  The code that calls the model (the ReAct loop, the RAG answer) records it
+  with `recorder.py` and hands it to a callback; the core publishes it on the
+  `EventBus`, so the callers never know whether, or where, it is stored.
+  `logger.py` is the subscriber that writes it through `InteractionRepository`
+  (`interaction_repository.py`), which the persistent database implements
+  in its own `interaction` table; the `[logging]` settings turn it off, or keep
+  only the metrics without what the user and the model wrote. A failure to
+  store a call is reported to the UI and never breaks the answer.
 
 ## Configuration surface
 

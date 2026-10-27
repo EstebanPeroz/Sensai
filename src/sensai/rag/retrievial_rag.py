@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, Protocol
 
+from sensai.error import SensaiError
 from sensai.llm.message import Role
+from sensai.monitoring.interaction import InteractionStatus, ignore_interaction
+from sensai.monitoring.recorder import InteractionRecorder
 from sensai.rag.collection import DEFAULT_LIMIT, as_chunk
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sensai.llm.responses import ChatResponse
+    from sensai.monitoring.interaction import Interaction
     from sensai.rag.collection import Collection
     from sensai.rag.indexation_rag import Indexation
 
@@ -33,17 +39,28 @@ class Answerer(Protocol):
 
 
 class Retrieval:
-    """Answer a question from the chunks stored by the indexation."""
+    """Answer a question from the chunks stored by the indexation.
+
+    Every call to the model, whatever its outcome, is passed to `on_interaction` as an `Interaction`.
+    """
 
     _indexation: Indexation
     _collection: Collection
     _answerer: Answerer
+    _on_interaction: Callable[[Interaction], None]
 
-    def __init__(self, indexation: Indexation, collection: Collection, answerer: Answerer) -> None:
-        """Keep the pipeline that encodes the question, the collection, and the model that answers."""
+    def __init__(
+        self,
+        indexation: Indexation,
+        collection: Collection,
+        answerer: Answerer,
+        on_interaction: Callable[[Interaction], None] = ignore_interaction,
+    ) -> None:
+        """Keep the pipeline that encodes the question, the collection, the model that answers, and its recorder."""
         self._indexation = indexation
         self._collection = collection
         self._answerer = answerer
+        self._on_interaction = on_interaction
 
     def answer(
         self,
@@ -117,8 +134,17 @@ class Retrieval:
             SensaiError: If the model could not be reached or answered an error.
 
         """
-        payload = {"model": self._answerer.current_model(), "messages": messages}
-        response = self._answerer.chat(payload, stream=False)
+        model = self._answerer.current_model()
+        payload = {"model": model, "messages": messages}
+        recorder = InteractionRecorder(model=model, request=messages)
+        try:
+            response = self._answerer.chat(payload, stream=False)
+        except SensaiError as err:
+            self._on_interaction(recorder.finish(InteractionStatus.ERROR, str(err)))
+            raise
+        recorder.add_chunk(response)
+        status = InteractionStatus.OK if response.error is None else InteractionStatus.ERROR
+        self._on_interaction(recorder.finish(status, response.error))
         if response.error is not None:
             return f"The model answered an error: {response.error}"
         return response.content or ""

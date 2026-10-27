@@ -22,4 +22,4 @@ class ModelStage:
 
         Takes no `next_stage`: nothing runs after the model, it closes the chain.
         """
-        return self._react.generate_answer(context.messages)
+        return self._react.generate_answer(context.messages, context.on_interaction)

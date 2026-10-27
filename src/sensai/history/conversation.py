@@ -1,4 +1,6 @@
 import threading
+from dataclasses import replace
+from functools import partial
 from typing import TYPE_CHECKING
 
 from sensai.error import SensaiError
@@ -9,12 +11,14 @@ from sensai.pipeline import ChatContext
 from sensai.semantic.cache_key import cache_key, cached_response
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator
     from uuid import UUID
 
+    from sensai.core.events import EventBus
     from sensai.llm.persona_manager import PersonaManager
     from sensai.llm.provider_manager import ProviderManager
     from sensai.llm.responses import ChatResponse
+    from sensai.monitoring.interaction import Interaction
     from sensai.pipeline import ChatPipeline
     from sensai.semantic.cache_key import CacheKey
     from sensai.semantic.cache_repository import SemanticCacheRepository
@@ -22,10 +26,14 @@ if TYPE_CHECKING:
 
 
 class Conversation:
-    """Drives a chat exchange with a provider, streaming its response back to a UI."""
+    """Drives a chat exchange with a provider, streaming its response back to a UI.
+
+    Every call to the model, whatever its outcome, is emitted on `events` as an `Interaction`.
+    """
 
     _persona_manager: PersonaManager
     _provider_manager: ProviderManager
+    _events: EventBus
     _cache: SemanticCacheRepository | None
     history: History
     _pipeline: ChatPipeline
@@ -36,13 +44,15 @@ class Conversation:
         provider_manager: ProviderManager,
         persona_manager: PersonaManager,
         pipeline: ChatPipeline,
+        events: EventBus,
         cache: SemanticCacheRepository | None = None,
     ) -> None:
-        """Init the conversation on the `pipeline` it chats through, and the cache it is served from, if any."""
+        """Init the conversation on the `pipeline` it chats through, the `events` it reports on, and its cache."""
         self._pipeline = pipeline
         self._provider_manager = provider_manager
         self.history = History()
         self._persona_manager = persona_manager
+        self._events = events
         self._cache = cache
 
     def add_conv_to_db(self, uuid: UUID | None = None, name: str = "Branch") -> None:
@@ -74,9 +84,16 @@ class Conversation:
         self.history.insert(Message(uuid=uuid, role=role, content=content))
         return True
 
+    def _emit_interaction(self, interaction: Interaction, *, persona: str | None, ui: UIAdapter) -> None:
+        """Publish `interaction`, tagged with this branch and `persona`; a listener failing must not break the chat."""
+        try:
+            self._events.emit(replace(interaction, branch_id=self.uuid, persona=persona))
+        except SensaiError as err:
+            ui.send_system_message(f"Failed to log interaction: {err}")
+
     def _stream_chunks(
         self,
-        chunks: Iterator[ChatResponse],
+        chunks: Generator[ChatResponse],
         stop_streaming: threading.Event,
         stream_done: threading.Event,
         ui: UIAdapter,
@@ -85,6 +102,7 @@ class Conversation:
         """Forward chunks to the UI until they run out or a stop is requested, then cache a complete answer.
 
         An answer built with tools is not cached: it relies on facts, such as web results, that may soon be outdated.
+        `chunks` is closed on the way out, so that a stopped stream ends its pending calls to the model.
         """
         try:
             content: str = ""
@@ -113,7 +131,10 @@ class Conversation:
         except SensaiError as err:
             ui.send_error(str(err))
         finally:
-            stream_done.set()
+            try:
+                chunks.close()
+            finally:
+                stream_done.set()
 
     def chat(self, user_input: str, ui: UIAdapter) -> None:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
@@ -122,7 +143,14 @@ class Conversation:
         key = cache_key(user_input, self._provider_manager.provider().current_model(), persona, self.history)
         if self.add_message(Role.USER, user_input, ui) is False or self._reply_from_cache(key, ui):
             return
-        context = ChatContext(message=user_input, ui=ui, messages=self.history.to_json())
+        context = ChatContext(
+            message=user_input,
+            ui=ui,
+            messages=self.history.to_json(),
+            on_interaction=partial(
+                self._emit_interaction, persona=persona.name if persona is not None else None, ui=ui
+            ),
+        )
         chunks = self._pipeline.execute(context)
 
         stop_streaming = threading.Event()

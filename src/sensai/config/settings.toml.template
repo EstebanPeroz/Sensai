@@ -33,3 +33,8 @@ timeout = 10.0
 disabled = []
 
 # disabled = ["tools.inexesistant.test"]
+
+[logging]
+# Record every call to the model in the persistent database; log_content = false keeps only the metadata.
+enabled = true
+log_content = true
