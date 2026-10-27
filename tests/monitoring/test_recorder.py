@@ -1,5 +1,3 @@
-from uuid import uuid4
-
 import pytest
 
 from sensai.llm.responses import ChatResponse
@@ -27,8 +25,8 @@ class Clock:
 
 class TestInteractionRecorder:
     def test_records_a_streamed_call(self) -> None:
-        branch, time = uuid4(), Clock(10.0)
-        rec = InteractionRecorder(model="m", request=_REQUEST, branch_id=branch, persona="analyst", clock=time)
+        time = Clock(10.0)
+        rec = InteractionRecorder(model="m", request=_REQUEST, clock=time)
         time.now = 10.1
         rec.add_chunk(chunk(""))  # empty: not the first token
         time.now = 10.2
@@ -39,9 +37,8 @@ class TestInteractionRecorder:
 
         interaction = rec.finish(InteractionStatus.OK)
 
-        assert rec.content == "Hello"
         assert (interaction.model, interaction.status, interaction.error) == ("m", InteractionStatus.OK, None)
-        assert (interaction.branch_id, interaction.persona, interaction.request) == (branch, "analyst", _REQUEST)
+        assert interaction.request == _REQUEST
         assert (interaction.response, interaction.thinking, interaction.tool_calls) == ("Hello", "hmm", [_CALL])
         assert interaction.first_token_ms == pytest.approx(200.0)
         assert interaction.latency_ms == pytest.approx(500.0)

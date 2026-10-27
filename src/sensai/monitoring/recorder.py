@@ -6,7 +6,6 @@ from sensai.monitoring.interaction import Interaction, InteractionStatus
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from uuid import UUID
 
     from sensai.llm.responses import ChatResponse
 
@@ -24,15 +23,11 @@ class InteractionRecorder:
         *,
         model: str,
         request: list[dict],
-        branch_id: UUID | None = None,
-        persona: str | None = None,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         """Start timing a call sending `request` to `model`; `clock` returns seconds."""
         self._model = model
         self._request = request
-        self._branch_id = branch_id
-        self._persona = persona
         self._clock = clock
         self._start = clock()
         self._first_token_ms: float | None = None
@@ -40,11 +35,6 @@ class InteractionRecorder:
         self._thinking = ""
         self._tool_calls: list[dict] = []
         self._metrics = ChatMetrics()
-
-    @property
-    def content(self) -> str:
-        """Response text received so far."""
-        return self._content
 
     def add_chunk(self, chunk: ChatResponse) -> None:
         """Accumulate the content, thinking, tool calls and metrics carried by `chunk`."""
@@ -61,8 +51,6 @@ class InteractionRecorder:
             model=self._model,
             status=status,
             latency_ms=self._elapsed_ms(),
-            branch_id=self._branch_id,
-            persona=self._persona,
             request=self._request,
             response=self._content or None,
             thinking=self._thinking or None,
