@@ -63,7 +63,7 @@ class ReAct:
         Every call to the model is passed to `on_interaction` once over, whatever its outcome.
         """
         if self._max_iterations == 0:
-            yield from self._request(messages, ANSWER_INSTRUCTION, [], on_interaction)
+            yield from self._request(messages, ANSWER_INSTRUCTION, tools=[], on_interaction=on_interaction)
             return
 
         tools = self._available_tools()
@@ -85,7 +85,7 @@ class ReAct:
             instruction = OBSERVE_INSTRUCTION
             observed = True
 
-        yield from self._request(messages, ANSWER_INSTRUCTION, [], on_interaction)
+        yield from self._request(messages, ANSWER_INSTRUCTION, tools=[], on_interaction=on_interaction)
 
     def _think(
         self, messages: list[dict], instruction: str, on_interaction: Callable[[Interaction], None]
@@ -93,7 +93,7 @@ class ReAct:
         """Make the model reason without answering, and show its reasoning as thinking."""
         thought = ""
 
-        with closing(self._request(messages, instruction, [], on_interaction)) as chunks:
+        with closing(self._request(messages, instruction, tools=[], on_interaction=on_interaction)) as chunks:
             for chunk in chunks:
                 if chunk.error is not None:
                     yield chunk
