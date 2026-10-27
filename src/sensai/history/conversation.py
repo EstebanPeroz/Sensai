@@ -119,11 +119,11 @@ class Conversation:
         """Send `user_input` to the provider and stream its response to `ui` until done or interrupted."""
         ui.send_input(Role.USER, user_input)
         persona = self._persona_manager.active_persona()
+        context = ChatContext(message=user_input, ui=ui, messages=self.history.to_json())
+        chunks = self._pipeline.execute(context)
         key = cache_key(user_input, self._provider_manager.provider().current_model(), persona, self.history)
         if self.add_message(Role.USER, user_input, ui) is False or self._reply_from_cache(key, ui):
             return
-        context = ChatContext(message=user_input, ui=ui, messages=self.history.to_json())
-        chunks = self._pipeline.execute(context)
 
         stop_streaming = threading.Event()
         stream_done = threading.Event()
