@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from urllib.parse import urlsplit
 
 from sensai.error import SensaiError
+from sensai.mcp.config import MCPServerConfig
 
 if TYPE_CHECKING:
     from importlib.resources.abc import Traversable
@@ -55,6 +56,32 @@ class LLMSettings:
         """Check the embedding model, which comes unchecked from the settings file."""
         if self.embedding_model is not None:
             _check_name(self.embedding_model, "llm.embedding_model")
+
+
+@dataclass
+class CacheSettings:
+    """Settings of the [cache] table: the Redis server backing the semantic cache and when an answer is reused."""
+
+    redis_url: str = field(default="redis://localhost:6379/0", repr=False)
+    similarity_threshold: float = 0.95
+    ttl: int = 86400
+
+    def __post_init__(self) -> None:
+        """Check the values, which come unchecked from the settings file."""
+        _check_name(self.redis_url, "cache.redis_url")
+        _check_redis_url(self.redis_url, "cache.redis_url")
+        if isinstance(self.similarity_threshold, bool) or not isinstance(self.similarity_threshold, (int, float)):
+            msg = "cache.similarity_threshold must be a number"
+            raise TypeError(msg)
+        if not 0 < self.similarity_threshold <= 1:
+            msg = f"cache.similarity_threshold must be in ]0, 1], got {self.similarity_threshold}"
+            raise ValueError(msg)
+        if isinstance(self.ttl, bool) or not isinstance(self.ttl, int):
+            msg = "cache.ttl must be an integer"
+            raise TypeError(msg)
+        if self.ttl <= 0:
+            msg = f"cache.ttl must be a positive number of seconds, got {self.ttl}"
+            raise ValueError(msg)
 
 
 @dataclass
@@ -140,13 +167,29 @@ class FeatureSettings:
 
 
 @dataclass
+class LoggingSettings:
+    """Settings of the [logging] table: the structured log of every call to the model."""
+
+    enabled: bool = True
+    log_content: bool = True
+
+    def __post_init__(self) -> None:
+        """Check the flags, which come unchecked from the settings file."""
+        _check_bool(self.enabled, "logging.enabled")
+        _check_bool(self.log_content, "logging.log_content")
+
+
+@dataclass
 class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
     llm: LLMSettings = field(default_factory=LLMSettings)
+    cache: CacheSettings = field(default_factory=CacheSettings)
+    mcp: MCPServerConfig | None = None
     web: WebSettings = field(default_factory=WebSettings)
     db: DBSettings = field(default_factory=DBSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
+    logging: LoggingSettings = field(default_factory=LoggingSettings)
 
 
 def default_settings_file() -> Traversable:
@@ -180,21 +223,28 @@ def load_settings(path: Path | None = None) -> Settings:
     else:
         try:
             llm = _pop_table(data, "llm")
+            mcp_data = _pop_table(data, "mcp")
+            db = _pop_table(data, "db")
             providers: dict[str, ProviderSettings] = {
                 provider.name: provider(**_pop_table(llm, provider.name))
                 for provider in PROVIDERS
                 if provider.name in llm
             }
+            cache = CacheSettings(**_pop_table(data, "cache"))
+            mcp = MCPServerConfig(**mcp_data) if mcp_data else None
             web = WebSettings(**_pop_table(data, "web"))
-            db = _pop_table(data, "db")
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
             rag = RagDBSettings(**_pop_table(db, "rag"))
             features = FeatureSettings(**_pop_table(data, "features"))
+            logging = LoggingSettings(**_pop_table(data, "logging"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
+                cache=cache,
+                mcp=mcp,
                 web=web,
                 db=DBSettings(**db, persistent=persistent, rag=rag),
                 features=features,
+                logging=logging,
                 **data,
             )
         except (TypeError, ValueError) as err:
@@ -216,6 +266,12 @@ def _check_name(value: object, name: str) -> None:
         raise TypeError(msg)
 
 
+def _check_bool(value: object, name: str) -> None:
+    if not isinstance(value, bool):
+        msg = f"{name} must be a boolean"
+        raise TypeError(msg)
+
+
 def _check_url(value: str, name: str) -> None:
     msg = f"{name} must be an http(s) URL with a host, got {value!r}"
     parts = urlsplit(value)
@@ -224,4 +280,18 @@ def _check_url(value: str, name: str) -> None:
     except ValueError:
         raise ValueError(msg) from None
     if parts.scheme not in {"http", "https"} or not parts.hostname:
+        raise ValueError(msg)
+
+
+def _check_redis_url(value: str, name: str) -> None:
+    msg = f"{name} must be a redis://, rediss:// or unix:// URL"
+    parts = urlsplit(value)
+    try:
+        _ = parts.port
+    except ValueError:
+        raise ValueError(msg) from None
+    if parts.scheme == "unix":
+        if not parts.path:
+            raise ValueError(msg)
+    elif parts.scheme not in {"redis", "rediss"} or not parts.hostname:
         raise ValueError(msg)

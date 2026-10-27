@@ -16,6 +16,12 @@ embedding_model = "nomic-embed-text:latest"
 [llm.ollama]
 base_url = "http://localhost:11434/"
 
+[cache]
+# Redis server of the semantic cache (`docker compose up redis`); without it, answers are not cached.
+redis_url = "redis://localhost:6379/0"
+similarity_threshold = 0.95
+ttl = 86400
+
 [web]
 api_base_url = "https://ollama.com/"
 # Ollama API key (https://ollama.com/settings/keys), to set in settings.toml only.
@@ -27,3 +33,8 @@ timeout = 10.0
 disabled = []
 
 # disabled = ["tools.inexesistant.test"]
+
+[logging]
+# Record every call to the model in the persistent database; log_content = false keeps only the metadata.
+enabled = true
+log_content = true

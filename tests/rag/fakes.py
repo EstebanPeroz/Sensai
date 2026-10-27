@@ -116,3 +116,14 @@ class SilentAnswerer(FakeAnswerer):
         del stream
         self.payloads.append(payload)
         return ChatResponse({"message": {"role": "assistant", "content": ""}, "done": True})
+
+
+class UnreachableAnswerer(FakeAnswerer):
+    """A provider whose server cannot be reached."""
+
+    def chat(self, payload: dict, *, stream: bool) -> ChatResponse:
+        """Fail as the provider does when the request does not go through."""
+        del stream
+        self.payloads.append(payload)
+        msg = "connection refused"
+        raise RequestCallError(msg)

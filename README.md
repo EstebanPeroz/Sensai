@@ -4,7 +4,7 @@
 
 - [uv](https://docs.astral.sh/uv/)
 - `make`
-- Docker, for the vector database the RAG indexes into
+- Docker, for the vector database the RAG indexes into and the Redis server of the semantic cache
 
 ## Quick start
 
@@ -32,11 +32,47 @@ Without Docker, pointing `db.rag.location` in `settings.toml` at a directory
 server, but it locks that directory for one process at a time: the test suite
 and a running sensai cannot share one.
 
+## Semantic cache
+
+Answers are cached in Redis, which `make run` starts along with Qdrant (`make qdrant` and `make qdrant-stop` start and
+stop both). The cached answers live in the `sensai_redis-data` Docker volume. Without a reachable Redis server, sensai
+runs without the cache.
+
 You can also call uv directly, without activating the virtualenv:
 
 ```sh
 uv run sensai             # run the program
 ```
+
+## MCP server configuration
+
+Sensai currently starts one MCP server over stdio. Configure it in the settings file with
+`command`, `args`, `enabled`, `startup_timeout`, and `call_timeout`.
+
+The local deterministic test server exposes an `echo` tool:
+
+```toml
+[mcp]
+command = "uv"
+args = ["run", "python", "tests/mcp/fixtures/tiny_server.py"]
+enabled = true
+startup_timeout = 10
+call_timeout = 30
+```
+
+The tested pre-existing MCP server is the official filesystem server. It exposes tools such as
+`list_allowed_directories` and is started with `npx`:
+
+```toml
+[mcp]
+command = "npx"
+args = ["--yes", "@modelcontextprotocol/server-filesystem", "/tmp/sensai-mcp-demo"]
+enabled = true
+startup_timeout = 30
+call_timeout = 30
+```
+
+The configured directory must exist and is the only directory the filesystem server may access.
 
 ## Development
 
