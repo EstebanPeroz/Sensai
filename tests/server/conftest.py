@@ -6,11 +6,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sensai_protocol import AiChunk
 from sensai_server.app import create_app
-from sensai_server.models import StaticModelCatalog
-from sensai_server.session import Session
-from sensai_server.session_registry import SessionRegistry
+from sensai_server.models import DEFAULT_MODELS
+from sensai_server.session import Session, SessionRegistry
 
-MODEL = "fake-model"
+MODEL = DEFAULT_MODELS[0]
 SLOW = "slow"
 
 
@@ -28,7 +27,7 @@ async def fake_command(session: Session, command: str) -> None:
 
 @pytest.fixture
 def app() -> FastAPI:
-    return create_app(StaticModelCatalog([MODEL]), chat=fake_chat, command=fake_command)
+    return create_app(chat=fake_chat, command=fake_command)
 
 
 @pytest.fixture

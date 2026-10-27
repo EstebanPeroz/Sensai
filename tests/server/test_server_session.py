@@ -2,7 +2,7 @@ import asyncio
 from uuid import uuid4
 
 from sensai_protocol import Error
-from sensai_server.session import DEFAULT_EFFORT, Session
+from sensai_server.session.session import DEFAULT_EFFORT, Session
 
 from tests.server.fakes import RecordingOutbound
 

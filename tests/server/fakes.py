@@ -5,6 +5,16 @@ from sensai_protocol import ServerMessage, parse_server_message
 from sensai_server.outbound import Outbound
 
 
+class FakeCatalog:
+    """A `ModelCatalog` serving the given models."""
+
+    def __init__(self, models: list[str]) -> None:
+        self.models = models
+
+    async def available_models(self) -> list[str]:
+        return list(self.models)
+
+
 class RecordingOutbound(Outbound):
     """An `Outbound` that records the messages it sends instead of writing to a socket."""
 

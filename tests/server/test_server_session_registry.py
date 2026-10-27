@@ -2,14 +2,13 @@ import asyncio
 from uuid import uuid4
 
 from sensai_protocol import Error, Session
-from sensai_server.models import StaticModelCatalog
-from sensai_server.session_registry import SessionRegistry
+from sensai_server.session import SessionRegistry
 
-from tests.server.fakes import RecordingOutbound
+from tests.server.fakes import FakeCatalog, RecordingOutbound
 
 
 def _registry() -> SessionRegistry:
-    return SessionRegistry(StaticModelCatalog(["fake-model", "other-model"]))
+    return SessionRegistry(FakeCatalog(["fake-model", "other-model"]))
 
 
 class TestSessionRegistry:

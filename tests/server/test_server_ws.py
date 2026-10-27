@@ -22,7 +22,7 @@ from sensai_protocol import (
     parse_server_message,
 )
 from sensai_server import handlers
-from sensai_server.session_registry import SessionRegistry
+from sensai_server.session import SessionRegistry
 from starlette.testclient import WebSocketTestSession
 
 from tests.server.conftest import MODEL, SLOW
