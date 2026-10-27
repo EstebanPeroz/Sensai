@@ -88,6 +88,11 @@ class InteractionTable(Base):
 
     __tablename__ = "interaction"
 
+    created_at: Mapped[datetime] = mapped_column(  # the dashboard filters and sorts on it
+        DateTime(timezone=True),
+        default=lambda: datetime.now(tz=UTC),
+        index=True,
+    )
     model: Mapped[str] = mapped_column(index=True)
     status: Mapped[InteractionStatus] = mapped_column(index=True)
     latency_ms: Mapped[float] = mapped_column()
