@@ -24,13 +24,13 @@ class Connection:
 
     def __init__(self, url: str) -> None:
         """Remember the server `url`. Nothing is opened before `open`."""
-        self._url = url
+        self.url = url
         self._ws = None
 
     async def open(self) -> None:
         """Connect to the server. Raise ConnectionFailedError if it cannot be reached."""
         try:
-            self._ws = await connect(self._url)
+            self._ws = await connect(self.url)
         except (OSError, TimeoutError, InvalidURI, InvalidHandshake) as err:
             raise ConnectionFailedError(str(err) or type(err).__name__) from err
 

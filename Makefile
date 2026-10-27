@@ -19,7 +19,7 @@ run-server:
 	uv run --package sensai-server sensai-server
 
 run-tui:
-	uv run --package sensai-tui sensai-tui
+	uv run --package sensai-tui sensai-tui --model ${MODEL}
 
 qdrant:
 	docker compose up -d --wait
