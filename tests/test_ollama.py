@@ -8,7 +8,7 @@ import requests
 from sensai.config.settings import OllamaSettings
 from sensai.llm.error import JsonError, RequestCallError, RequestStatusError
 from sensai.llm.ollama import OllamaAdapter
-from sensai.llm.responses import ChatResponse, ShowResponse
+from sensai.llm.responses import ChatMetrics, ChatResponse, ShowResponse
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.request import add_tool_schemas
 from sensai.mcp.tool import MCPTool
@@ -150,6 +150,21 @@ class TestChatStreaming:
         assert [chunk.done for chunk in chunks] == [False, False, True]
         assert mock_post.call_args.kwargs["stream"] is True
         assert mock_post.call_args.kwargs["json"]["stream"] is True
+
+    def test_last_chunk_carries_metrics_in_milliseconds(self, adapter: OllamaAdapter) -> None:
+        done = {"model": "m", "message": {"role": "assistant", "content": ""}, "done": True}
+        durations = {"total_duration": 2_000_000, "load_duration": 500_000, "eval_duration": 1_500_000}
+        lines = [
+            json.dumps({"model": "m", "message": {"role": "assistant", "content": "hi"}, "done": False}),
+            json.dumps(done | durations | {"prompt_eval_count": 12, "eval_count": 3}),
+        ]
+        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(lines=lines)):
+            chunks = list(adapter.chat({"model": "m", "messages": []}, stream=True))
+
+        assert chunks[0].metrics is None
+        assert chunks[1].metrics == ChatMetrics(
+            prompt_tokens=12, completion_tokens=3, total_duration_ms=2.0, load_duration_ms=0.5, eval_duration_ms=1.5
+        )
 
     def test_raises_json_error_on_malformed_line(self, adapter: OllamaAdapter) -> None:
         lines = [

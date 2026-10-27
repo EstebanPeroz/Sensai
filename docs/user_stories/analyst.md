@@ -37,6 +37,7 @@ Current pain points Sensai must address:
 | 12 | Automation | The same report needs to go out every week | Scheduling |
 | 13 | Continuous improvement | Prompts get refined over time based on feedback | Prompt versioning · Semantics · Automated Prompt Optimization |
 | 14 | Repeated questions | Asking again a question already answered, possibly worded differently | Semantic cache |
+| 15 | Traceability | Needing to check afterwards what was sent to the model and how it performed | Logging & Monitoring |
 
 Sections 3.x below detail, feature by feature, at least two user stories
 covering this workflow.
@@ -421,6 +422,23 @@ cache is unavailable, so that a missing cache server only costs speed, never
 an answer.
 Example: The Redis server is not running; every question still gets an
 answer from the model, just without the cache speed-up.
+
+### 3.9 Logging & Monitoring
+
+**US-52** — As an analyst, I want every call made to the model during my
+investigation (prompt sent, answer, tools called, latency, token counts,
+errors) to be recorded, so that I can trace afterwards how a given answer
+was produced and why it was slow or failed.
+Example: An answer cited in last week's report is challenged, and you look
+up the exact prompt, the web searches made and the model's reply behind it.
+
+**US-53** — As an analyst handling sensitive data, I want to keep logging
+the metrics of each call without storing what I and the model wrote, so that
+I can still monitor latency and errors without leaving confidential content
+on disk.
+Example: You work on a client's financial figures, so you turn off content
+logging; the log still shows each call's duration and token counts, but
+none of the figures.
 
 ## 4. User Scenarios
 
