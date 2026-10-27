@@ -1,5 +1,3 @@
-"""Answer a hostile message ourselves rather than sending it to the model."""
-
 from __future__ import annotations
 
 import re

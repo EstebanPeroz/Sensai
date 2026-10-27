@@ -1,5 +1,3 @@
-"""Compose the stages a chat exchange goes through around the model that answers it."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

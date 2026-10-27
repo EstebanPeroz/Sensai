@@ -1,5 +1,3 @@
-"""The step that answers: the only one the chain ends on."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

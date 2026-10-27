@@ -1,5 +1,3 @@
-"""Vocabulary of the chat pipeline: what a stage receives, and what it must give back."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field

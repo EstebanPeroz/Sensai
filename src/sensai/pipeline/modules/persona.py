@@ -1,5 +1,3 @@
-"""Put the active persona in front of the payload before the model reads it."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
