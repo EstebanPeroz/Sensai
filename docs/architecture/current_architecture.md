@@ -24,6 +24,9 @@ flowchart TB
 
     DB{{"PersistentDatabase<br/>(SqlAlchemy)"}}
     CACHE{{"SemanticCacheRepository<br/>(RedisSemanticCache)"}}
+    BUS["EventBus"]
+    LOGGER["InteractionLogger"]
+    INTERACTIONS{{"InteractionRepository<br/>(SqlInteractionRepository)"}}
 
     OLLAMAAPI[("Ollama API")]
     SQLITE[("SQLite")]
@@ -52,6 +55,12 @@ flowchart TB
     DB <--> SQLITE
     CACHE <--> REDIS
     CACHE -->|embeds queries| LLM
+
+    CORE --> BUS
+    CONV -->|emits each model call| BUS
+    BUS --> LOGGER
+    LOGGER --> INTERACTIONS
+    INTERACTIONS <--> SQLITE
 ```
 
 Message flow: the TUI pushes the user input into an event queue, and `Core` reads it and hands it to `Conversation`.
@@ -63,3 +72,9 @@ the active persona and the embedding model, and compared with the previous user 
 cached answer is sent to the TUI and saved like any other; on a miss, the complete answer is stored with a TTL, unless
 it was built with tools, whose results (web pages, search results) may soon be outdated. Without an embedding model or
 a reachable Redis server, `Core` builds no cache and every query goes to the model.
+
+Logging: every call to the model made by the ReAct loop of `Conversation` or by the RAG answer of `/ask` is recorded as
+an `Interaction` (request, response, tool calls, latency, token counts, status) and published on the `EventBus`.
+`InteractionLogger` subscribes to it and stores each one through `InteractionRepository`, in the `interaction` table of
+the persistent database. The `[logging]` settings disable it, or drop the content and keep only the metrics. A storage
+failure is reported to the UI without breaking the answer.

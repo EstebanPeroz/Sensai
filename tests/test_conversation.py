@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from sensai.core.events import EventBus
 from sensai.history.conversation import Conversation
 from sensai.llm.message import Role
 from sensai.llm.persona import Persona
@@ -79,7 +80,7 @@ def db() -> Iterator[MagicMock]:
 @pytest.fixture
 def react() -> MagicMock:
     react = MagicMock()
-    react.generate_answer.side_effect = lambda _messages: chunks("Redis is ", "a store.")
+    react.generate_answer.side_effect = lambda _messages, _on_interaction: chunks("Redis is ", "a store.")
     return react
 
 
@@ -102,7 +103,7 @@ def make_conversation(
     react: MagicMock, provider_manager: MagicMock, persona_manager: MagicMock
 ) -> Callable[[FakeCache | None], Conversation]:
     def make(cache: FakeCache | None = None) -> Conversation:
-        conversation = Conversation(provider_manager, persona_manager, react, cache)
+        conversation = Conversation(provider_manager, persona_manager, react, EventBus(), cache)
         conversation.uuid = uuid4()
         return conversation
 
@@ -156,7 +157,7 @@ class TestFirstTurn:
     def test_failed_answer_is_not_stored(
         self, make_conversation: Callable[..., Conversation], react: MagicMock
     ) -> None:
-        react.generate_answer.side_effect = lambda _messages: chunks("Redis", error="model crashed")
+        react.generate_answer.side_effect = lambda _messages, _on_interaction: chunks("Redis", error="model crashed")
         cache = FakeCache()
 
         make_conversation(cache).chat("What is Redis?", FakeUI())
@@ -167,7 +168,7 @@ class TestFirstTurn:
         self, make_conversation: Callable[..., Conversation], react: MagicMock
     ) -> None:
         tool_call = {"function": {"name": "web_search", "arguments": {"query": "redis"}}}
-        react.generate_answer.side_effect = lambda _messages: iter(
+        react.generate_answer.side_effect = lambda _messages, _on_interaction: iter(
             [
                 ChatResponse({"done": False, "message": {"role": "assistant", "tool_calls": [tool_call]}}),
                 *chunks("Redis"),
@@ -180,7 +181,7 @@ class TestFirstTurn:
         assert cache.stored == []
 
     def test_empty_answer_is_not_stored(self, make_conversation: Callable[..., Conversation], react: MagicMock) -> None:
-        react.generate_answer.side_effect = lambda _messages: chunks(" ")
+        react.generate_answer.side_effect = lambda _messages, _on_interaction: chunks(" ")
         cache = FakeCache()
 
         make_conversation(cache).chat("What is Redis?", FakeUI())
@@ -278,7 +279,7 @@ def test_conversation_delegates_generation_to_react() -> None:
     react.generate_answer.return_value = iter(
         [ChatResponse({"message": {"role": "assistant", "content": "Hello"}})],
     )
-    conversation = Conversation(provider_manager, persona_manager, react)
+    conversation = Conversation(provider_manager, persona_manager, react, EventBus())
 
     def record_message(role: Role, content: str, ui: object) -> bool:
         del ui
@@ -291,6 +292,7 @@ def test_conversation_delegates_generation_to_react() -> None:
 
     conversation.chat("Bonjour", ui)
 
-    react.generate_answer.assert_called_once_with([{"role": "user", "content": "Bonjour"}])
+    react.generate_answer.assert_called_once()
+    assert react.generate_answer.call_args.args[0] == [{"role": "user", "content": "Bonjour"}]
     assert [call.args[0].content for call in ui.send_ai_response.call_args_list] == ["Hello"]
     conversation.add_message.assert_called_with(Role.ASSISTANT, "Hello", ui)
