@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 from sensai.commands.base import Command
 from sensai.llm.message import Role
 from sensai.memory.history import History
+from sensai.monitoring.metrics import Report
 from sensai.ui.adapter import Confirmation, UIAdapter
 
 
@@ -16,6 +17,7 @@ class FakeUI(UIAdapter):
         self.confirmation_requests: list[tuple[str, dict]] = []
         self.answers: list[str | None] = []
         self.questions: list[str] = []
+        self.dashboards: list[Report] = []
 
     @override
     def ask_confirmation(self, tool_name: str, arguments: dict) -> Confirmation:
@@ -75,6 +77,11 @@ class FakeUI(UIAdapter):
     @override
     def update_thinking_effort(self, level: str) -> bool:
         self.thinking_efforts.append(level)
+        return True
+
+    @override
+    def show_dashboard(self, report: Report) -> bool:
+        self.dashboards.append(report)
         return True
 
 

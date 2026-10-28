@@ -1,12 +1,17 @@
 import re
+from contextlib import closing
 from typing import TYPE_CHECKING
 
+from sensai.error import SensaiError
 from sensai.llm.responses import ChatResponse
+from sensai.monitoring.interaction import InteractionStatus, ignore_interaction
+from sensai.monitoring.recorder import InteractionRecorder
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Generator, Iterator
 
     from sensai.llm.provider_manager import ProviderManager
+    from sensai.monitoring.interaction import Interaction
     from sensai.tools.tool_manager import ToolManager
 
 THINK_INSTRUCTION = (
@@ -51,13 +56,16 @@ class ReAct:
         """Change the maximum number of iterations the ReAct loop will do before giving up."""
         self._max_iterations = max_iterations
 
-    def generate_answer(self, messages: list[dict]) -> Iterator[ChatResponse]:
+    def generate_answer(
+        self, messages: list[dict], on_interaction: Callable[[Interaction], None] = ignore_interaction
+    ) -> Generator[ChatResponse]:
         """Stream the answer to `messages`, repeating Think, Act and Observe until the model answers.
 
         Each step appends what it produced to `messages`, so the next step can read it.
+        Every call to the model is passed to `on_interaction` once over, whatever its outcome.
         """
         if self._max_iterations == 0:
-            yield from self._request(messages, ANSWER_INSTRUCTION, tools=[])
+            yield from self._request(messages, ANSWER_INSTRUCTION, tools=[], on_interaction=on_interaction)
             return
 
         tools = self._available_tools()
@@ -65,11 +73,11 @@ class ReAct:
         observed = False
 
         for _ in range(self._max_iterations):
-            yield from self._think(messages, instruction)
+            yield from self._think(messages, instruction, on_interaction)
             thought = messages[-1]["content"]
 
             offered_tools = tools if self._wants_tool(thought, after_observation=observed) else []
-            yield from self._act(messages, offered_tools)
+            yield from self._act(messages, offered_tools, on_interaction)
 
             tool_calls = messages[-1].get("tool_calls", [])
             if not tool_calls:
@@ -79,33 +87,39 @@ class ReAct:
             instruction = OBSERVE_INSTRUCTION
             observed = True
 
-        yield from self._request(messages, ANSWER_INSTRUCTION, tools=[])
+        yield from self._request(messages, ANSWER_INSTRUCTION, tools=[], on_interaction=on_interaction)
 
-    def _think(self, messages: list[dict], instruction: str) -> Iterator[ChatResponse]:
+    def _think(
+        self, messages: list[dict], instruction: str, on_interaction: Callable[[Interaction], None]
+    ) -> Iterator[ChatResponse]:
         """Make the model reason without answering, and show its reasoning as thinking."""
         thought = ""
 
-        for chunk in self._request(messages, instruction, tools=[]):
-            if chunk.error is not None:
-                yield chunk
-            if chunk.content is not None:
-                thought += chunk.content
-                yield self._build_thinking(chunk.content)
+        with closing(self._request(messages, instruction, tools=[], on_interaction=on_interaction)) as chunks:
+            for chunk in chunks:
+                if chunk.error is not None:
+                    yield chunk
+                if chunk.content is not None:
+                    thought += chunk.content
+                    yield self._build_thinking(chunk.content)
         yield self._build_thinking("\n")
         messages.append({"role": "assistant", "content": thought})
 
-    def _act(self, messages: list[dict], tools: list[dict]) -> Iterator[ChatResponse]:
+    def _act(
+        self, messages: list[dict], tools: list[dict], on_interaction: Callable[[Interaction], None]
+    ) -> Iterator[ChatResponse]:
         """Let the model call one of `tools`, or make it write the final answer when there are none."""
         instruction = ACT_INSTRUCTION if tools else ANSWER_INSTRUCTION
         answer = ""
         tool_calls = []
 
-        for chunk in self._request(messages, instruction, tools):
-            yield chunk
-            if chunk.content is not None:
-                answer += chunk.content
-            if chunk.tool_calls:
-                tool_calls.extend(chunk.tool_calls)
+        with closing(self._request(messages, instruction, tools, on_interaction)) as chunks:
+            for chunk in chunks:
+                yield chunk
+                if chunk.content is not None:
+                    answer += chunk.content
+                if chunk.tool_calls:
+                    tool_calls.extend(chunk.tool_calls)
 
         message: dict[str, object] = {"role": "assistant", "content": answer}
         if tool_calls:
@@ -121,17 +135,39 @@ class ReAct:
             result = self._tool_manager.call(call)
             messages.append(result)
 
-    def _request(self, messages: list[dict], instruction: str, tools: list[dict]) -> Iterator[ChatResponse]:
-        """Send `messages` followed by `instruction` to the model, offering it `tools` when there are some."""
+    def _request(
+        self, messages: list[dict], instruction: str, tools: list[dict], on_interaction: Callable[[Interaction], None]
+    ) -> Generator[ChatResponse]:
+        """Send `messages` followed by `instruction` to the model, offering it `tools` when there are some.
+
+        The call is recorded and passed to `on_interaction` when it ends: done, failed, or closed before its end.
+        """
         provider = self._provider_manager.provider()
+        model = provider.current_model()
         request_messages = messages.copy()
         request_messages.append({"role": "user", "content": instruction})
         # Only enables our thinking loop
-        payload = {"model": provider.current_model(), "messages": request_messages, "think": False}
+        payload = {"model": model, "messages": request_messages, "think": False}
 
         if tools:
             payload["tools"] = tools
-        return provider.chat(payload, stream=True)
+        recorder = InteractionRecorder(model=model, request=request_messages)
+        status, error = InteractionStatus.OK, None
+        try:
+            for chunk in provider.chat(payload, stream=True):
+                recorder.add_chunk(chunk)
+                if chunk.error is not None:
+                    status, error = InteractionStatus.ERROR, chunk.error
+                yield chunk
+        except GeneratorExit:
+            if status is InteractionStatus.OK:
+                status = InteractionStatus.INTERRUPTED
+            raise
+        except SensaiError as err:
+            status, error = InteractionStatus.ERROR, str(err)
+            raise
+        finally:
+            on_interaction(recorder.finish(status, error))
 
     def _available_tools(self) -> list[dict]:
         """Return the tools to offer to the current model, none when there are none or when it cannot call tools.

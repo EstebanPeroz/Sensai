@@ -172,6 +172,19 @@ class FeatureSettings:
 
 
 @dataclass
+class LoggingSettings:
+    """Settings of the [logging] table: the structured log of every call to the model."""
+
+    enabled: bool = True
+    log_content: bool = True
+
+    def __post_init__(self) -> None:
+        """Check the flags, which come unchecked from the settings file."""
+        _check_bool(self.enabled, "logging.enabled")
+        _check_bool(self.log_content, "logging.log_content")
+
+
+@dataclass
 class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
@@ -181,6 +194,7 @@ class Settings:
     web: WebSettings = field(default_factory=WebSettings)
     db: DBSettings = field(default_factory=DBSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
+    logging: LoggingSettings = field(default_factory=LoggingSettings)
 
 
 def default_settings_file() -> Traversable:
@@ -227,6 +241,7 @@ def load_settings(path: Path | None = None) -> Settings:
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
             rag = RagDBSettings(**_pop_table(db, "rag"))
             features = FeatureSettings(**_pop_table(data, "features"))
+            logging = LoggingSettings(**_pop_table(data, "logging"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
                 cache=cache,
@@ -234,6 +249,7 @@ def load_settings(path: Path | None = None) -> Settings:
                 web=web,
                 db=DBSettings(**db, persistent=persistent, rag=rag),
                 features=features,
+                logging=logging,
                 **data,
             )
         except (TypeError, ValueError) as err:
@@ -257,6 +273,12 @@ def _names_in(names: list[str], namespace: str) -> set[str]:
 def _check_name(value: object, name: str) -> None:
     if not isinstance(value, str) or not value:
         msg = f"{name} must be a non-empty string"
+        raise TypeError(msg)
+
+
+def _check_bool(value: object, name: str) -> None:
+    if not isinstance(value, bool):
+        msg = f"{name} must be a boolean"
         raise TypeError(msg)
 
 

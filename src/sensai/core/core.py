@@ -4,11 +4,12 @@ from typing import TYPE_CHECKING
 import anyio
 
 from sensai import ui
-from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
+from sensai.commands import Ask, Branch, Command, Dashboard, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.effort import Effort
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
 from sensai.commands.tools import ToolsCommand
+from sensai.core.events import EventBus
 from sensai.error import SensaiError
 from sensai.history.conversation import Conversation
 from sensai.llm.embedder import Embedder
@@ -21,6 +22,10 @@ from sensai.llm.thinking.react import ReAct
 from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.monitoring.logger import InteractionLogger
+from sensai.pipeline import ChatPipeline
+from sensai.pipeline.modules import ModelStage, PersonaStage, RagStage
+from sensai.pipeline.modules.guardrails import BadWordsGuard
 from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
 from sensai.rag.indexer import Indexer
@@ -34,6 +39,7 @@ if TYPE_CHECKING:
 
     from sensai.config.settings import Settings
     from sensai.memory.persistent_db.adapter import PersistentDatabase
+    from sensai.monitoring.interaction import Interaction
 
 
 class Core:
@@ -45,6 +51,7 @@ class Core:
     _ui: ui.UIAdapter
     _command_registry: CommandRegistry
     _settings: Settings
+    _events: EventBus
     _mcp_client: MCPClient | None
     _tool_manager: ToolManager
 
@@ -67,6 +74,8 @@ class Core:
             lines.extend(f"- {model}" for model in sorted(self._provider_manager.get_models()))
             msg = "\n".join(lines)
             raise ModelError(msg)
+        self._events = EventBus()
+        InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder, self._ui.ask_user)
         if self._mcp_client is not None:
@@ -79,8 +88,11 @@ class Core:
         )
         self._react = ReAct(self._provider_manager, self._tool_manager)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
-        self.conversation = Conversation(self._provider_manager, self._persona_manager, self._react, cache)
-        self._command_registry = self._build_command_registry(db)
+        indexer, retrieval = self._build_rag()
+        self.conversation = Conversation(
+            self._provider_manager, self._persona_manager, self._build_pipeline(retrieval), self._events, cache
+        )
+        self._command_registry = self._build_command_registry(db, indexer, retrieval)
 
     def run(self) -> None:
         """Run the application."""
@@ -121,11 +133,20 @@ class Core:
 
         self._ui.close()
 
-    def _build_command_registry(self, db: PersistentDatabase) -> CommandRegistry:
+    def _build_pipeline(self, retrieval: Retrieval) -> ChatPipeline:
+        """Build the chain every chat exchange goes through, from the first guard down to the model."""
+        pipeline = ChatPipeline(ModelStage(self._react))
+        pipeline.use(BadWordsGuard())
+        pipeline.use(PersonaStage(self._persona_manager))
+        pipeline.use(RagStage(retrieval))
+        return pipeline
+
+    def _build_command_registry(
+        self, db: PersistentDatabase, indexer: Indexer, retrieval: Retrieval
+    ) -> CommandRegistry:
         """Build a command registry with all available commands."""
         Command.bind_ui(self._ui)
         StateCommand.bind_db(db)
-        indexer, retrieval = self._build_rag()
         registry = CommandRegistry(
             [
                 Model(self._provider_manager),
@@ -137,6 +158,7 @@ class Core:
                 Import(),
                 Index(indexer),
                 Ask(retrieval),
+                Dashboard(db.interactions),
             ]
         )
         registry.register_command(Help(registry))
@@ -161,7 +183,14 @@ class Core:
             raise ModelError(msg)
         indexation = Indexation(provider, model)
         collection = Collection.open(self._settings.db.rag.location)
-        return Indexer(indexation, collection), Retrieval(indexation, collection, provider)
+        return Indexer(indexation, collection), Retrieval(indexation, collection, provider, self._emit_interaction)
+
+    def _emit_interaction(self, interaction: Interaction) -> None:
+        """Publish `interaction` on the event bus; a listener failing must not lose the answer it records."""
+        try:
+            self._events.emit(interaction)
+        except SensaiError as err:
+            self._ui.send_system_message(f"Failed to log interaction: {err}")
 
     def _build_embedder(self) -> Embedder | None:
         """Build the embedder shared by the web tools and the semantic cache, or None without an embedding model."""

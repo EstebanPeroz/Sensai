@@ -9,6 +9,7 @@ from sensai.config.settings import (
     ConfigError,
     FeatureSettings,
     LLMSettings,
+    LoggingSettings,
     OllamaSettings,
     RagDBSettings,
     Settings,
@@ -37,6 +38,7 @@ class TestPackagedSettings:
         assert settings.cache == CacheSettings()
         assert settings.db.rag.location == "http://localhost:6333"
         assert settings.web == WebSettings()
+        assert settings.logging == LoggingSettings(enabled=True, log_content=True)
 
     def test_default_file_is_the_template_without_local_settings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -178,6 +180,13 @@ class TestFeatures:
         assert features.confirm_in("tools") == {"b"}
 
 
+class TestLogging:
+    def test_is_read_from_logging_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, "[logging]\nenabled = false\nlog_content = false\n"))
+
+        assert settings.logging == LoggingSettings(enabled=False, log_content=False)
+
+
 class TestValidation:
     @pytest.mark.parametrize(
         ("content", "reason"),
@@ -221,6 +230,9 @@ class TestValidation:
             ('[features]\nconfirm = "tools.x"\n', "features.confirm must be a list"),
             ('[features]\nconfirm = [""]\n', "features.confirm entry must be a non-empty string"),
             ("[features]\nconfirm = [1]\n", "features.confirm entry must be a non-empty string"),
+            ('logging = "x"\n', "logging must be a table"),
+            ('[logging]\nenabled = "yes"\n', "logging.enabled must be a boolean"),
+            ("[logging]\nlog_content = 1\n", "logging.log_content must be a boolean"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:

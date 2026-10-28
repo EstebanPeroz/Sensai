@@ -37,6 +37,7 @@ Current pain points Sensai must address:
 | 12 | Automation | The same report needs to go out every week | Scheduling |
 | 13 | Continuous improvement | Prompts get refined over time based on feedback | Prompt versioning · Semantics · Automated Prompt Optimization |
 | 14 | Repeated questions | Asking again a question already answered, possibly worded differently | Semantic cache |
+| 15 | Traceability | Needing to check afterwards what was sent to the model and how it performed | Logging & Monitoring |
 
 Sections 3.x below detail, feature by feature, at least two user stories
 covering this workflow.
@@ -422,28 +423,45 @@ an answer.
 Example: The Redis server is not running; every question still gets an
 answer from the model, just without the cache speed-up.
 
-### 3.9 Human in the loop
+### 3.9 Logging & Monitoring
 
-**US-52** — As an analyst, I want to choose in my settings which tools must
+**US-52** — As an analyst, I want every call made to the model during my
+investigation (prompt sent, answer, tools called, latency, token counts,
+errors) to be recorded, so that I can trace afterwards how a given answer
+was produced and why it was slow or failed.
+Example: An answer cited in last week's report is challenged, and you look
+up the exact prompt, the web searches made and the model's reply behind it.
+
+**US-53** — As an analyst handling sensitive data, I want to keep logging
+the metrics of each call without storing what I and the model wrote, so that
+I can still monitor latency and errors without leaving confidential content
+on disk.
+Example: You work on a client's financial figures, so you turn off content
+logging; the log still shows each call's duration and token counts, but
+none of the figures.
+
+### 3.10 Human in the loop
+
+**US-54** — As an analyst, I want to choose in my settings which tools must
 ask me before they run, so that I decide which actions need my approval
 without changing the code.
 Example: You add `tools.web_fetch` to `[features].confirm`; from then on,
 `/tools list` shows it as asking confirmation, and Sensai shows you the page
 it wants to open and waits for your answer.
 
-**US-53** — As an analyst, I want to allow a tool for the rest of my session
+**US-55** — As an analyst, I want to allow a tool for the rest of my session
 with a single answer, so that a long investigation doesn't ask me the same
 question for every call.
 Example: Sensai asks to open a page; you choose "Always this session", and
 the next pages open without asking until you restart Sensai.
 
-**US-54** — As an analyst, I want a refused tool call to still end with an
+**US-56** — As an analyst, I want a refused tool call to still end with an
 answer, so that saying no doesn't leave my investigation stuck.
 Example: You deny opening a page; the assistant is told not to try it again
 and answers from what it had already found instead of stopping. If it still
 asks for the same page, you are asked again and can deny again.
 
-**US-55** — As an analyst, I want to be able to skip a question the
+**US-57** — As an analyst, I want to be able to skip a question the
 assistant asks me, so that it can continue when I don't know or don't care
 about the detail.
 Example: The assistant asks which region you mean; you press Escape, and it
@@ -520,7 +538,7 @@ getting an answer that does not fit the current context.
 **Persona:** the Analyst, checking a competitor's pricing for a client note.
 **Goal:** let the assistant research on its own, but approve each page it
 opens, and give it the details it is missing instead of letting it guess.
-**Covers:** US-19, US-20, US-52, US-53, US-54, US-55.
+**Covers:** US-19, US-20, US-54, US-55, US-56, US-57.
 
 1. **Choosing what needs approval.** In `settings.toml`, the analyst sets
    `confirm = ["tools.web_fetch"]` under `[features]`. Searching stays free;
