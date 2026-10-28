@@ -92,8 +92,9 @@ def test_core_does_not_create_mcp_client_without_configuration() -> None:
     provider_manager = MagicMock()
     provider_manager.set_model.return_value = True
     db = MagicMock()
-    built_in_tools = [MagicMock()]
-    settings = Settings(features=FeatureSettings(disabled=["tools.example"]))
+    built_in_tool = MagicMock()
+    ui = MagicMock()
+    settings = Settings(features=FeatureSettings(disabled=["tools.example"], confirm=["tools.web_fetch"]))
 
     with (
         patch("sensai.core.core.get_db", return_value=db),
@@ -106,17 +107,23 @@ def test_core_does_not_create_mcp_client_without_configuration() -> None:
         ) as mcp_client,
         patch(
             "sensai.core.core.build_tools",
-            return_value=built_in_tools,
+            return_value=[built_in_tool],
         ) as build_tools,
         patch(
             "sensai.core.core.ToolManager",
         ) as tool_manager,
     ):
-        Core(MagicMock(), settings, Namespace(model="model"))
+        Core(ui, settings, Namespace(model="model"))
 
     mcp_client.assert_not_called()
-    build_tools.assert_called_once_with(settings, None)
-    tool_manager.assert_called_once_with(built_in_tools, disabled={"example"})
+    build_tools.assert_called_once_with(settings, None, ui.ask_user)
+    tool_manager.assert_called_once()
+    assert tool_manager.call_args.args[0] == [built_in_tool]
+    assert tool_manager.call_args.kwargs == {
+        "disabled": {"example"},
+        "confirm": {"web_fetch"},
+        "approver": ui.ask_confirmation,
+    }
 
 
 def test_core_creates_mcp_client_for_configured_server() -> None:
@@ -173,8 +180,8 @@ def test_core_registers_discovered_mcp_tools() -> None:
     run.assert_called_once_with(mcp_client_type.return_value.start)
     tool_manager_type.assert_called_once()
     registered_tools = tool_manager_type.call_args.args[0]
-    assert registered_tools == [mcp_tool]
-    assert ToolManager(registered_tools).names() == ["echo"]
+    assert registered_tools[-1] is mcp_tool
+    assert ToolManager(registered_tools).names() == ["ask_user", "echo"]
 
 
 def test_core_runs_with_mcp_client() -> None:

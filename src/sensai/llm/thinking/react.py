@@ -1,3 +1,4 @@
+import re
 from contextlib import closing
 from typing import TYPE_CHECKING
 
@@ -32,8 +33,9 @@ ACT_INSTRUCTION = (
     "directly, in the user's language, without repeating your reasoning."
 )
 ANSWER_INSTRUCTION = "Now reply to the user's last message directly, in the user's language, from what you found."
-TOOL_REFUSAL = "tool needed: no"
-SEARCH_AGAIN = "answer found: no"
+# The decision ending a thought, such as "Tool needed: yes" or "Answer found: **no**".
+TOOL_DECISION = re.compile(r"tool needed\W*(yes|no)", re.IGNORECASE)
+ANSWER_DECISION = re.compile(r"answer found\W*(yes|no)", re.IGNORECASE)
 
 
 class ReAct:
@@ -197,12 +199,14 @@ class ReAct:
 
     @staticmethod
     def _wants_tool(thought: str, *, after_observation: bool) -> bool:
-        """Read the decision ending `thought`: a tool is the default before any tool result, the answer after one."""
-        thought = thought.lower()
+        """Read the decision ending `thought`: a tool is the default before any tool result, the answer after one.
 
+        Only the last decision counts, since a model may quote the instruction ("End with 'Tool needed: yes' or
+        'Tool needed: no'") or change its mind before deciding.
+        """
         if after_observation:
-            return SEARCH_AGAIN in thought
-        return TOOL_REFUSAL not in thought
+            return _last_decision(ANSWER_DECISION, thought) == "no"
+        return _last_decision(TOOL_DECISION, thought) != "no"
 
     @staticmethod
     def _first_think_instruction(tools: list[dict]) -> str:
@@ -220,3 +224,9 @@ class ReAct:
     def _build_thinking(text: str) -> ChatResponse:
         """Build a chunk that the UI shows as thinking instead of as the answer."""
         return ChatResponse({"done": False, "message": {"thinking": text}})
+
+
+def _last_decision(decision: re.Pattern[str], thought: str) -> str | None:
+    """Return the last "yes" or "no" `decision` found in `thought`, lowercased, or None when there is none."""
+    answers = decision.findall(thought)
+    return answers[-1].lower() if answers else None

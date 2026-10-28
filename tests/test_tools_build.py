@@ -19,8 +19,12 @@ class FakeEmbedder(Embedder):
         return [[1.0] for _ in texts]
 
 
+def no_answer(_question: str) -> str | None:
+    return None
+
+
 def build_tools() -> list[Tool]:
-    return build_tools_from(Settings(), FakeEmbedder())
+    return build_tools_from(Settings(), FakeEmbedder(), no_answer)
 
 
 class TestBuildTools:
@@ -47,10 +51,22 @@ class TestBuildTools:
         assert build_tools() is not build_tools()
 
     def test_builds_the_web_tools_with_an_embedder(self) -> None:
-        assert sorted(tool.name for tool in build_tools()) == ["web_fetch", "web_search"]
+        assert sorted(tool.name for tool in build_tools()) == ["ask_user", "web_fetch", "web_search"]
 
     def test_leaves_the_web_tools_out_without_an_embedder(self) -> None:
-        assert build_tools_from(Settings(), None) == []
+        assert [tool.name for tool in build_tools_from(Settings(), None, no_answer)] == ["ask_user"]
+
+    def test_ask_user_asks_through_the_given_callback(self) -> None:
+        questions: list[str] = []
+
+        def ask(question: str) -> str:
+            questions.append(question)
+            return "Q3"
+
+        ask_user = next(tool for tool in build_tools_from(Settings(), None, ask) if tool.name == "ask_user")
+
+        assert ask_user.run(question="Which quarter?") == "Q3"
+        assert questions == ["Which quarter?"]
 
 
 class TestBuildToolsFeedsTheManager:
