@@ -1,5 +1,3 @@
-"""Answering a question from the chunks the indexation stored."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal, Protocol
@@ -18,7 +16,7 @@ if TYPE_CHECKING:
     from sensai.rag.collection import Collection
     from sensai.rag.indexation_rag import Indexation
 
-DEFAULT_MIN_SCORE = 0.45
+DEFAULT_MIN_SCORE = 0.5
 
 
 _NOTHING_FOUND = "The indexed documents hold nothing close enough to that question."
