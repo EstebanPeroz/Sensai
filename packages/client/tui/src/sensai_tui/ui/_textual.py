@@ -29,7 +29,6 @@ from textual.widgets import Input, Label, ListItem, ListView, OptionList
 
 import sensai_tui.ui._style as fx
 from sensai_tui.completion import Completer
-from sensai_tui.connection import ConnectionFailedError
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -152,13 +151,7 @@ class ChatApp(App):
                 self._outbox.task_done()
 
     async def _receiver(self) -> None:
-        """Connect, log in, then render each server message until the connection closes."""
-        try:
-            await self._connection.open()
-        except ConnectionFailedError as err:
-            self.add_error(f"cannot connect to {self._connection.url}: {err}")
-            self._set_disconnected()
-            return
+        """Log in, then render each server message until the connection closes."""
         self._send(Login(model=self._model))
         async for message in self._connection.messages():
             self._on_server_message(message)

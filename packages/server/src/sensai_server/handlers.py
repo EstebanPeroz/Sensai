@@ -11,8 +11,7 @@ if TYPE_CHECKING:
     from sensai_protocol import Cancel, Chat, Command, Complete, Login, Logout
 
     from sensai_server.outbound import Outbound
-    from sensai_server.session import Session
-    from sensai_server.session_registry import SessionRegistry
+    from sensai_server.session import Session, SessionRegistry
 
 type ChatRunner = Callable[[Session, str], Coroutine[Any, Any, None]]
 type CommandRunner = Callable[[Session, str], Coroutine[Any, Any, None]]
