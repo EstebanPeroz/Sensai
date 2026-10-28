@@ -39,6 +39,7 @@ class TestPackagedSettings:
         assert settings.db.rag.location == "http://localhost:6333"
         assert settings.web == WebSettings()
         assert settings.logging == LoggingSettings(enabled=True, log_content=True)
+        assert settings.context == ContextSettings(budget=8192, warning_threshold=0.8)
 
     def test_default_file_is_the_template_without_local_settings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
