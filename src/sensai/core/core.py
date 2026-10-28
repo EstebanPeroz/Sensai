@@ -22,6 +22,7 @@ from sensai.llm.thinking.react import ReAct
 from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.monitoring.budget import ContextBudget
 from sensai.monitoring.logger import InteractionLogger
 from sensai.pipeline import ChatPipeline
 from sensai.pipeline.modules import ModelStage, PersonaStage, RagStage
@@ -54,6 +55,7 @@ class Core:
     _events: EventBus
     _mcp_client: MCPClient | None
     _tool_manager: ToolManager
+    _context_budget: ContextBudget
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
@@ -76,6 +78,8 @@ class Core:
             raise ModelError(msg)
         self._events = EventBus()
         InteractionLogger(db.interactions, settings.logging).attach(self._events)
+        self._context_budget = ContextBudget(settings.context, self._context_length, ui.update_context_usage)
+        self._context_budget.attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder)
         if self._mcp_client is not None:
@@ -109,6 +113,7 @@ class Core:
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
         self._ui.update_thinking_effort(Effort.effort_level(self._react.max_iterations))
+        self._ui.update_context_usage(self._context_budget.usage(self._provider_manager.provider().current_model()))
 
         event: ui.Event | None = None
         while not self._is_quit(event):
@@ -183,6 +188,16 @@ class Core:
             self._events.emit(interaction)
         except SensaiError as err:
             self._ui.send_system_message(f"Failed to log interaction: {err}")
+
+    def _context_length(self, model: str) -> int | None:
+        """Return the context length of `model`, None when its provider cannot tell."""
+        provider = self._provider_manager.get_provider(model)
+        if provider is None:
+            return None
+        try:
+            return provider.show(model).context_length
+        except SensaiError:
+            return None
 
     def _build_embedder(self) -> Embedder | None:
         """Build the embedder shared by the web tools and the semantic cache, or None without an embedding model."""
