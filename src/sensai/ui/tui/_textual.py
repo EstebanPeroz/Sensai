@@ -349,3 +349,7 @@ class ChatApp(App):
     def update_thinking_effort(self, level: str) -> None:
         """Show the thinking effort `level` at the bottom right of the input box."""
         self.query_one("#input", Input).border_subtitle = f"effort: {level}"
+
+    def update_context_usage(self, usage: ContextUsage) -> None:
+        """Show the context `usage` at the top left of the input box."""
+        self.query_one("#input", Input).border_title = _format_usage(usage)
