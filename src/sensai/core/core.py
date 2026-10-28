@@ -85,7 +85,7 @@ class Core:
         if self._mcp_client is not None:
             tools.extend(anyio.run(self._mcp_client.start))
         self._tool_manager = ToolManager(tools, disabled=settings.features.disabled_in("tools"))
-        self._react = ReAct(self._provider_manager, self._tool_manager)
+        self._react = ReAct(self._provider_manager, self._tool_manager, context_window=settings.context.budget)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
         indexer, retrieval = self._build_rag()
         self.conversation = Conversation(
