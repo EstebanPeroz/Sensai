@@ -5,6 +5,7 @@ from uuid import UUID  # noqa: TC003 - pydantic resolves annotations at runtime
 from pydantic import Field
 
 from sensai_protocol._base import ProtocolModel
+from sensai_protocol.dashboard import DashboardReport  # noqa: TC001 - pydantic resolves annotations at runtime
 
 
 class Role(StrEnum):
@@ -91,7 +92,31 @@ class Completions(ProtocolModel):
     values: list[str]
 
 
+class ConfirmTool(ProtocolModel):
+    """Ask whether the tool `tool_name` may run with `arguments`. Answered by a `confirm_answer`."""
+
+    type: Literal["confirm_tool"] = "confirm_tool"
+    request_id: UUID
+    tool_name: str
+    arguments: dict[str, Any]
+
+
+class AskUser(ProtocolModel):
+    """Ask the user `question` on behalf of the model. Answered by a `user_answer`."""
+
+    type: Literal["ask_user"] = "ask_user"
+    request_id: UUID
+    question: str
+
+
+class Dashboard(ProtocolModel):
+    """Show a monitoring report until the user closes it."""
+
+    type: Literal["dashboard"] = "dashboard"
+    report: DashboardReport
+
+
 type ServerMessage = Annotated[
-    Session | AiChunk | Input | System | Error | History | Effort | Completions,
+    Session | AiChunk | Input | System | Error | History | Effort | Completions | ConfirmTool | AskUser | Dashboard,
     Field(discriminator="type"),
 ]

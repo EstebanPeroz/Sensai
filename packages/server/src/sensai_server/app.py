@@ -3,7 +3,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
-from sensai_protocol import Cancel, Chat, Command, Complete, Login, Logout, ProtocolError, parse_client_message
+from sensai_protocol import (
+    Cancel,
+    Chat,
+    Command,
+    Complete,
+    ConfirmAnswer,
+    Login,
+    Logout,
+    ProtocolError,
+    UserAnswer,
+    parse_client_message,
+)
 
 from sensai_server import handlers
 from sensai_server.models import StaticModelCatalog
@@ -88,4 +99,8 @@ async def _dispatch(ws: WebSocket, session: Session, message: ClientMessage) -> 
             await handlers.handle_cancel(session, message)
         case Complete():
             await handlers.handle_complete(session, message)
+        case ConfirmAnswer():
+            await handlers.handle_confirm_answer(session, message)
+        case UserAnswer():
+            await handlers.handle_user_answer(session, message)
     return True

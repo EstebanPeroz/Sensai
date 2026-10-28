@@ -1,4 +1,6 @@
+from enum import StrEnum
 from typing import Annotated, Literal
+from uuid import UUID  # noqa: TC003 - pydantic resolves annotations at runtime
 
 from pydantic import Field
 
@@ -45,4 +47,31 @@ class Complete(ProtocolModel):
     text: str
 
 
-type ClientMessage = Annotated[Login | Logout | Chat | Command | Cancel | Complete, Field(discriminator="type")]
+class Confirmation(StrEnum):
+    """Answer of the user asked whether a tool may run: once, for the rest of the session, or not at all."""
+
+    ALLOW = "allow"
+    ALWAYS = "always"
+    DENY = "deny"
+
+
+class ConfirmAnswer(ProtocolModel):
+    """Answer to the `confirm_tool` of `request_id`."""
+
+    type: Literal["confirm_answer"] = "confirm_answer"
+    request_id: UUID
+    answer: Confirmation
+
+
+class UserAnswer(ProtocolModel):
+    """Answer to the `ask_user` of `request_id`. None when the user skipped the question."""
+
+    type: Literal["user_answer"] = "user_answer"
+    request_id: UUID
+    answer: str | None
+
+
+type ClientMessage = Annotated[
+    Login | Logout | Chat | Command | Cancel | Complete | ConfirmAnswer | UserAnswer,
+    Field(discriminator="type"),
+]

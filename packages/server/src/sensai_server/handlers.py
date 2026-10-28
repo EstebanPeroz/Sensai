@@ -8,7 +8,7 @@ from sensai_protocol import AiChunk, Role
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
-    from sensai_protocol import Cancel, Chat, Command, Complete, Login, Logout
+    from sensai_protocol import Cancel, Chat, Command, Complete, ConfirmAnswer, Login, Logout, UserAnswer
 
     from sensai_server.outbound import Outbound
     from sensai_server.session import Session, SessionRegistry
@@ -89,3 +89,13 @@ async def handle_cancel(session: Session, _: Cancel) -> None:
 async def handle_complete(session: Session, message: Complete) -> None:
     """Answer with the `completions` of the finished words of `message.text`: none until commands are copied."""
     await session.out.send_completions(message.text, [])
+
+
+async def handle_confirm_answer(session: Session, message: ConfirmAnswer) -> None:
+    """Give the answer to the waiting `confirm_tool`. It is not refused while busy: the busy task is the one waiting."""
+    session.out.resolve(message.request_id, message.answer)
+
+
+async def handle_user_answer(session: Session, message: UserAnswer) -> None:
+    """Give the answer to the waiting `ask_user`. It is not refused while busy: the busy task is the one waiting."""
+    session.out.resolve(message.request_id, message.answer)

@@ -6,11 +6,16 @@ from typing import TYPE_CHECKING, ClassVar, override
 
 from sensai_protocol import (
     AiChunk,
+    AskUser,
     Cancel,
     Chat,
     Command,
     Complete,
     Completions,
+    ConfirmAnswer,
+    Confirmation,
+    ConfirmTool,
+    Dashboard,
     Effort,
     Error,
     History,
@@ -19,6 +24,7 @@ from sensai_protocol import (
     Role,
     Session,
     System,
+    UserAnswer,
 )
 from sensai_protocol import Input as InputMessage
 from textual.app import App, ComposeResult
@@ -29,11 +35,15 @@ from textual.widgets import Input, Label, ListItem, ListView, OptionList
 
 import sensai_tui.ui._style as fx
 from sensai_tui.completion import Completer
+from sensai_tui.ui._dashboard import DashboardScreen
+from sensai_tui.ui._dialogs import ConfirmScreen, QuestionScreen
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from uuid import UUID
 
     from sensai_protocol import ClientMessage, HistoryMessage, ServerMessage
+    from textual.screen import Screen
 
     from sensai_tui.connection import Connection
 
@@ -171,6 +181,8 @@ class ChatApp(App):
         field.disabled = True
         field.placeholder = "disconnected — ctrl+q to quit"
         self.query_one(CompletionList).display = False
+        while len(self.screen_stack) > 1:
+            self.pop_screen()
 
     async def _quit(self) -> None:
         """Wait for the queued messages to be sent, then close the connection and exit."""
@@ -200,8 +212,48 @@ class ChatApp(App):
             case Effort():
                 self.update_thinking_effort(message.level)
             case Completions():
-                if self._completer.receive(message.text, message.values):
-                    self._refresh_completions(self.query_one("#input", Input).value)
+                self._receive_completions(message)
+            case ConfirmTool() | AskUser() | Dashboard():
+                self._open_screen(message)
+
+    def _receive_completions(self, message: Completions) -> None:
+        """Show the received completions, unless they answer an outdated input."""
+        if self._completer.receive(message.text, message.values):
+            self._refresh_completions(self.query_one("#input", Input).value)
+
+    def _open_screen(self, message: ConfirmTool | AskUser | Dashboard) -> None:
+        """Open the dialog or the dashboard the server asked for."""
+        match message:
+            case ConfirmTool():
+                self.ask_confirmation(message)
+            case AskUser():
+                self.ask_user(message)
+            case Dashboard():
+                self.push_screen(DashboardScreen(message.report))
+
+    def ask_confirmation(self, message: ConfirmTool) -> None:
+        """Ask in a dialog whether the tool may run, sending the answer back, deny when the dialog is closed."""
+
+        def on_dismiss(answer: Confirmation | None) -> None:
+            self._send(ConfirmAnswer(request_id=message.request_id, answer=answer or Confirmation.DENY))
+
+        self.open_dialog(ConfirmScreen(message.tool_name, message.arguments), on_dismiss)
+
+    def ask_user(self, message: AskUser) -> None:
+        """Ask the model's question in a dialog, sending the answer back, None when it is skipped."""
+
+        def on_dismiss(answer: str | None) -> None:
+            self._send(UserAnswer(request_id=message.request_id, answer=answer))
+
+        self.open_dialog(QuestionScreen(message.question), on_dismiss)
+
+    def open_dialog[T](self, screen: Screen[T], on_dismiss: Callable[[T | None], None]) -> None:
+        """Show the modal `screen` over the chat, `on_dismiss` receiving its result once it closes.
+
+        The completion list is hidden first, so that escape reaches the dialog.
+        """
+        self.query_one(CompletionList).display = False
+        self.push_screen(screen, on_dismiss)
 
     def add_ai_response(self, resp: AiChunk) -> None:
         """Append streamed text to the last chat entry, or start a new one."""
@@ -245,7 +297,12 @@ class ChatApp(App):
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
-        """Send the submitted input to the server: `/q` logs out, `/...` is a command, anything else a chat."""
+        """Send the submitted input to the server: `/q` logs out, `/...` is a command, anything else a chat.
+
+        The inputs of dialogs are ignored.
+        """
+        if message.input.id != "input":
+            return
         content = message.value.strip()
         message.input.clear()
         if not content or not self._connected:
@@ -301,6 +358,8 @@ class ChatApp(App):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Show the completions of the new input value, or hide the list when there are none."""
+        if event.input.id != "input":
+            return
         self._refresh_completions(event.value)
 
     def _refresh_completions(self, value: str) -> None:
@@ -320,9 +379,14 @@ class ChatApp(App):
 
     @override
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Only let the completion keys act while the list is shown, so they keep their usual role otherwise."""
+        """Only let the completion keys act while the list is shown, so they keep their usual role otherwise.
+
+        Escape and cancel only act on the chat: over a dialog or the dashboard, they reach that screen.
+        """
         if action in {"accept_completion", "move_completion"}:
             return self.query_one(CompletionList).display
+        if action in {"escape", "cancel"}:
+            return len(self.screen_stack) == 1
         return True
 
     def action_move_completion(self, step: int) -> None:

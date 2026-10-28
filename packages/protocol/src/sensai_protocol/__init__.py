@@ -1,8 +1,30 @@
-from sensai_protocol.client_messages import Cancel, Chat, ClientMessage, Command, Complete, Login, Logout
+from sensai_protocol.client_messages import (
+    Cancel,
+    Chat,
+    ClientMessage,
+    Command,
+    Complete,
+    ConfirmAnswer,
+    Confirmation,
+    Login,
+    Logout,
+    UserAnswer,
+)
+from sensai_protocol.dashboard import (
+    DashboardDrift,
+    DashboardError,
+    DashboardGroup,
+    DashboardReport,
+    DashboardSummary,
+    Period,
+)
 from sensai_protocol.parsing import ProtocolError, parse_client_message, parse_server_message
 from sensai_protocol.server_messages import (
     AiChunk,
+    AskUser,
     Completions,
+    ConfirmTool,
+    Dashboard,
     Effort,
     Error,
     History,
@@ -16,12 +38,22 @@ from sensai_protocol.server_messages import (
 
 __all__ = [
     "AiChunk",
+    "AskUser",
     "Cancel",
     "Chat",
     "ClientMessage",
     "Command",
     "Complete",
     "Completions",
+    "ConfirmAnswer",
+    "ConfirmTool",
+    "Confirmation",
+    "Dashboard",
+    "DashboardDrift",
+    "DashboardError",
+    "DashboardGroup",
+    "DashboardReport",
+    "DashboardSummary",
     "Effort",
     "Error",
     "History",
@@ -29,11 +61,13 @@ __all__ = [
     "Input",
     "Login",
     "Logout",
+    "Period",
     "ProtocolError",
     "Role",
     "ServerMessage",
     "Session",
     "System",
+    "UserAnswer",
     "parse_client_message",
     "parse_server_message",
 ]
