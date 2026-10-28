@@ -4,9 +4,10 @@ import sys
 from typing import TYPE_CHECKING
 
 import uvicorn
+from sensai_protocol.error import SensaiError
 
 from sensai_server.app import create_app
-from sensai_server.config.settings import ConfigError, load_settings
+from sensai_server.config.settings import load_settings
 from sensai_server.parsing import Parsing
 
 if TYPE_CHECKING:
@@ -18,8 +19,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = Parsing().parse_args(argv)
     try:
         settings = load_settings(args.config)
-    except ConfigError as err:
+        app = create_app(settings)
+    except SensaiError as err:
         print(err.message, file=sys.stderr)
         return 1
-    uvicorn.run(create_app(settings), host=args.host, port=args.port)
+    uvicorn.run(app, host=args.host, port=args.port)
     return 0

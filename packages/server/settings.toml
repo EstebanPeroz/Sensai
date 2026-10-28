@@ -1,6 +1,3 @@
-# Template of the local settings: `make install` copies it to settings.toml (git-ignored), edit that copy.
-# Without settings.toml, sensai runs with this template.
-
 [db]
 persistent.url= "sqlite:///persistent.db"
 

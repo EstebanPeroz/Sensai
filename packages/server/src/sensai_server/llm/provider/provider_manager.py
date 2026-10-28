@@ -58,7 +58,7 @@ class ProviderManager:
 
     def load_model(self, model: str) -> bool:
         """Load the given model. Returns True if successful, False otherwise."""
-        provider = self._models.get(model)
+        provider = self.get_provider(model)
         if provider is None:
             return False
         try:
