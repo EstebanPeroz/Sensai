@@ -73,7 +73,16 @@ class OllamaAdapter(ProviderAdapter):
             model=model_name,
             tools="tools" in capabilities,
             think="thinking" in capabilities,
+            context_length=self._context_length(content.get("model_info", {})),
         )
+
+    @staticmethod
+    def _context_length(model_info: dict) -> int | None:
+        """Read the context length from `model_info`, where Ollama keys it by architecture (`llama.context_length`)."""
+        for key, value in model_info.items():
+            if key.endswith(".context_length") and isinstance(value, int):
+                return value
+        return None
 
     def load(self, model_name: str) -> bool:
         """Load a model with the ollama API."""

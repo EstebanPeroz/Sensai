@@ -328,6 +328,19 @@ class TestShow:
         assert result.tools is True
         assert result.think is True
 
+    def test_reads_the_context_length_of_the_architecture(self, adapter: OllamaAdapter) -> None:
+        model_info = {"general.architecture": "qwen3", "qwen3.context_length": 40960, "qwen3.block_count": 36}
+        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={"model_info": model_info})):
+            result = adapter.show("model")
+
+        assert result.context_length == 40960
+
+    def test_context_length_is_none_without_model_info(self, adapter: OllamaAdapter) -> None:
+        with patch("sensai.llm.ollama.requests.post", return_value=mock_response(json_data={})):
+            result = adapter.show("model")
+
+        assert result.context_length is None
+
 
 class TestLoad:
     def test_returns_true_when_done(self, adapter: OllamaAdapter) -> None:
