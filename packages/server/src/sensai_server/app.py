@@ -17,6 +17,7 @@ from sensai_protocol import (
 )
 
 from sensai_server import handlers
+from sensai_server.llm.provider import ProviderManager
 from sensai_server.models import StaticModelCatalog
 from sensai_server.outbound import Outbound
 from sensai_server.session import SessionRegistry
@@ -47,6 +48,7 @@ def create_app(
     app.state.registry = SessionRegistry(StaticModelCatalog())
     app.state.chat = chat
     app.state.command = command
+    app.state.provider_manager = ProviderManager(settings.llm)
     app.include_router(router)
     return app
 
