@@ -68,16 +68,12 @@ class OllamaAdapter(ProviderAdapter):
     def show(self, model_name: str) -> ShowResponse:
         """Get info on a specified model on the ollama API."""
         content = self._post("api/show", {"model": model_name}, timeout=3)
-        response: ShowResponse = ShowResponse(model=model_name)
-
         capabilities: list = content.get("capabilities", [])
-        if capabilities == []:
-            return response
-        if "tools" in capabilities:
-            response.tools = True
-        if "thinking" in capabilities:
-            response.think = True
-        return response
+        return ShowResponse(
+            model=model_name,
+            tools="tools" in capabilities,
+            think="thinking" in capabilities,
+        )
 
     def load(self, model_name: str) -> bool:
         """Load a model with the ollama API."""
