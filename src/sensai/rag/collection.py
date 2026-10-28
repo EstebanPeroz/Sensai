@@ -6,6 +6,7 @@ import uuid
 from typing import TYPE_CHECKING
 
 from qdrant_client import QdrantClient
+from qdrant_client.http.exceptions import ApiException
 from qdrant_client.models import (
     Distance,
     FieldCondition,
@@ -120,7 +121,11 @@ class Collection:
 
     def exists(self) -> bool:
         """Whether the collection has been created yet."""
-        return self._client.collection_exists(self._name)
+        try:
+            return self._client.collection_exists(self._name)
+        except ApiException as error:
+            msg = f"could not check whether the collection {self._name!r} exists: {error}"
+            raise VectorStoreError(msg) from error
 
     def dimension(self) -> int | None:
         """Vector size the collection holds, or None while it does not exist yet."""
@@ -183,13 +188,17 @@ class Collection:
         if stored != len(vector):
             msg = f"searching with a {len(vector)}-dimension vector, but the collection holds {stored}"
             raise VectorStoreError(msg)
-        return self._client.query_points(
-            self._name,
-            query=vector,
-            limit=limit,
-            score_threshold=min_score,
-            with_payload=True,
-        ).points
+        try:
+            return self._client.query_points(
+                self._name,
+                query=vector,
+                limit=limit,
+                score_threshold=min_score,
+                with_payload=True,
+            ).points
+        except ApiException as error:
+            msg = f"could not search the collection {self._name!r}: {error}"
+            raise VectorStoreError(msg) from error
 
     def delete(self, where: Filter) -> None:
         """Delete a point."""

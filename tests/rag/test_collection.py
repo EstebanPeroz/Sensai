@@ -2,6 +2,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from qdrant_client.http.exceptions import ApiException
+from qdrant_client.models import Distance, VectorParams
 
 from sensai.rag.collection import (
     DEFAULT_COLLECTION,
@@ -85,6 +87,14 @@ class TestOpenCollection:
 
         assert second.count() == 0
         second.close()
+
+    def test_a_qdrant_failure_when_checking_existence_is_a_vector_store_error(self) -> None:
+        client = MagicMock()
+        client.collection_exists.side_effect = ApiException("qdrant is unavailable")
+        collection = Collection(client)
+
+        with pytest.raises(VectorStoreError, match="could not check whether the collection"):
+            collection.exists()
 
 
 class TestEnsure:
@@ -205,6 +215,16 @@ class TestQuery:
     def test_a_vector_of_the_wrong_size_is_refused(self, filled: Collection) -> None:
         with pytest.raises(VectorStoreError, match="3-dimension vector, but the collection holds 2"):
             filled.query([1.0, 0.0, 0.0])
+
+    def test_a_qdrant_failure_when_querying_is_a_vector_store_error(self) -> None:
+        client = MagicMock()
+        client.collection_exists.return_value = True
+        client.get_collection.return_value.config.params.vectors = VectorParams(size=2, distance=Distance.COSINE)
+        client.query_points.side_effect = ApiException("qdrant is unavailable")
+        collection = Collection(client)
+
+        with pytest.raises(VectorStoreError, match="could not search the collection"):
+            collection.query(ENGINES)
 
 
 class TestDelete:
