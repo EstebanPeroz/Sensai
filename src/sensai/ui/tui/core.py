@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from sensai.llm.message import Role
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
+    from sensai.monitoring.metrics import Report
     from sensai.ui.completion import CompletionSource
 
 
@@ -117,6 +118,15 @@ class UITextualAdapter(ui.UIAdapter):
         """Show the thinking effort `level` in the UI."""
         try:
             self.app.call_from_thread(self.app.update_thinking_effort, level)
+        except RuntimeError:
+            return False
+        return True
+
+    @override
+    def show_dashboard(self, report: Report) -> bool:
+        """Open the dashboard screen over the chat."""
+        try:
+            self.app.call_from_thread(self.app.show_dashboard, report)
         except RuntimeError:
             return False
         return True

@@ -19,6 +19,8 @@ class Interaction:
     """Structured record of one call to the model: what was sent, what came back, and how long it took.
 
     It is also the event emitted on the `EventBus` once the call is over, whatever its outcome.
+    `latency_ms` is the response time, from the request to the last chunk; `first_token_ms` is the
+    wait for the first one, the latency the user feels.
     """
 
     model: str

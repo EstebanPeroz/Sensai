@@ -1,4 +1,5 @@
-from datetime import UTC, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta, timezone
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -39,6 +40,29 @@ class TestInteractions:
 
         assert db.interactions.get_all() == [older, newer]
 
+    def test_since_keeps_newer_interactions_whatever_the_timezone(self, db: SqlAlchemy) -> None:
+        paris, ten = timezone(timedelta(hours=2)), datetime(2026, 10, 14, 10, 0, tzinfo=UTC)
+        old, new = (
+            make_interaction(created_at=ten),
+            make_interaction(created_at=(ten + timedelta(hours=1)).astimezone(paris)),
+        )
+        db.interactions.add(old)
+        db.interactions.add(new)
+
+        assert [i.created_at for i in db.interactions.get_all()] == [ten, ten + timedelta(hours=1)]
+        assert [i.id for i in db.interactions.get_all(since=(ten + timedelta(minutes=30)).astimezone(paris))] == [
+            new.id
+        ]
+        assert [i.id for i in db.interactions.get_all(since=ten)] == [old.id, new.id]
+
+    def test_without_content_keeps_only_the_metrics(self, db: SqlAlchemy) -> None:
+        stored = make_interaction(status=InteractionStatus.ERROR, error="refused")
+        db.interactions.add(stored)
+
+        [light] = db.interactions.get_all(with_content=False)
+
+        assert light == replace(stored, request=None, response=None, thinking=None, tool_calls=[])
+
     def test_unknown_branch_is_dropped(self, db: SqlAlchemy) -> None:
         db.interactions.add(make_interaction(branch_id=uuid4()))
 
@@ -56,3 +80,7 @@ class TestInteractions:
     def test_raises_database_error_when_commit_fails(self, db: SqlAlchemy) -> None:
         with patch.object(Session, "commit", side_effect=SQLAlchemyError), pytest.raises(DatabaseError):
             db.interactions.add(make_interaction())
+
+    def test_raises_database_error_when_reading_fails(self, db: SqlAlchemy) -> None:
+        with patch.object(Session, "scalars", side_effect=SQLAlchemyError), pytest.raises(DatabaseError):
+            db.interactions.get_all()
