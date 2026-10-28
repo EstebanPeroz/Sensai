@@ -28,9 +28,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.16.0",
     "pre-commit==4.6.2",
     "pytest==9.1.1",
-    "ruff==0.16.8"
+    "pytest-asyncio",
+    "ruff==0.16.8",
 ]
 
 [project.scripts]
@@ -40,9 +42,22 @@ sensai = "sensai:main"
 requires = ["uv_build>=0.12.17,<0.13.0"]
 build-backend = "uv_build"
 
+[tool.uv.workspace]
+members = [
+    "packages/protocol",
+    "packages/server",
+    "packages/client/*",
+]
+
+[tool.uv.sources]
+sensai-protocol = { workspace = true }
+sensai-server   = { workspace = true }
+sensai-tui      = { workspace = true }
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
+asyncio_mode = "auto"
 
 [tool.pyright]
 venvPath = "."

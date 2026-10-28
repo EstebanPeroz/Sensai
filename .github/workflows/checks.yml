@@ -18,7 +18,7 @@ jobs:
 
     - uses: astral-sh/setup-uv@v7
     - name: Install
-      run: uv sync --locked
+      run: uv sync --locked --all-packages
     - name: Program help
       run: uv run sensai --help
     - name: Coding style

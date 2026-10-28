@@ -1,0 +1,19 @@
+[project]
+name = "sensai-protocol"
+version = "0.1.0"
+description = "Messages exchanged between the Sensai server and its clients"
+authors = [
+    { name = "Amos Almacin", email = "jhong.almacin@epitech.eu" },
+    { name = "Dimitri Collineau", email = "dimitri.collineau@epitech.eu" },
+    { name = "Esteban Peroz", email = "esteban.peroz@epitech.eu" },
+    { name = "Ewan Czarny", email = "ewan.czarny@epitech.eu" },
+    { name = "Noah Savoye", email = "noah.savoye@epitech.eu" },
+]
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"

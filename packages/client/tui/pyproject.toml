@@ -1,0 +1,24 @@
+[project]
+name = "sensai-tui"
+version = "0.1.0"
+description = "Sensai terminal client"
+authors = [
+    { name = "Amos Almacin", email = "jhong.almacin@epitech.eu" },
+    { name = "Dimitri Collineau", email = "dimitri.collineau@epitech.eu" },
+    { name = "Esteban Peroz", email = "esteban.peroz@epitech.eu" },
+    { name = "Ewan Czarny", email = "ewan.czarny@epitech.eu" },
+    { name = "Noah Savoye", email = "noah.savoye@epitech.eu" },
+]
+requires-python = ">=3.14"
+dependencies = [
+    "sensai-protocol",
+    "textual>=8.2.8",
+    "websockets",
+]
+
+[project.scripts]
+sensai-tui = "sensai_tui:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
