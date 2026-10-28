@@ -136,3 +136,18 @@ class TestInteractions:
         chunks.close()
 
         assert [interaction.status for interaction in interactions] == [InteractionStatus.INTERRUPTED]
+
+
+class TestContextWindow:
+    def test_is_asked_of_the_model_on_every_call(self) -> None:
+        provider = FakeProvider()
+        react = ReAct(FakeProviderManager(provider), ToolManager(), 1, context_window=8192)  # type: ignore[arg-type]
+
+        list(react.generate_answer([{"role": "user", "content": "Bonjour"}]))
+
+        assert [payload["options"] for payload in provider.payloads] == [{"num_ctx": 8192}] * len(provider.payloads)
+
+    def test_is_left_to_the_provider_without_one(self) -> None:
+        provider, _ = run(max_iterations=1)
+
+        assert all("options" not in payload for payload in provider.payloads)

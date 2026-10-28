@@ -39,11 +39,22 @@ SEARCH_AGAIN = "answer found: no"
 class ReAct:
     """Answer with the ReAct method: the model thinks, acts with a tool, observes the result, then starts again."""
 
-    def __init__(self, provider_manager: ProviderManager, tool_manager: ToolManager, max_iterations: int = 5) -> None:
-        """Bind the ReAct loop to a `provider_manager` and a `tool_manager`, with a maximum of `max_iterations`."""
+    def __init__(
+        self,
+        provider_manager: ProviderManager,
+        tool_manager: ToolManager,
+        max_iterations: int = 5,
+        *,
+        context_window: int | None = None,
+    ) -> None:
+        """Bind the ReAct loop to a `provider_manager` and a `tool_manager`, with a maximum of `max_iterations`.
+
+        `context_window` is the number of tokens the model is asked to attend to; None leaves it to the provider.
+        """
         self._provider_manager = provider_manager
         self._tool_manager = tool_manager
         self._max_iterations = max_iterations
+        self._context_window = context_window
 
     @property
     def max_iterations(self) -> int:
@@ -149,6 +160,8 @@ class ReAct:
 
         if tools:
             payload["tools"] = tools
+        if self._context_window is not None:
+            payload["options"] = {"num_ctx": self._context_window}
         recorder = InteractionRecorder(model=model, request=request_messages)
         status, error = InteractionStatus.OK, None
         try:
