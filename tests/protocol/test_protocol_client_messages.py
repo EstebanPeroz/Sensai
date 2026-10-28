@@ -15,6 +15,9 @@ from sensai_protocol import (
     Command,
     Complete,
     Completions,
+    ConfirmAnswer,
+    Confirmation,
+    ConfirmTool,
     Effort,
     Error,
     History,
@@ -26,6 +29,7 @@ from sensai_protocol import (
     ServerMessage,
     Session,
     System,
+    UserAnswer,
     parse_client_message,
 )
 
@@ -36,6 +40,10 @@ CLIENT_MESSAGES: list[ClientMessage] = [
     Command(command="/model llama3:8b"),
     Cancel(),
     Complete(text="/persona load an"),
+    ConfirmAnswer(request_id=uuid4(), answer=Confirmation.ALLOW),
+    ConfirmAnswer(request_id=uuid4(), answer=Confirmation.DENY),
+    UserAnswer(request_id=uuid4(), answer="Paris"),
+    UserAnswer(request_id=uuid4(), answer=None),
 ]
 
 SERVER_MESSAGES: list[ServerMessage] = [
@@ -47,6 +55,7 @@ SERVER_MESSAGES: list[ServerMessage] = [
     History(messages=[]),
     Effort(level="high"),
     Completions(text="/model ", values=["qwen3:1.7b"]),
+    ConfirmTool(request_id=uuid4(), tool_name="now", arguments={}),
 ]
 
 
@@ -67,6 +76,8 @@ class TestClientMessages:
             ({"type": "command", "command": "/help"}, Command),
             ({"type": "cancel"}, Cancel),
             ({"type": "complete", "text": "/mo"}, Complete),
+            ({"type": "confirm_answer", "request_id": str(uuid4()), "answer": "always"}, ConfirmAnswer),
+            ({"type": "user_answer", "request_id": str(uuid4()), "answer": None}, UserAnswer),
         ],
     )
     def test_type_parses_into_its_class(self, raw: dict, expected: type) -> None:
@@ -84,6 +95,7 @@ class TestClientMessages:
             '{"type": "login", "model": "qwen3:1.7b", "extra": 1}',
             '{"type": "cancel", "modle": "typo"}',
             '{"type": "chat", "prompt": 1}',
+            '{"type": "confirm_answer", "request_id": "6f1c1e2a-4b0e-4d8e-9a3c-2f9b1d7e5a10", "answer": "maybe"}',
             "not json",
             "",
             "[]",
@@ -95,6 +107,7 @@ class TestClientMessages:
             "extra-field",
             "typo",
             "wrong-type",
+            "invalid-confirmation",
             "invalid-json",
             "empty",
             "not-an-object",
@@ -114,6 +127,9 @@ class TestClientMessages:
 
         with pytest.raises(pydantic.ValidationError):
             message.prompt = "changed"  # type: ignore[misc]
+
+    def test_confirmations_match_ui_adapter(self) -> None:
+        assert [answer.value for answer in Confirmation] == ["allow", "always", "deny"]
 
     def test_type_is_serialized(self) -> None:
         assert json.loads(Login(model="m").model_dump_json()) == {"type": "login", "model": "m"}

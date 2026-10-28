@@ -1,23 +1,36 @@
+from datetime import UTC, datetime
 from uuid import uuid4
 
+import pytest
 from sensai_protocol import (
     AiChunk,
+    AskUser,
     Cancel,
     Chat,
     Command,
     Complete,
     Completions,
+    ConfirmAnswer,
+    Confirmation,
+    ConfirmTool,
+    Dashboard,
+    DashboardReport,
+    DashboardSummary,
     Error,
     History,
     HistoryMessage,
     Input,
     Login,
     Logout,
+    Period,
     Role,
     Session,
     System,
+    UserAnswer,
 )
 from sensai_tui.ui import ChatApp
+from sensai_tui.ui._dashboard import DashboardScreen
+from sensai_tui.ui._dialogs import ConfirmScreen, QuestionScreen
 from sensai_tui.ui._textual import ChatItem, CompletionList
 from textual.pilot import Pilot
 from textual.widgets import Input as InputWidget
@@ -229,3 +242,124 @@ class TestServerMessages:
             assert app.query_one("#input", InputWidget).disabled
             await _submit(pilot, "hello")
             assert conn.sent == [Login(model=MODEL)]
+
+
+def _report() -> DashboardReport:
+    summary = DashboardSummary(
+        calls=0,
+        errors=0,
+        interrupted=0,
+        latency_p50_ms=None,
+        latency_p95_ms=None,
+        first_token_p50_ms=None,
+        tokens_per_s=None,
+        prompt_tokens=0,
+        completion_tokens=0,
+    )
+    return DashboardReport(
+        period=Period.DAY,
+        start=datetime(2026, 10, 13, 12, 0, tzinfo=UTC),
+        end=datetime(2026, 10, 14, 12, 0, tzinfo=UTC),
+        summary=summary,
+        calls_series=[0] * 24,
+        latency_series=[None] * 24,
+        groups=[],
+        drifts=[],
+        recent_errors=[],
+        baseline_periods=7,
+    )
+
+
+class TestConfirmTool:
+    @pytest.mark.parametrize(
+        ("key", "answer"),
+        [
+            ("y", Confirmation.ALLOW),
+            ("a", Confirmation.ALWAYS),
+            ("n", Confirmation.DENY),
+            ("escape", Confirmation.DENY),
+        ],
+    )
+    async def test_key_sends_its_answer(self, key: str, answer: Confirmation) -> None:
+        conn = FakeConnection()
+        app = ChatApp(conn, MODEL)
+        async with app.run_test() as pilot:
+            request = ConfirmTool(request_id=uuid4(), tool_name="web_search", arguments={"query": "paris"})
+            conn.push(_session(), request)
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmScreen)
+
+            await pilot.press(key)
+            await pilot.pause()
+            assert not isinstance(app.screen, ConfirmScreen)
+            assert conn.sent[-1] == ConfirmAnswer(request_id=request.request_id, answer=answer)
+            assert Cancel() not in conn.sent
+
+    async def test_hides_the_completions(self) -> None:
+        conn = FakeConnection()
+        app = ChatApp(conn, MODEL)
+        async with app.run_test() as pilot:
+            conn.push(_session())
+            await pilot.press("/", "m")
+            assert app.query_one(CompletionList).display
+            conn.push(ConfirmTool(request_id=uuid4(), tool_name="now", arguments={}))
+            await pilot.pause()
+            assert not app.query_one(CompletionList).display
+
+    async def test_disconnect_closes_the_dialog(self) -> None:
+        conn = FakeConnection()
+        app = ChatApp(conn, MODEL)
+        async with app.run_test() as pilot:
+            conn.push(ConfirmTool(request_id=uuid4(), tool_name="now", arguments={}))
+            await pilot.pause()
+            conn.disconnect()
+            await pilot.pause()
+            assert len(app.screen_stack) == 1
+            assert conn.sent == [Login(model=MODEL)]
+
+
+class TestAskUser:
+    async def test_answer_is_sent_back_not_chatted(self) -> None:
+        conn = FakeConnection()
+        app = ChatApp(conn, MODEL)
+        async with app.run_test() as pilot:
+            request = AskUser(request_id=uuid4(), question="Which city?")
+            conn.push(_session(), request)
+            await pilot.pause()
+            assert isinstance(app.screen, QuestionScreen)
+
+            await pilot.press(*"/Paris", "enter")
+            await pilot.pause()
+            assert not isinstance(app.screen, QuestionScreen)
+            assert conn.sent[-1] == UserAnswer(request_id=request.request_id, answer="/Paris")
+            assert not any(isinstance(message, (Chat, Command, Complete)) for message in conn.sent)
+            assert app.query_one("#input", InputWidget).value == ""
+
+    async def test_escape_skips_the_question(self) -> None:
+        conn = FakeConnection()
+        app = ChatApp(conn, MODEL)
+        async with app.run_test() as pilot:
+            request = AskUser(request_id=uuid4(), question="Which city?")
+            conn.push(request)
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert conn.sent[-1] == UserAnswer(request_id=request.request_id, answer=None)
+            assert Cancel() not in conn.sent
+
+
+class TestDashboard:
+    @pytest.mark.parametrize("key", ["q", "escape"])
+    async def test_opens_over_the_chat_and_closes_back_to_it(self, key: str) -> None:
+        conn = FakeConnection()
+        app = ChatApp(conn, MODEL)
+        async with app.run_test(size=(140, 60)) as pilot:
+            conn.push(Dashboard(report=_report()))
+            await pilot.pause()
+            assert isinstance(app.screen, DashboardScreen)
+
+            await pilot.press(key)
+            await pilot.pause()
+            assert not isinstance(app.screen, DashboardScreen)
+            assert isinstance(app.focused, InputWidget)
+            assert Cancel() not in conn.sent

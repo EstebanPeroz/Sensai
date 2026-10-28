@@ -1,15 +1,26 @@
 import json
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from sensai_protocol import (
     AiChunk,
+    AskUser,
     Cancel,
     Chat,
     ClientMessage,
     Command,
     Complete,
     Completions,
+    ConfirmAnswer,
+    Confirmation,
+    ConfirmTool,
+    Dashboard,
+    DashboardDrift,
+    DashboardError,
+    DashboardGroup,
+    DashboardReport,
+    DashboardSummary,
     Effort,
     Error,
     History,
@@ -17,12 +28,38 @@ from sensai_protocol import (
     Input,
     Login,
     Logout,
+    Period,
     ProtocolError,
     Role,
     ServerMessage,
     Session,
     System,
+    UserAnswer,
     parse_server_message,
+)
+
+SUMMARY = DashboardSummary(
+    calls=4,
+    errors=1,
+    interrupted=1,
+    latency_p50_ms=900.0,
+    latency_p95_ms=None,
+    first_token_p50_ms=120.0,
+    tokens_per_s=None,
+    prompt_tokens=10,
+    completion_tokens=20,
+)
+REPORT = DashboardReport(
+    period=Period.DAY,
+    start=datetime(2026, 10, 13, 12, 0, tzinfo=UTC),
+    end=datetime(2026, 10, 14, 12, 0, tzinfo=UTC),
+    summary=SUMMARY,
+    calls_series=[0, 3, 1],
+    latency_series=[None, 800.0, 1000.0],
+    groups=[DashboardGroup(model="qwen", persona=None, summary=SUMMARY)],
+    drifts=[DashboardDrift(model="qwen", persona="analyst", baseline_p50_ms=1000.0, recent_p50_ms=1500.0)],
+    recent_errors=[DashboardError(created_at=datetime(2026, 10, 14, 11, 0, tzinfo=UTC), model="qwen", error="boom")],
+    baseline_periods=7,
 )
 
 SERVER_MESSAGES: list[ServerMessage] = [
@@ -48,6 +85,10 @@ SERVER_MESSAGES: list[ServerMessage] = [
     Effort(level="high"),
     Completions(text="/model ", values=["qwen3:1.7b", "llama3:8b"]),
     Completions(text="/persona load x", values=[]),
+    ConfirmTool(request_id=uuid4(), tool_name="web_search", arguments={"query": "paris", "limit": 3}),
+    ConfirmTool(request_id=uuid4(), tool_name="now", arguments={}),
+    AskUser(request_id=uuid4(), question="Which city?"),
+    Dashboard(report=REPORT),
 ]
 
 CLIENT_MESSAGES: list[ClientMessage] = [
@@ -57,6 +98,8 @@ CLIENT_MESSAGES: list[ClientMessage] = [
     Command(command="/help"),
     Cancel(),
     Complete(text="/mo"),
+    ConfirmAnswer(request_id=uuid4(), answer=Confirmation.ALWAYS),
+    UserAnswer(request_id=uuid4(), answer=None),
 ]
 
 CLIENT_ID = "6f1c1e2a-4b0e-4d8e-9a3c-2f9b1d7e5a10"
@@ -81,6 +124,8 @@ class TestServerMessages:
             ({"type": "history", "messages": [{"uuid": None, "role": "user", "content": "hi"}]}, History),
             ({"type": "effort", "level": "high"}, Effort),
             ({"type": "completions", "text": "/mo", "values": ["/model"]}, Completions),
+            ({"type": "confirm_tool", "request_id": CLIENT_ID, "tool_name": "t", "arguments": {}}, ConfirmTool),
+            ({"type": "ask_user", "request_id": CLIENT_ID, "question": "why?"}, AskUser),
         ],
     )
     def test_type_parses_into_its_class(self, raw: dict, expected: type) -> None:
@@ -102,6 +147,15 @@ class TestServerMessages:
 
         assert isinstance(message, Session)
         assert str(message.client_id) == CLIENT_ID
+
+    def test_dashboard_derived_figures(self) -> None:
+        message = parse_server_message(Dashboard(report=REPORT).model_dump_json())
+
+        assert isinstance(message, Dashboard)
+        assert message.report.summary.error_rate == 0.25
+        assert message.report.summary.interrupted_rate == 0.25
+        assert message.report.drifts[0].change == 0.5
+        assert DashboardSummary(**(SUMMARY.model_dump() | {"calls": 0})).error_rate is None
 
     def test_roles_match_chat_endpoint(self) -> None:
         assert [role.value for role in Role] == ["system", "user", "assistant", "tool"]

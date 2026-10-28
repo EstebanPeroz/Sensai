@@ -1,16 +1,21 @@
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 from sensai_protocol import (
     AiChunk,
+    AskUser,
     Cancel,
     Chat,
     ClientMessage,
     Command,
     Complete,
     Completions,
+    ConfirmAnswer,
+    Confirmation,
+    ConfirmTool,
     Error,
     Input,
     Login,
@@ -19,13 +24,14 @@ from sensai_protocol import (
     ServerMessage,
     Session,
     System,
+    UserAnswer,
     parse_server_message,
 )
 from sensai_server import handlers
 from sensai_server.session import SessionRegistry
 from starlette.testclient import WebSocketTestSession
 
-from tests.server.conftest import MODEL, SLOW
+from tests.server.conftest import ASK, CONFIRM, MODEL, SLOW
 
 
 def _receive(ws: WebSocketTestSession) -> ServerMessage:
@@ -154,6 +160,52 @@ class TestChat:
             _sync(ws)
 
 
+class TestQuestions:
+    @pytest.mark.parametrize("answer", list(Confirmation))
+    def test_confirm_answer_resumes_the_task(self, client: TestClient, answer: Confirmation) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt=CONFIRM))
+            assert _receive(ws) == Input(role=Role.USER, content=CONFIRM)
+            request = _receive(ws)
+            assert isinstance(request, ConfirmTool)
+            assert (request.tool_name, request.arguments) == ("web_search", {"query": "paris"})
+            _send(ws, ConfirmAnswer(request_id=request.request_id, answer=answer))
+            assert _receive(ws) == AiChunk(content=answer.value)
+            assert _receive(ws) == AiChunk(done=True)
+
+    def test_user_answer_resumes_the_task_and_is_shown(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt=ASK))
+            _receive(ws)
+            request = _receive(ws)
+            assert request == AskUser(request_id=request.request_id, question="Which city?")  # type: ignore[union-attr]
+            _send(ws, UserAnswer(request_id=request.request_id, answer="Paris"))  # type: ignore[union-attr]
+            assert _receive(ws) == System(message="Sensai asked: Which city?\n> Paris")
+            assert _receive(ws) == AiChunk(content="Paris")
+
+    def test_stale_answer_is_ignored(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, UserAnswer(request_id=uuid4(), answer="late"))
+            _sync(ws)
+
+    def test_cancel_while_asking_frees_the_session(self, client: TestClient, registry: SessionRegistry) -> None:
+        with client.websocket_connect("/ws") as ws:
+            session = _login(ws)
+            _send(ws, Chat(prompt=CONFIRM))
+            _receive(ws)
+            request = _receive(ws)
+            _send(ws, Cancel())
+            _sync(ws)
+            server_session = registry.get(session.client_id)
+            assert server_session is not None
+            assert not server_session.busy
+            _send(ws, ConfirmAnswer(request_id=request.request_id, answer=Confirmation.ALLOW))  # type: ignore[union-attr]
+            _sync(ws)
+
+
 class TestCommandAndComplete:
     def test_command(self, client: TestClient) -> None:
         with client.websocket_connect("/ws") as ws:
@@ -177,6 +229,8 @@ class TestDispatch:
             ("handle_command", Command(command="/model x")),
             ("handle_cancel", Cancel()),
             ("handle_complete", Complete(text="/model ")),
+            ("handle_confirm_answer", ConfirmAnswer(request_id=uuid4(), answer=Confirmation.ALLOW)),
+            ("handle_user_answer", UserAnswer(request_id=uuid4(), answer="x")),
         ],
     )
     def test_message_reaches_its_handler(
