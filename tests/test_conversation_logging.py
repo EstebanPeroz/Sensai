@@ -17,6 +17,8 @@ from sensai.memory.persistent_db.error import DatabaseError
 from sensai.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai.monitoring.interaction import Interaction, InteractionStatus
 from sensai.monitoring.logger import InteractionLogger
+from sensai.pipeline import ChatPipeline
+from sensai.pipeline.modules import ModelStage, PersonaStage
 from sensai.tools.tool_manager import ToolManager
 from tests.commands.fakes import FakeUI
 
@@ -42,7 +44,10 @@ class InterruptingUI(FakeUI):
 
 
 class Harness:
-    """A conversation without tools on a real SQLite database, logged through a real bus, with a mocked provider."""
+    """A conversation without tools on a real SQLite database, logged through a real bus, with a mocked provider.
+
+    Its pipeline is the persona stage over the model, the two stages a plain exchange goes through.
+    """
 
     def __init__(self, db: SqlAlchemy) -> None:
         self.db, self.bus, self.provider = db, EventBus(), MagicMock()
@@ -52,7 +57,8 @@ class Harness:
         provider_manager = MagicMock()
         provider_manager.provider.return_value = self.provider
         react = ReAct(provider_manager, ToolManager())
-        self.conversation = Conversation(provider_manager, self.persona_manager, react, self.bus)
+        pipeline = ChatPipeline(ModelStage(react)).use(PersonaStage(self.persona_manager))
+        self.conversation = Conversation(provider_manager, self.persona_manager, pipeline, self.bus)
         self.conversation.add_conv_to_db(None, "test")
 
     def only(self) -> Interaction:
