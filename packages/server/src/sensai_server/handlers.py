@@ -49,8 +49,9 @@ async def handle_login(
     return await registry.open(out, message.model)
 
 
-async def handle_logout(session: Session, message: Logout) -> None:
-    """Nothing to do: the endpoint closes the socket, and its cleanup frees the session."""
+async def handle_logout(registry: SessionRegistry, session: Session, _: Logout) -> None:
+    """Stop the session's running task and free it from `registry`. The endpoint then closes the socket."""
+    await registry.close(session.client_id)
 
 
 async def handle_chat(session: Session, message: Chat, run: ChatRunner) -> None:

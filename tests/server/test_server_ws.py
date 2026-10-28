@@ -248,6 +248,23 @@ class TestDispatch:
         assert received_session.client_id == session.client_id
         assert received_message == message
 
+    def test_logout_reaches_its_handler_with_the_registry(
+        self, client: TestClient, registry: SessionRegistry, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        handler = AsyncMock()
+        monkeypatch.setattr(handlers, "handle_logout", handler)
+        with client.websocket_connect("/ws") as ws:
+            session = _login(ws)
+            _send(ws, Logout())
+            with pytest.raises(WebSocketDisconnect):
+                ws.receive_text()
+        handler.assert_awaited_once()
+        assert handler.await_args is not None
+        received_registry, received_session, received_message = handler.await_args.args
+        assert received_registry is registry
+        assert received_session.client_id == session.client_id
+        assert received_message == Logout()
+
 
 class TestCleanup:
     def test_logout_closes_socket_and_frees_session(self, client: TestClient, registry: SessionRegistry) -> None:

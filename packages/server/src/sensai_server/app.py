@@ -95,7 +95,7 @@ async def _dispatch(ws: WebSocket, session: Session, message: ClientMessage) -> 
     state = ws.app.state
     match message:
         case Logout():
-            await handlers.handle_logout(session, message)
+            await handlers.handle_logout(state.registry, session, message)
             await ws.close()
             return False
         case Chat():
