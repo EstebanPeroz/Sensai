@@ -103,7 +103,7 @@ class TestLogin:
     def test_unknown_model_can_retry(self, client: TestClient, registry: SessionRegistry) -> None:
         with client.websocket_connect("/ws") as ws:
             _send(ws, Login(model="nope"))
-            assert MODEL in _receive_error(ws).message
+            assert f"Available models: {MODEL}, b" in _receive_error(ws).message
             assert len(registry) == 0
             _login(ws)
             assert len(registry) == 1

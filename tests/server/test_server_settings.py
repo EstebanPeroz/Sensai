@@ -45,9 +45,18 @@ class TestTemplate:
 
 class TestApp:
     def test_keeps_the_settings_in_its_state(self) -> None:
-        settings = Settings(logging=LoggingSettings(enabled=False))
+        settings = Settings(llm=LLMSettings(providers={"ollama": OllamaSettings()}))
 
         assert create_app(settings).state.settings is settings
+
+    def test_builds_the_provider_manager_from_the_llm_settings(self) -> None:
+        app = create_app(Settings(llm=LLMSettings(providers={"ollama": OllamaSettings()})))
+
+        assert app.state.provider_manager.get_models() == ["a", "b"]
+
+    def test_fails_without_a_configured_provider(self) -> None:
+        with pytest.raises(SensaiError, match="no configured provider found"):
+            create_app(Settings())
 
 
 class TestDefaults:

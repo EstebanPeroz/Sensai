@@ -37,7 +37,7 @@ def create_app(
     chat: ChatRunner = handlers.placeholder_chat,
     command: CommandRunner = handlers.placeholder_command,
 ) -> FastAPI:
-    """Build a new app serving the `/ws` route, logging clients in on the models of `catalog`.
+    """Build a new app serving the `/ws` route, logging clients in on the models of the configured providers.
 
     `settings` are the loaded settings, kept in the app state. `chat` and `command` run a chat prompt and a
     command as a session's task.

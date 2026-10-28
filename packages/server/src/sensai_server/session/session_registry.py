@@ -23,7 +23,7 @@ class SessionRegistry:
     _pm: ProviderManager
 
     def __init__(self, pm: ProviderManager) -> None:
-        """Open sessions on the models of `catalog`."""
+        """Open sessions on the models served by `pm`."""
         self._pm = pm
         self._sessions = {}
         self._lock = asyncio.Lock()
