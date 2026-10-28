@@ -91,6 +91,11 @@ class TestToolsList:
 
         assert fake_ui.messages == ["Available tools:\n- echo: disabled\n- weather: enabled"]
 
+    def test_tools_asking_confirmation_are_reported(self, fake_ui: FakeUI) -> None:
+        ToolsCommand(ToolManager([StubTool("weather"), StubTool("echo")], confirm=("echo",))).execute("list")
+
+        assert fake_ui.messages == ["Available tools:\n- echo: enabled, asks confirmation\n- weather: enabled"]
+
     def test_listing_without_any_registered_tool(self, fake_ui: FakeUI) -> None:
         ToolsCommand(ToolManager()).execute("list")
 

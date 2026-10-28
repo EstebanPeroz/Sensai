@@ -125,3 +125,8 @@ class TestToolWithManyKeywordArguments:
 
         with pytest.raises(SensaiError, match="Parameter 'age' must be int, got str"):
             tool.run(city="Paris", age="old", active=True)
+
+
+class TestRequiresConfirmation:
+    def test_tools_do_not_require_confirmation_by_default(self) -> None:
+        assert DummyTool().requires_confirmation is False

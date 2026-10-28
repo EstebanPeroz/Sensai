@@ -17,6 +17,10 @@ from sensai.ui.completion import Completer, CompletionSource
 from sensai.ui.tui._dashboard import DashboardScreen
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from textual.screen import Screen
+
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
     from sensai.monitoring.metrics import Report
@@ -232,7 +236,9 @@ class ChatApp(App):
         self._follow_scrolling()
 
     def on_input_submitted(self, message: Input.Submitted) -> None:
-        """Handle a user submitting the input widget."""
+        """Handle a user submitting the chat input, ignoring the inputs of dialogs."""
+        if message.input.id != "input":
+            return
         content = message.value.strip()
         message.input.clear()
         if not content:
@@ -286,6 +292,8 @@ class ChatApp(App):
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """Show the completions of the new input value, or hide the list when there are none."""
+        if event.input.id != "input":
+            return
         dropdown = self.query_one(CompletionList)
         candidates = self._completer.complete(event.value)
         if candidates in ([], [event.value]):
@@ -331,6 +339,14 @@ class ChatApp(App):
         field.value = value
         field.cursor_position = len(value)
         field.focus()
+
+    def open_dialog[T](self, screen: Screen[T], on_dismiss: Callable[[T | None], None]) -> None:
+        """Show the modal `screen` over the chat, `on_dismiss` receiving its result once it closes.
+
+        The completion list is hidden first, so that escape reaches the dialog.
+        """
+        self.query_one(CompletionList).display = False
+        self.push_screen(screen, on_dismiss)
 
     def update_thinking_effort(self, level: str) -> None:
         """Show the thinking effort `level` at the bottom right of the input box."""

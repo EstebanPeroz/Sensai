@@ -70,7 +70,7 @@ replies of small models (`assistant`, `/no_think`).
 Termination:
 
 - the loop ends as soon as the model answers without calling a tool;
-- after a tool result, tools are offered again only if the thought contains
+- after a tool result, tools are offered again only if the thought ends with
   `Answer found: no`. Stopping is the default because small models otherwise
   keep repeating the same search;
 - after `max_iterations` iterations, a last request without tools forces an
@@ -88,9 +88,15 @@ is a cap, not a target: the model may stop earlier.
 
 ### Known limitations
 
-- The decisions are read by looking for the phrase in the thought. Small
-  models often copy both options of the instruction (`Tool needed: yes`,
-  then `Tool needed: no`), in which case the tools are withdrawn.
+- Only the last decision of a thought counts, read case-insensitively and
+  through markdown (`**Tool needed:** No`). Models often copy both options of
+  the instruction before deciding; reading any `Tool needed: no` in the
+  thought withdrew the tools even when the model went on to say `yes`. A
+  thought without any decision offers the tools on the first iteration and
+  stops after a tool result.
+- Models that always think, such as `qwen3:4b` (the 2507 thinking variant),
+  ignore `"think": false`: their reasoning and `</think>` end up in the
+  answer, and they are very slow on CPU. Use an instruct variant instead.
 - Each iteration costs two requests, so answers are slower.
 - Models without the `tools` capability think, but cannot use any tool.
 - Nothing prevents the same tool call from being repeated, apart from
@@ -110,6 +116,64 @@ Measured with `qwen3:1.7b` and `llama3.2` against fake tools:
   decision was valid on every run and the models chained several searches,
   but they rarely said they were done, so `max_iterations` became the real
   stop.
+
+## Human in the loop
+
+### Confirmation before a tool runs (US-19)
+
+A tool runs only after the user allows it when it declares `requires_confirmation`
+(for tools with consequences, such as writing a file), or when it is listed in
+`[features].confirm` of the settings (`confirm = ["tools.web_fetch"]`). Nothing is
+gated by default.
+
+The check is in `ToolManager.call`, so the model cannot skip it. Before running a
+gated tool, it calls the approver given by `Core`, `UIAdapter.ask_confirmation`,
+which shows a dialog with the tool name and its arguments:
+
+- **Allow** (`y`): runs this call only.
+- **Always this session** (`a`): runs it and stops asking for that tool until Sensai
+  restarts. `ToolManager` keeps that list.
+- **Deny** (`n`, escape): the tool does not run, and the model receives
+  `error: the user declined to run '<name>'; ...` as the tool result, like any other
+  tool failure. The loop then answers without it.
+
+Deny is also the answer whenever nobody can be asked: no approver, a dialog that
+cannot be shown, or the app closing while the dialog is open.
+
+`/tools list` shows which tools ask for confirmation.
+
+### Asking the user for missing information (US-20)
+
+`ask_user` (`tools/ask_user.py`) is a tool like the others: the model calls it with
+one `question` when the request lacks information no other tool can find (which
+period, which file). `UIAdapter.ask_user` shows the question in a dialog and returns
+the answer, which becomes the tool result, so the loop keeps what it already found.
+Escape or an empty answer returns `The user did not answer. State the assumption you
+make in your answer.` The question and the answer are also shown in the chat.
+
+It never asks for confirmation, and can be switched off like any tool
+(`[features].disabled = ["tools.ask_user"]`, or `/tools disable ask_user`).
+
+### Waiting for the user from the streaming thread
+
+Tools run inside the ReAct generator, so on the streaming thread. The answer cannot
+come through the input box: `Conversation.chat` reads any new event in the
+`EventQueue` as a new message and stops the current answer. Instead, the Textual
+adapter opens a modal screen (`ui/tui/_dialogs.py`) with `call_from_thread` and blocks
+the streaming thread on a `threading.Event` until the screen is dismissed. The modal
+also covers the input, so no event can interrupt the answer while it waits. The
+waiting thread checks every 0.1 s that the app still runs, so it never stays blocked.
+
+### Limitations
+
+- With `/effort off`, or with a model without the `tools` capability, no tool is
+  called, so nothing is asked.
+- A refused call is not remembered beyond the tool message: the model may call the
+  same tool again in the same answer, and the user is asked again.
+- The question and the answer of `ask_user` are not saved to the history, like every
+  tool exchange: only the final answer is. A later message cannot rely on them.
+- Whether `ask_user` is called depends on the model: small models may ask when they
+  could answer, or guess instead of asking.
 
 ## Detecting hallucination
 
