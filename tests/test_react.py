@@ -64,6 +64,20 @@ class ToolCallProvider(FakeProvider):
         return [ChatResponse({"done": True, "message": message})]
 
 
+class ThoughtProvider(FakeProvider):
+    """Thinks `thought` on the first request, then answers like `FakeProvider`."""
+
+    def __init__(self, thought: str) -> None:
+        super().__init__()
+        self._thought = thought
+
+    def chat(self, payload: dict, *, stream: bool) -> list[ChatResponse]:
+        if self.payloads:
+            return super().chat(payload, stream=stream)
+        self.payloads.append(payload)
+        return [ChatResponse({"done": True, "message": {"role": "assistant", "content": self._thought}})]
+
+
 class FakeProviderManager:
     def __init__(self, provider: FakeProvider) -> None:
         self._provider = provider
@@ -169,3 +183,43 @@ class TestAskUser:
         list(react.generate_answer([{"role": "user", "content": "How did we do?"}]))
 
         assert "- ask_user: Ask the user one short question" in provider.payloads[0]["messages"][-1]["content"]
+
+
+def tools_offered_after(thought: str) -> bool:
+    provider = ThoughtProvider(thought)
+    react = ReAct(FakeProviderManager(provider), ToolManager([SearchTool()]), 1)  # type: ignore[arg-type]
+    list(react.generate_answer([{"role": "user", "content": "Bonjour"}]))
+    return "tools" in provider.payloads[1]
+
+
+class TestToolDecision:
+    def test_yes_offers_the_tools(self) -> None:
+        assert tools_offered_after("I need a recent fact.\nTool needed: yes")
+
+    def test_no_does_not_offer_the_tools(self) -> None:
+        assert not tools_offered_after("It is a greeting.\nTool needed: no")
+
+    def test_no_decision_offers_the_tools(self) -> None:
+        assert tools_offered_after("I am not sure.")
+
+    def test_quoting_the_instruction_does_not_count_as_a_refusal(self) -> None:
+        thought = "I must end with 'Tool needed: yes' or 'Tool needed: no'. I lack the data.\nTool needed: yes"
+
+        assert tools_offered_after(thought)
+
+    def test_only_the_last_decision_counts(self) -> None:
+        assert not tools_offered_after("Tool needed: yes? No, it is arithmetic.\nTool needed: no")
+
+    def test_reads_a_decision_in_markdown(self) -> None:
+        assert not tools_offered_after("It is a greeting.\n**Tool needed:** No")
+
+
+class TestAnswerDecision:
+    def test_searches_again_only_when_the_last_decision_is_no(self) -> None:
+        thought = "End with 'Answer found: yes' or 'Answer found: no'. The page has the figure.\nAnswer found: yes"
+
+        assert not ReAct._wants_tool(thought, after_observation=True)  # noqa: SLF001
+        assert ReAct._wants_tool("The page is empty.\nAnswer found: no", after_observation=True)  # noqa: SLF001
+
+    def test_answers_without_a_decision(self) -> None:
+        assert not ReAct._wants_tool("The page has the figure.", after_observation=True)  # noqa: SLF001

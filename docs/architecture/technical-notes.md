@@ -70,7 +70,7 @@ replies of small models (`assistant`, `/no_think`).
 Termination:
 
 - the loop ends as soon as the model answers without calling a tool;
-- after a tool result, tools are offered again only if the thought contains
+- after a tool result, tools are offered again only if the thought ends with
   `Answer found: no`. Stopping is the default because small models otherwise
   keep repeating the same search;
 - after `max_iterations` iterations, a last request without tools forces an
@@ -88,9 +88,15 @@ is a cap, not a target: the model may stop earlier.
 
 ### Known limitations
 
-- The decisions are read by looking for the phrase in the thought. Small
-  models often copy both options of the instruction (`Tool needed: yes`,
-  then `Tool needed: no`), in which case the tools are withdrawn.
+- Only the last decision of a thought counts, read case-insensitively and
+  through markdown (`**Tool needed:** No`). Models often copy both options of
+  the instruction before deciding; reading any `Tool needed: no` in the
+  thought withdrew the tools even when the model went on to say `yes`. A
+  thought without any decision offers the tools on the first iteration and
+  stops after a tool result.
+- Models that always think, such as `qwen3:4b` (the 2507 thinking variant),
+  ignore `"think": false`: their reasoning and `</think>` end up in the
+  answer, and they are very slow on CPU. Use an instruct variant instead.
 - Each iteration costs two requests, so answers are slower.
 - Models without the `tools` capability think, but cannot use any tool.
 - Nothing prevents the same tool call from being repeated, apart from
