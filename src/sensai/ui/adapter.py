@@ -17,6 +17,14 @@ class EventType(Enum):
     Command = 2
 
 
+class Confirmation(Enum):
+    """Answer of the user asked whether a tool may run: once, for the rest of the session, or not at all."""
+
+    ALLOW = 1
+    ALWAYS = 2
+    DENY = 3
+
+
 class Event:
     """Data sent by a UI when the user performs an action, such as submitting text or issuing a command."""
 
@@ -85,6 +93,20 @@ class UIAdapter(ABC):
     @abstractmethod
     def update_thinking_effort(self, level: str) -> bool:
         """Show the current thinking effort `level` of the model. Returns whether it was delivered."""
+
+    @abstractmethod
+    def ask_confirmation(self, tool_name: str, arguments: dict) -> Confirmation:
+        """Ask the user whether the tool `tool_name` may run with `arguments`, blocking until they answer.
+
+        Called from the streaming thread. Returns `Confirmation.DENY` when the UI cannot ask.
+        """
+
+    @abstractmethod
+    def ask_user(self, question: str) -> str | None:
+        """Ask the user `question` on behalf of the model, blocking until they answer.
+
+        Called from the streaming thread. Returns None when the user cancels or the UI cannot ask.
+        """
 
     @abstractmethod
     def show_dashboard(self, report: Report) -> bool:

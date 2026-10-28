@@ -4,6 +4,7 @@ from sensai.error import SensaiError
 from sensai.tools.error import DuplicateToolError
 from sensai.tools.tool import Tool, get_parameter
 from sensai.tools.tool_manager import ToolManager
+from sensai.ui.adapter import Confirmation
 
 
 class EchoTool(Tool[str]):
@@ -510,3 +511,109 @@ class TestCallOnDisabledTool:
             "tool_name": "echo",
             "content": "error: unknown tool 'echo'",
         }
+
+
+class GatedTool(NamedTool):
+    @property
+    def requires_confirmation(self) -> bool:
+        return True
+
+
+class ScriptedApprover:
+    def __init__(self, *answers: Confirmation) -> None:
+        self._answers = list(answers)
+        self.requests: list[tuple[str, dict]] = []
+
+    def __call__(self, name: str, arguments: dict) -> Confirmation:
+        self.requests.append((name, arguments))
+        return self._answers.pop(0)
+
+
+def declined(name: str) -> dict:
+    return {
+        "role": "tool",
+        "tool_name": name,
+        "content": f"error: the user declined to run '{name}'; do not call it again, answer without it",
+    }
+
+
+class TestConfirmation:
+    def test_allowed_call_runs_the_tool(self) -> None:
+        approver = ScriptedApprover(Confirmation.ALLOW)
+        manager = ToolManager([EchoTool()], confirm=("echo",), approver=approver)
+
+        assert manager.call(make_call("echo", {"city": "Paris"}))["content"] == "Paris"
+        assert approver.requests == [("echo", {"city": "Paris"})]
+
+    def test_denied_call_does_not_run_the_tool(self) -> None:
+        # A missing `city` would raise if the tool ran; the refusal must short-circuit first.
+        manager = ToolManager([EchoTool()], confirm=("echo",), approver=ScriptedApprover(Confirmation.DENY))
+
+        assert manager.call(make_call("echo")) == declined("echo")
+
+    def test_allow_asks_again_on_the_next_call(self) -> None:
+        approver = ScriptedApprover(Confirmation.ALLOW, Confirmation.DENY)
+        manager = ToolManager([NamedTool("weather")], confirm=("weather",), approver=approver)
+
+        manager.call(make_call("weather"))
+
+        assert manager.call(make_call("weather")) == declined("weather")
+        assert len(approver.requests) == 2
+
+    def test_always_asks_only_once(self) -> None:
+        approver = ScriptedApprover(Confirmation.ALWAYS)
+        manager = ToolManager([NamedTool("weather")], confirm=("weather",), approver=approver)
+
+        first = manager.call(make_call("weather"))
+        second = manager.call(make_call("weather"))
+
+        assert first["content"] == second["content"] == "weather ran"
+        assert len(approver.requests) == 1
+        assert manager.needs_confirmation("weather") is False
+
+    def test_always_only_covers_the_tool_it_was_given_for(self) -> None:
+        approver = ScriptedApprover(Confirmation.ALWAYS, Confirmation.DENY)
+        manager = ToolManager([NamedTool("weather"), NamedTool("echo")], confirm=("weather", "echo"), approver=approver)
+
+        manager.call(make_call("weather"))
+
+        assert manager.call(make_call("echo")) == declined("echo")
+
+    def test_ungated_tool_never_asks(self) -> None:
+        approver = ScriptedApprover()
+        manager = ToolManager([NamedTool("weather"), NamedTool("echo")], confirm=("echo",), approver=approver)
+
+        assert manager.call(make_call("weather"))["content"] == "weather ran"
+        assert approver.requests == []
+
+    def test_tool_requiring_confirmation_is_gated_without_settings(self) -> None:
+        manager = ToolManager([GatedTool("writer")], approver=ScriptedApprover(Confirmation.DENY))
+
+        assert manager.needs_confirmation("writer") is True
+        assert manager.call(make_call("writer")) == declined("writer")
+
+    def test_gated_tool_without_approver_is_declined(self) -> None:
+        assert ToolManager([GatedTool("writer")]).call(make_call("writer")) == declined("writer")
+
+    def test_disabled_gated_tool_is_unknown_without_asking(self) -> None:
+        approver = ScriptedApprover()
+        manager = ToolManager([GatedTool("writer")], disabled=("writer",), approver=approver)
+
+        assert manager.call(make_call("writer"))["content"] == "error: unknown tool 'writer'"
+        assert approver.requests == []
+
+    def test_unknown_tool_does_not_need_confirmation(self) -> None:
+        assert ToolManager(confirm=("ghost",)).needs_confirmation("ghost") is False
+
+    def test_unknown_confirm_names_are_reported_sorted(self) -> None:
+        manager = ToolManager([NamedTool("echo")], confirm=("zzz", "echo", "ghost"))
+
+        assert manager.unknown_confirm() == ["ghost", "zzz"]
+
+    def test_missing_arguments_reach_the_approver_as_empty(self) -> None:
+        approver = ScriptedApprover(Confirmation.ALLOW)
+        manager = ToolManager([NamedTool("weather")], confirm=("weather",), approver=approver)
+
+        manager.call({"type": "function", "function": {"name": "weather", "arguments": None}})
+
+        assert approver.requests == [("weather", {})]

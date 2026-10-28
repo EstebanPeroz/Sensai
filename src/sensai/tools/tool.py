@@ -43,6 +43,11 @@ class Tool[T](ABC):
             "function": {"name": self.name, "description": self.description, "parameters": self.parameters},
         }
 
+    @property
+    def requires_confirmation(self) -> bool:
+        """Whether the user must approve each call, for a tool with consequences such as writing a file."""
+        return False
+
     @abstractmethod
     def run(self, **kwargs: object) -> T:
         """Execute the tool and return its result."""

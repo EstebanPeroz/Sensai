@@ -77,10 +77,15 @@ class Core:
         self._events = EventBus()
         InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
-        tools = build_tools(settings, embedder)
+        tools = build_tools(settings, embedder, self._ui.ask_user)
         if self._mcp_client is not None:
             tools.extend(anyio.run(self._mcp_client.start))
-        self._tool_manager = ToolManager(tools, disabled=settings.features.disabled_in("tools"))
+        self._tool_manager = ToolManager(
+            tools,
+            disabled=settings.features.disabled_in("tools"),
+            confirm=settings.features.confirm_in("tools"),
+            approver=self._ui.ask_confirmation,
+        )
         self._react = ReAct(self._provider_manager, self._tool_manager)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
         indexer, retrieval = self._build_rag()
@@ -104,6 +109,9 @@ class Core:
         unknown = self._tool_manager.unknown_disabled()
         if unknown:
             self._ui.send_system_message(f"Unknown disabled tools in the settings: {', '.join(unknown)}")
+        unknown = self._tool_manager.unknown_confirm()
+        if unknown:
+            self._ui.send_system_message(f"Unknown tools to confirm in the settings: {', '.join(unknown)}")
 
         self._ui.set_completions(
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}

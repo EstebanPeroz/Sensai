@@ -1,8 +1,10 @@
 from sensai.llm.responses import ChatResponse, ShowResponse
 from sensai.llm.thinking.react import ReAct
 from sensai.monitoring.interaction import Interaction, InteractionStatus
+from sensai.tools.ask_user import AskUserTool
 from sensai.tools.tool import Tool
 from sensai.tools.tool_manager import ToolManager
+from sensai.ui.adapter import Confirmation
 
 
 class SearchTool(Tool[str]):
@@ -48,6 +50,33 @@ class MalformedCallProvider(FakeProvider):
         self.payloads.append(payload)
         message = {"role": "assistant", "content": "", "tool_calls": [{"function": "search"}]}
         return [ChatResponse({"done": True, "message": message})]
+
+
+class ToolCallProvider(FakeProvider):
+    def __init__(self, name: str, arguments: dict | None = None) -> None:
+        super().__init__()
+        self._call = {"function": {"name": name, "arguments": arguments or {}}}
+
+    def chat(self, payload: dict, *, stream: bool) -> list[ChatResponse]:
+        if "tools" not in payload:
+            return super().chat(payload, stream=stream)
+        self.payloads.append(payload)
+        message = {"role": "assistant", "content": "", "tool_calls": [self._call]}
+        return [ChatResponse({"done": True, "message": message})]
+
+
+class ThoughtProvider(FakeProvider):
+    """Thinks `thought` on the first request, then answers like `FakeProvider`."""
+
+    def __init__(self, thought: str) -> None:
+        super().__init__()
+        self._thought = thought
+
+    def chat(self, payload: dict, *, stream: bool) -> list[ChatResponse]:
+        if self.payloads:
+            return super().chat(payload, stream=stream)
+        self.payloads.append(payload)
+        return [ChatResponse({"done": True, "message": {"role": "assistant", "content": self._thought}})]
 
 
 class FakeProviderManager:
@@ -111,6 +140,90 @@ class TestMalformedToolCall:
             "content": "error: malformed tool call, function must be an object",
         } in sent
         assert "-> Using unknown...\n" in [chunk.thinking for chunk in chunks]
+
+
+class TestConfirmation:
+    def run_gated(self, answer: Confirmation) -> tuple[ToolCallProvider, str]:
+        provider = ToolCallProvider("search")
+        tools = ToolManager([SearchTool()], confirm=("search",), approver=lambda _name, _args: answer)
+        react = ReAct(FakeProviderManager(provider), tools, 1)  # type: ignore[arg-type]
+        chunks = list(react.generate_answer([{"role": "user", "content": "Find it"}]))
+        return provider, "".join(chunk.content or "" for chunk in chunks)
+
+    def test_refusal_is_sent_to_the_model_and_the_loop_still_answers(self) -> None:
+        provider, answer = self.run_gated(Confirmation.DENY)
+
+        assert {
+            "role": "tool",
+            "tool_name": "search",
+            "content": "error: the user declined to run 'search'; do not call it again, answer without it",
+        } in provider.payloads[-1]["messages"]
+        assert answer == "Bonjour !"
+
+    def test_allowed_call_sends_the_tool_result_to_the_model(self) -> None:
+        provider, _ = self.run_gated(Confirmation.ALLOW)
+
+        assert {"role": "tool", "tool_name": "search", "content": "a result"} in provider.payloads[-1]["messages"]
+
+
+class TestAskUser:
+    def test_answer_of_the_user_reaches_the_final_request(self) -> None:
+        provider = ToolCallProvider("ask_user", {"question": "Which quarter?"})
+        tools = ToolManager([AskUserTool(lambda _question: "Q2 2026")])
+        react = ReAct(FakeProviderManager(provider), tools, 1)  # type: ignore[arg-type]
+
+        list(react.generate_answer([{"role": "user", "content": "How did we do?"}]))
+
+        assert {"role": "tool", "tool_name": "ask_user", "content": "Q2 2026"} in provider.payloads[-1]["messages"]
+
+    def test_is_listed_in_the_first_think_instruction(self) -> None:
+        provider = FakeProvider()
+        tools = ToolManager([AskUserTool(lambda _question: None)])
+        react = ReAct(FakeProviderManager(provider), tools, 1)  # type: ignore[arg-type]
+
+        list(react.generate_answer([{"role": "user", "content": "How did we do?"}]))
+
+        assert "- ask_user: Ask the user one short question" in provider.payloads[0]["messages"][-1]["content"]
+
+
+def tools_offered_after(thought: str) -> bool:
+    provider = ThoughtProvider(thought)
+    react = ReAct(FakeProviderManager(provider), ToolManager([SearchTool()]), 1)  # type: ignore[arg-type]
+    list(react.generate_answer([{"role": "user", "content": "Bonjour"}]))
+    return "tools" in provider.payloads[1]
+
+
+class TestToolDecision:
+    def test_yes_offers_the_tools(self) -> None:
+        assert tools_offered_after("I need a recent fact.\nTool needed: yes")
+
+    def test_no_does_not_offer_the_tools(self) -> None:
+        assert not tools_offered_after("It is a greeting.\nTool needed: no")
+
+    def test_no_decision_offers_the_tools(self) -> None:
+        assert tools_offered_after("I am not sure.")
+
+    def test_quoting_the_instruction_does_not_count_as_a_refusal(self) -> None:
+        thought = "I must end with 'Tool needed: yes' or 'Tool needed: no'. I lack the data.\nTool needed: yes"
+
+        assert tools_offered_after(thought)
+
+    def test_only_the_last_decision_counts(self) -> None:
+        assert not tools_offered_after("Tool needed: yes? No, it is arithmetic.\nTool needed: no")
+
+    def test_reads_a_decision_in_markdown(self) -> None:
+        assert not tools_offered_after("It is a greeting.\n**Tool needed:** No")
+
+
+class TestAnswerDecision:
+    def test_searches_again_only_when_the_last_decision_is_no(self) -> None:
+        thought = "End with 'Answer found: yes' or 'Answer found: no'. The page has the figure.\nAnswer found: yes"
+
+        assert not ReAct._wants_tool(thought, after_observation=True)  # noqa: SLF001
+        assert ReAct._wants_tool("The page is empty.\nAnswer found: no", after_observation=True)  # noqa: SLF001
+
+    def test_answers_without_a_decision(self) -> None:
+        assert not ReAct._wants_tool("The page has the figure.", after_observation=True)  # noqa: SLF001
 
 
 class TestInteractions:

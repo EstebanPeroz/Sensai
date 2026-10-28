@@ -34,6 +34,11 @@ disabled = []
 
 # disabled = ["tools.inexesistant.test"]
 
+# Feature ids asking the user before each use (Allow / Always this session / Deny).
+confirm = []
+
+# confirm = ["tools.web_fetch"]
+
 [logging]
 # Record every call to the model in the persistent database; log_content = false keeps only the metadata.
 enabled = true
