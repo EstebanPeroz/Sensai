@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 import anyio
 
 from sensai import ui
-from sensai.commands import Ask, Branch, Command, Help, Index, Model, PersonaCommand, StateCommand
+from sensai.commands import Ask, Branch, Command, Dashboard, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.effort import Effort
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
@@ -150,6 +150,7 @@ class Core:
                 Import(),
                 Index(indexer),
                 Ask(retrieval),
+                Dashboard(db.interactions),
             ]
         )
         registry.register_command(Help(registry))

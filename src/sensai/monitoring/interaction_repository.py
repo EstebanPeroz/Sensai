@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sensai.monitoring.interaction import Interaction
 
 
@@ -17,6 +19,14 @@ class InteractionRepository(Protocol):
 
         """
 
-    def get_all(self) -> list[Interaction]:
-        """Return every stored interaction, oldest first."""
+    def get_all(self, *, since: datetime | None = None, with_content: bool = True) -> list[Interaction]:
+        """Return the stored interactions created at or after `since` (every one if None), oldest first.
+
+        Without content, their request, response, thinking and tool calls are left empty: enough for
+        metrics, and much lighter to read.
+
+        Raises:
+            DatabaseError: If they could not be read.
+
+        """
         ...

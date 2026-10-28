@@ -14,10 +14,12 @@ import sensai.ui.tui._effect as fx
 from sensai import ui
 from sensai.llm.message import Role
 from sensai.ui.completion import Completer, CompletionSource
+from sensai.ui.tui._dashboard import DashboardScreen
 
 if TYPE_CHECKING:
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
+    from sensai.monitoring.metrics import Report
 
 
 USER_PROMPT_BACKGROUND: str = "grey"
@@ -273,6 +275,10 @@ class ChatApp(App):
         chat.clear()
         for message in messages.messages():
             self.add_input(message.role, message.content)
+
+    def show_dashboard(self, report: Report) -> None:
+        """Open the dashboard of `report` over the chat; closing it brings the chat back."""
+        self.push_screen(DashboardScreen(report))
 
     def set_completions(self, completions: dict[str, CompletionSource]) -> None:
         """Store, by command, the function giving the values offered while the user types."""

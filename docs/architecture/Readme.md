@@ -22,7 +22,7 @@ sensai/
     │
     ├── ui/
     │   ├── adapter.py                # interface
-    │   ├── tui/
+    │   ├── tui/                     # Textual chat app, and the dashboard screen
     │   └── web/
     │
     ├── pipeline/                  # Chain of Responsibility
@@ -63,6 +63,7 @@ sensai/
     │   ├── _branch.py               # branch off the current session
     │   ├── _compress.py
     │   ├── _export.py               # export a conversation
+    │   ├── _dashboard.py            # monitoring dashboard of the logged calls
     │   └── _schedule.py             # schedule a task (time / action)
     │
     ├── memory/                    # Repository + Memento
@@ -83,7 +84,8 @@ sensai/
         ├── interaction.py          # record of one call to the model, the event emitted on the bus
         ├── recorder.py             # builds that record from the chunks of a call
         ├── interaction_repository.py # storage interface of the logged calls
-        └── logger.py               # bus subscriber storing every call, with or without its content
+        ├── logger.py               # bus subscriber storing every call, with or without its content
+        └── metrics.py              # dashboard report: percentiles, time series, drift detection
 ```
 
 ## Design patterns, by package
@@ -158,6 +160,13 @@ sensai/
   in its own `interaction` table; the `[logging]` settings turn it off, or keep
   only the metrics without what the user and the model wrote. A failure to
   store a call is reported to the UI and never breaks the answer.
+  `/dashboard [24h|7d|30d]` reads the calls of the period back from the
+  repository, without their content, and `metrics.py` turns them into a
+  `Report`: call count, response time p50/p95 and first token p50 (successful
+  calls only), error and interruption rates, tokens per second, a time series
+  per hour, 6 hours or day, the figures per model and persona, the latest
+  errors, and the response time drifts against the 7 previous periods. The UI
+  shows it with `show_dashboard` (a Textual screen over the chat).
 
 ## Configuration surface
 
