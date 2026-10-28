@@ -147,6 +147,7 @@ class Conversation:
             message=user_input,
             ui=ui,
             messages=self.history.to_json(),
+            branch_id=self.uuid,
             on_interaction=partial(
                 self._emit_interaction, persona=persona.name if persona is not None else None, ui=ui
             ),
