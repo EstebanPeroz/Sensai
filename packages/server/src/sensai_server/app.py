@@ -18,7 +18,6 @@ from sensai_protocol import (
 
 from sensai_server import handlers
 from sensai_server.llm.provider import ProviderManager
-from sensai_server.models import StaticModelCatalog
 from sensai_server.outbound import Outbound
 from sensai_server.session import SessionRegistry
 
@@ -43,12 +42,14 @@ def create_app(
     `settings` are the loaded settings, kept in the app state. `chat` and `command` run a chat prompt and a
     command as a session's task.
     """
+    pm: ProviderManager = ProviderManager(settings.llm)
+
     app = FastAPI()
     app.state.settings = settings
-    app.state.registry = SessionRegistry(StaticModelCatalog())
+    app.state.provider_manager = pm
+    app.state.registry = SessionRegistry(pm)
     app.state.chat = chat
     app.state.command = command
-    app.state.provider_manager = ProviderManager(settings.llm)
     app.include_router(router)
     return app
 

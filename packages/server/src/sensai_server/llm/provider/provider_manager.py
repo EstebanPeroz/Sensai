@@ -2,11 +2,11 @@ from typing import TYPE_CHECKING
 
 from sensai_protocol.error import SensaiError
 
-from sensai_server.llm.provider import OllamaAdapter
+from sensai_server.llm.provider.ollama import OllamaAdapter
 
 if TYPE_CHECKING:
     from sensai_server.config.settings import LLMSettings
-    from sensai_server.llm.provider import ProviderAdapter
+    from sensai_server.llm.provider.provider import ProviderAdapter
 
 
 PROVIDER_ADAPTERS: dict[str, type] = {

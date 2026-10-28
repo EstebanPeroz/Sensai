@@ -11,20 +11,20 @@ from sensai_server.session import Session
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from sensai_server.models import ModelCatalog
+    from sensai_server.llm.provider import ProviderManager
     from sensai_server.outbound import Outbound
 
 
 class SessionRegistry:
     """The live sessions, by client id: the connection list."""
 
-    _catalog: ModelCatalog
     _sessions: dict[UUID, Session]
     _lock: asyncio.Lock
+    _pm: ProviderManager
 
-    def __init__(self, catalog: ModelCatalog) -> None:
+    def __init__(self, pm: ProviderManager) -> None:
         """Open sessions on the models of `catalog`."""
-        self._catalog = catalog
+        self._pm = pm
         self._sessions = {}
         self._lock = asyncio.Lock()
 
@@ -33,9 +33,11 @@ class SessionRegistry:
 
         If no provider serves `model`, an `error` listing the available models is sent and None is returned.
         """
-        models = await self._catalog.available_models()
-        if model not in models:
-            await out.send_error(f"Unknown model '{model}'. Available models: {', '.join(models) or 'none'}")
+        provider = self._pm.get_provider(model)
+        if provider is None:
+            await out.send_error(
+                f"Unknown model '{model}'. Available models: {', '.join(self._pm.get_models()) or 'none'}"
+            )
             return None
         session = Session(uuid4(), model, out)
         async with self._lock:

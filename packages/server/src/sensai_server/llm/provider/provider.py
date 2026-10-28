@@ -12,6 +12,8 @@ if TYPE_CHECKING:
 class ProviderAdapter(ABC):
     """Interface Used to communicate with different llm API."""
 
+    _current_model: str | None = None
+
     @overload
     def chat(self, payload: dict, *, stream: Literal[True]) -> Iterator[ChatResponse]: ...
     @overload

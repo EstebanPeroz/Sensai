@@ -1,4 +1,4 @@
-from sensai.error import SensaiError
+from sensai_protocol.error import SensaiError
 
 
 class RequestCallError(SensaiError):

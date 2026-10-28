@@ -7,13 +7,13 @@ import requests
 from sensai_protocol.error import SensaiError
 
 from sensai_server.llm.error import JsonError, RequestCallError, RequestStatusError
-from sensai_server.llm.provider import ProviderAdapter
+from sensai_server.llm.provider.provider import ProviderAdapter
 from sensai_server.llm.responses import ChatResponse, ShowResponse
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from sensai.config.settings import ProviderSettings
+    from sensai_server.config.settings import ProviderSettings
 
 
 _EMBED_TIMEOUT = 30
