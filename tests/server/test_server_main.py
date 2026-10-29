@@ -28,7 +28,8 @@ def uvicorn(monkeypatch: pytest.MonkeyPatch) -> FakeUvicorn:
 class TestMain:
     def test_serves_an_app_holding_the_loaded_settings(self, tmp_path: Path, uvicorn: FakeUvicorn) -> None:
         path = tmp_path / "settings.toml"
-        path.write_text('[llm.ollama]\nbase_url = "http://ollama:1234"\n')
+        db = tmp_path / "test.db"
+        path.write_text(f'[llm.ollama]\nbase_url = "http://ollama:1234"\n[db.persistent]\nurl = "sqlite:///{db}"\n')
 
         assert main(["--config", str(path), "--host", "0.0.0.0", "--port", "9000"]) == 0  # noqa: S104
 

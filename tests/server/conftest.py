@@ -1,13 +1,17 @@
 import asyncio
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sensai_protocol import AiChunk
 from sensai_server.app import create_app
-from sensai_server.config.settings import LLMSettings, OllamaSettings, Settings
+from sensai_server.config.settings import DBSettings, LLMSettings, OllamaSettings, PersistentDBSettings, Settings
+from sensai_server.llm.persona import PersonaManager
 from sensai_server.llm.provider import provider_manager
+from sensai_server.memory.persistent_db import base
+from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai_server.session import Session, SessionRegistry
 
 from tests.server.fakes import FakeAdapter
@@ -41,6 +45,32 @@ async def fake_command(session: Session, command: str) -> None:
 SETTINGS = Settings(llm=LLMSettings(providers={"ollama": OllamaSettings()}))
 
 
+def db_url(tmp_path: Path) -> str:
+    """The URL of a fresh sqlite file in `tmp_path`.
+
+    A file, not `sqlite://`: the test client runs the app in another thread, and an in-memory database is per
+    connection.
+    """
+    return f"sqlite:///{tmp_path / 'test.db'}"
+
+
+def settings_with_db(tmp_path: Path) -> Settings:
+    """`SETTINGS`, with a fresh persistent database in `tmp_path`."""
+    return Settings(llm=SETTINGS.llm, db=DBSettings(persistent=PersistentDBSettings(url=db_url(tmp_path))))
+
+
+@pytest.fixture(autouse=True)
+def fresh_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Forget the database opened by a previous test: `set_db` keeps the first one of the process."""
+    monkeypatch.setattr(base._State, "db", None)  # noqa: SLF001
+
+
+@pytest.fixture
+def persona_manager(tmp_path: Path) -> PersonaManager:
+    """A persona manager on a fresh sqlite file."""
+    return PersonaManager(SqlAlchemy(db_url(tmp_path)))
+
+
 @pytest.fixture(autouse=True)
 def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
     """Serve the providers from `FakeAdapter`, so that no server test calls a real provider.
@@ -55,8 +85,8 @@ def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def app() -> FastAPI:
-    return create_app(SETTINGS, chat=fake_chat, command=fake_command)
+def app(tmp_path: Path) -> FastAPI:
+    return create_app(settings_with_db(tmp_path), chat=fake_chat, command=fake_command)
 
 
 @pytest.fixture
