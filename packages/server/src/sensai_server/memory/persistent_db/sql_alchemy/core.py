@@ -88,7 +88,7 @@ class SqlAlchemy(PersistentDatabase):
     def import_branch(self, config: dict) -> None:
         """Make a branch based on a config, as produced by `export_branch`.
 
-        The persona is reused if one has the same name, otherwise it is created.
+        Personas are not part of the config: the new branch has none.
         The branch name is made unique if it is already used.
 
         Raises:
@@ -139,7 +139,7 @@ class SqlAlchemy(PersistentDatabase):
 
     @override
     def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
-        """Replace the uuid, model and history of `current` with those of the target branch.
+        """Replace the uuid, model, persona and history of `current` with those of the target branch.
 
         Does nothing if no branch has this uuid.
 
@@ -158,6 +158,7 @@ class SqlAlchemy(PersistentDatabase):
             current.uuid = source.id
             current.model = source.model_name
             current.history.replace(self._messages_from_branch(source))
+            current.persona = self._persona_from_row(source.persona) if source.persona else None
 
     @override
     def remove_branch(self, uuid: UUID) -> None:

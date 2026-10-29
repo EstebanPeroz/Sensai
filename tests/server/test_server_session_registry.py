@@ -2,7 +2,7 @@ import asyncio
 from uuid import uuid4
 
 from sensai_protocol import Error, Session
-from sensai_server.llm.persona import PersonaManager
+from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.session import SessionRegistry
 
@@ -89,3 +89,46 @@ class TestSessionRegistry:
         assert second is not None
         assert first.persona_manager is persona_manager
         assert second.persona_manager is persona_manager
+
+
+class TestRefreshPersona:
+    async def test_a_new_session_has_no_persona(self, persona_manager: PersonaManager) -> None:
+        session = await _registry(persona_manager).open(RecordingOutbound(), MODEL)
+        assert session is not None
+        assert session.conv.persona is None
+
+    async def test_loading_in_one_session_leaves_the_other(self, persona_manager: PersonaManager) -> None:
+        registry = _registry(persona_manager)
+        first = await registry.open(RecordingOutbound(), MODEL)
+        second = await registry.open(RecordingOutbound(), MODEL)
+        assert first is not None
+        assert second is not None
+        first.conv.persona = persona_manager.create_default_persona()
+        assert second.conv.persona is None
+
+    async def test_update_refreshes_every_session_using_it(self, persona_manager: PersonaManager) -> None:
+        registry = _registry(persona_manager)
+        first = await registry.open(RecordingOutbound(), MODEL)
+        second = await registry.open(RecordingOutbound(), MODEL)
+        assert first is not None
+        assert second is not None
+        persona = persona_manager.create_default_persona()
+        first.conv.persona = second.conv.persona = persona
+        updated = persona_manager.update_persona(persona.name, prompt="new prompt")
+        registry.refresh_persona(updated)
+        assert first.conv.persona == updated
+        assert second.conv.persona == updated
+        assert updated.prompt == "new prompt"
+
+    async def test_sessions_on_another_persona_or_none_are_left(self, persona_manager: PersonaManager) -> None:
+        registry = _registry(persona_manager)
+        using_other = await registry.open(RecordingOutbound(), MODEL)
+        using_none = await registry.open(RecordingOutbound(), MODEL)
+        assert using_other is not None
+        assert using_none is not None
+        persona = persona_manager.create_default_persona()
+        other = persona_manager.create_persona(Persona(None, "Other", "another one", "be other"))
+        using_other.conv.persona = other
+        registry.refresh_persona(persona_manager.update_persona(persona.name, prompt="new prompt"))
+        assert using_other.conv.persona == other
+        assert using_none.conv.persona is None

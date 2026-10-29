@@ -11,7 +11,7 @@ from sensai_server.session import Session
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from sensai_server.llm.persona import PersonaManager
+    from sensai_server.llm.persona import Persona, PersonaManager
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.outbound import Outbound
 
@@ -55,6 +55,13 @@ class SessionRegistry:
             session = self._sessions.pop(client_id, None)
         if session is not None:
             await session.close()
+
+    def refresh_persona(self, updated: Persona) -> None:
+        """Give `updated` to every session whose conversation uses an older version of that persona."""
+        for session in self._sessions.values():
+            persona = session.conv.persona
+            if persona is not None and persona.uuid == updated.uuid:
+                session.conv.persona = updated
 
     def get(self, client_id: UUID) -> Session | None:
         """Return the session of `client_id`, if it is open."""

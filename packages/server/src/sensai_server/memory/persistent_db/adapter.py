@@ -38,7 +38,7 @@ class PersistentDatabase(ABC):
 
     @abstractmethod
     def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
-        """Replace the uuid, model and history of `current` with those of the target branch.
+        """Replace the uuid, model, persona and history of `current` with those of the target branch.
 
         Does nothing if no branch has this uuid.
         """
