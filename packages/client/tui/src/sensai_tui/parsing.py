@@ -6,21 +6,26 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from pydantic_core.core_schema import ArgumentsParameter
+# The server only listens on loopback: the client must run on the same machine.
+HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
 
-DEFAULT_URL = "ws://127.0.0.1:8000/ws"
+
+def server_url(port: int) -> str:
+    """Return the websocket URL of the local server listening on `port`."""
+    return f"ws://{HOST}:{port}/ws"
 
 
 class Parsing:
     """Command line arguments parser."""
 
-    _parser: ArgumentsParameter
+    _parser: argparse.ArgumentParser
 
     def __init__(self) -> None:
         """Declare the command line arguments."""
         self._parser = argparse.ArgumentParser(prog="sensai-tui", description="Terminal client of a Sensai server.")
         self._parser.add_argument(
-            "--url", default=DEFAULT_URL, help=f"websocket of the server (default: {DEFAULT_URL})"
+            "--port", type=int, default=DEFAULT_PORT, help=f"port of the local server (default: {DEFAULT_PORT})"
         )
         self._parser.add_argument("--model", required=True, help="model to log in with")
 
