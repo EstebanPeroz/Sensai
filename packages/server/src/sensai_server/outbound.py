@@ -67,6 +67,11 @@ class Outbound:
         """Whether a question waits for the client's answer."""
         return bool(self._pending)
 
+    @property
+    def waiting_client_command(self) -> bool:
+        """Whether the running task waits for the client to run a client command."""
+        return bool(self._client_requests)
+
     async def send(self, message: ServerMessage) -> bool:
         """Send `message`. On a closed socket it is dropped: the receive loop sees the disconnection.
 

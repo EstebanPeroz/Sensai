@@ -19,18 +19,20 @@ from sensai_protocol import (
 )
 
 from sensai_server import handlers
+from sensai_server.commands import CommandRegistry, build_commands
 from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
 from sensai_server.outbound import Outbound
 from sensai_server.session import SessionRegistry
+from sensai_server.state import AppState, app_state, set_app_state
 
 if TYPE_CHECKING:
     from sensai_protocol import ClientMessage
 
     from sensai_server.config.settings import Settings
-    from sensai_server.handlers import ChatRunner, CommandRunner
+    from sensai_server.handlers import ChatRunner
     from sensai_server.session.session import Session
 
 router = APIRouter()
@@ -40,13 +42,11 @@ def create_app(
     settings: Settings,
     *,
     chat: ChatRunner = handlers.placeholder_chat,
-    command: CommandRunner = handlers.placeholder_command,
 ) -> FastAPI:
     """Build a new app serving the `/ws` route, logging clients in on the models of the configured providers.
 
-    `settings` are the loaded settings, kept in the app state. The persistent database is opened, and the default
-    persona is stored in it if it is not there yet. `chat` and `command` run a chat prompt and a command as a
-    session's task.
+    `settings` are the loaded settings, kept in the app state (see `app_state`). The persistent database is opened,
+    and the default persona is stored in it if it is not there yet. `chat` runs a chat prompt as a session's task.
     """
     pm: ProviderManager = ProviderManager(settings.llm)
     set_db(settings.db.persistent)
@@ -58,14 +58,20 @@ def create_app(
     with contextlib.suppress(DuplicatePersonaError):
         persona_manager.create_default_persona()
 
+    sessions = SessionRegistry(pm, persona_manager)
     app = FastAPI()
-    app.state.settings = settings
-    app.state.provider_manager = pm
-    app.state.db = db
-    app.state.persona_manager = persona_manager
-    app.state.registry = SessionRegistry(pm, persona_manager)
-    app.state.chat = chat
-    app.state.command = command
+    set_app_state(
+        app,
+        AppState(
+            settings=settings,
+            provider_manager=pm,
+            db=db,
+            persona_manager=persona_manager,
+            registry=sessions,
+            commands=CommandRegistry(build_commands(sessions)),
+            chat=chat,
+        ),
+    )
     app.include_router(router)
     return app
 
@@ -78,7 +84,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
     with an `error`, and the connection stays open. However the connection ends, its session is freed.
     """
     await ws.accept()
-    registry: SessionRegistry = ws.app.state.registry
+    state = app_state(ws.app)
     out = Outbound(ws)
     session: Session | None = None
     try:
@@ -89,26 +95,25 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await out.send_error(str(err))
                 continue
             if isinstance(message, Login):
-                session = await handlers.handle_login(registry, out, session, message)
+                session = await handlers.handle_login(state.registry, out, session, message, state.commands.names())
                 continue
             if session is None:
                 await out.send_error("Login first.")
                 continue
-            if not await _dispatch(ws, session, message):
+            if not await _dispatch(ws, state, session, message):
                 break
     except WebSocketDisconnect:
         pass
     finally:
         if session is not None:
-            await registry.close(session.client_id)
+            await state.registry.close(session.client_id)
 
 
-async def _dispatch(ws: WebSocket, session: Session, message: ClientMessage) -> bool:
+async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: ClientMessage) -> bool:
     """Dispatch a message, other than `login`, of a logged-in client to its handler.
 
     Returns False once the connection must end.
     """
-    state = ws.app.state
     match message:
         case Logout():
             await handlers.handle_logout(state.registry, session, message)
@@ -117,11 +122,11 @@ async def _dispatch(ws: WebSocket, session: Session, message: ClientMessage) -> 
         case Chat():
             await handlers.handle_chat(session, message, state.chat)
         case Command():
-            await handlers.handle_command(session, message, state.command)
+            await handlers.handle_command(session, message, state.commands)
         case Cancel():
             await handlers.handle_cancel(session, message)
         case Complete():
-            await handlers.handle_complete(session, message)
+            await handlers.handle_complete(session, message, state.commands)
         case ConfirmAnswer():
             await handlers.handle_confirm_answer(session, message)
         case UserAnswer():
