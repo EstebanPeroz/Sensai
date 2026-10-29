@@ -64,6 +64,11 @@ class Conversation:
         if self.uuid:
             db.set_branch_model(self.uuid, self._provider_manager.provider().current_model())
 
+    def reset(self) -> None:
+        """Leave the current branch for a new conversation, created in the DB with its first message."""
+        self.uuid = None
+        self.history = History()
+
     def add_message(self, role: Role, content: str, ui: UIAdapter) -> bool:
         """Add message to History and db."""
         db = get_db()

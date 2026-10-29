@@ -274,6 +274,17 @@ class TestHistory:
         assert contents == ["What is Redis?", "From the cache."]
 
 
+class TestReset:
+    def test_leaves_the_branch_with_an_empty_history(self, make_conversation: Callable[..., Conversation]) -> None:
+        conversation = make_conversation()
+        conversation.chat("What is Redis?", FakeUI())
+
+        conversation.reset()
+
+        assert conversation.uuid is None
+        assert conversation.history.messages() == []
+
+
 def test_conversation_delegates_generation_to_react() -> None:
     provider_manager = MagicMock()
     persona_manager = MagicMock()

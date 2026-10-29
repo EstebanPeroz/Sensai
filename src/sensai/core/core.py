@@ -22,7 +22,7 @@ from sensai.llm.thinking.react import ReAct
 from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
-from sensai.monitoring.budget import ContextBudget
+from sensai.monitoring.budget import ContextBudget, ContextUsage
 from sensai.monitoring.logger import InteractionLogger
 from sensai.pipeline import ChatPipeline
 from sensai.pipeline.modules import ModelStage, PersonaStage, RagStage
@@ -209,15 +209,31 @@ class Core:
         except SensaiError as err:
             self._ui.send_system_message(f"Failed to log interaction: {err}")
 
+    def _context_usage(self) -> ContextUsage:
+        """Return the context usage of the current branch, as last measured, against the budget of the current model."""
+        model = self._provider_manager.provider().current_model()
+        return self._context_budget.usage(model, self.conversation.uuid)
+
     def _refresh_context_usage(self) -> None:
         """Show the context usage of the current branch against the budget of the current model."""
-        model = self._provider_manager.provider().current_model()
-        self._ui.update_context_usage(self._context_budget.usage(model, self.conversation.uuid))
+        self._ui.update_context_usage(self._context_usage())
 
     def _near_budget(self) -> bool:
         """Whether the conversation, as last measured, takes enough of its budget to be compressed."""
-        model = self._provider_manager.provider().current_model()
-        return self._context_budget.usage(model, self.conversation.uuid).near_limit
+        return self._context_usage().near_limit
+
+    def _ask_how_to_go_on(self) -> None:
+        """Near the budget, let the user choose between compressing the conversation and starting a new one.
+
+        Asked before the message is stored, so that a new conversation starts with it. Compressing is left to the
+        pipeline, which does it whenever the conversation is near its budget.
+        """
+        usage = self._context_usage()
+        if not usage.near_limit or self._ui.ask_compression(usage) is not ui.CompressionChoice.NEW_CONVERSATION:
+            return
+        self.conversation.reset()
+        self._ui.load_conversation(self.conversation.history)
+        self._refresh_context_usage()
 
     def _context_length(self, model: str) -> int | None:
         """Return the context length of `model`, None when its provider cannot tell."""
@@ -257,6 +273,8 @@ class Core:
 
     def _launch_conv_chat(self, content: str) -> None:
         """Send `content` through the conversation, reporting any provider error instead of raising."""
+        if self.conversation.uuid is not None:
+            self._ask_how_to_go_on()
         if self.conversation.uuid is None:
             self.conversation.add_conv_to_db(None, content)
         try:

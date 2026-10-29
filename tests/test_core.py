@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 import redis
 
-from sensai.config.settings import FeatureSettings, LLMSettings, OllamaSettings, Settings
+from sensai.config.settings import ContextSettings, FeatureSettings, LLMSettings, OllamaSettings, Settings
 from sensai.core.core import Core
 from sensai.llm.error import ModelError
 from sensai.llm.responses import ChatMetrics
@@ -19,7 +19,7 @@ from sensai.memory.persistent_db.error import DatabaseError
 from sensai.monitoring.interaction import Interaction, InteractionStatus
 from sensai.semantic.cache import RedisSemanticCache
 from sensai.tools.tool_manager import ToolManager
-from sensai.ui.adapter import EventType
+from sensai.ui.adapter import CompressionChoice, EventType
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -51,8 +51,13 @@ def redis_client() -> Iterator[MagicMock]:
         yield client
 
 
-def make_core(provider: MagicMock, embedding_model: str | None = EMBEDDING_MODEL) -> Core:
-    settings = Settings(llm=LLMSettings(embedding_model=embedding_model, providers={"ollama": OllamaSettings()}))
+def make_core(
+    provider: MagicMock, embedding_model: str | None = EMBEDDING_MODEL, context: ContextSettings | None = None
+) -> Core:
+    settings = Settings(
+        llm=LLMSettings(embedding_model=embedding_model, providers={"ollama": OllamaSettings()}),
+        context=context or ContextSettings(),
+    )
     with patch.dict("sensai.llm.provider_manager.PROVIDER_ADAPTERS", {"ollama": lambda _conf: provider}):
         return Core(MagicMock(), settings, Namespace(model=MODEL))
 
@@ -108,6 +113,63 @@ class TestContextBudget:
             core._events.emit(interaction)  # noqa: SLF001
 
         assert core._ui.update_context_usage.call_args.args[0].used == 1050  # noqa: SLF001
+
+
+class TestNearTheBudget:
+    @staticmethod
+    def core_at(provider: MagicMock, used: int) -> tuple[Core, MagicMock]:
+        """Build a core whose conversation, on a branch of its own, takes `used` of a budget of 1000 tokens."""
+        core = make_core(provider, embedding_model=None, context=ContextSettings(budget=1000, warning_threshold=0.8))
+        branch = uuid4()
+        core._context_budget.record(  # noqa: SLF001
+            Interaction(
+                model=MODEL,
+                status=InteractionStatus.OK,
+                latency_ms=1.0,
+                branch_id=branch,
+                metrics=ChatMetrics(prompt_tokens=used),
+            )
+        )
+        conversation = MagicMock(uuid=branch)
+        core.conversation = conversation
+        return core, conversation
+
+    def test_asks_how_to_go_on(self, provider: MagicMock) -> None:
+        core, _ = self.core_at(provider, used=900)
+        core._ui.ask_compression.return_value = CompressionChoice.COMPRESS  # noqa: SLF001
+
+        core._launch_conv_chat("hello")  # noqa: SLF001
+
+        assert core._ui.ask_compression.call_args.args[0].used == 900  # noqa: SLF001
+
+    def test_compressing_goes_on_with_the_same_conversation(self, provider: MagicMock) -> None:
+        core, conversation = self.core_at(provider, used=900)
+        core._ui.ask_compression.return_value = CompressionChoice.COMPRESS  # noqa: SLF001
+
+        core._launch_conv_chat("hello")  # noqa: SLF001
+
+        conversation.reset.assert_not_called()
+        conversation.chat.assert_called_once_with("hello", core._ui)  # noqa: SLF001
+
+    def test_a_new_conversation_starts_with_the_message(self, provider: MagicMock) -> None:
+        core, conversation = self.core_at(provider, used=900)
+        core._ui.ask_compression.return_value = CompressionChoice.NEW_CONVERSATION  # noqa: SLF001
+        conversation.reset.side_effect = lambda: setattr(conversation, "uuid", None)
+
+        core._launch_conv_chat("hello")  # noqa: SLF001
+
+        conversation.reset.assert_called_once()
+        core._ui.load_conversation.assert_called_once_with(conversation.history)  # noqa: SLF001
+        conversation.add_conv_to_db.assert_called_once_with(None, "hello")
+        conversation.chat.assert_called_once_with("hello", core._ui)  # noqa: SLF001
+
+    def test_is_not_asked_below_the_threshold(self, provider: MagicMock) -> None:
+        core, conversation = self.core_at(provider, used=500)
+
+        core._launch_conv_chat("hello")  # noqa: SLF001
+
+        core._ui.ask_compression.assert_not_called()  # noqa: SLF001
+        conversation.chat.assert_called_once()
 
 
 def test_core_does_not_create_mcp_client_without_configuration() -> None:
