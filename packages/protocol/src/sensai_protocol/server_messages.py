@@ -5,6 +5,7 @@ from uuid import UUID  # noqa: TC003 - pydantic resolves annotations at runtime
 from pydantic import Field
 
 from sensai_protocol._base import ProtocolModel
+from sensai_protocol.client_commands import ClientCommand  # noqa: TC001 - pydantic resolves annotations at runtime
 from sensai_protocol.dashboard import DashboardReport  # noqa: TC001 - pydantic resolves annotations at runtime
 
 
@@ -109,6 +110,15 @@ class AskUser(ProtocolModel):
     question: str
 
 
+class RequestCommand(ProtocolModel):
+    """Ask the client to run the client command `command` with `params`. Answered by a `command_context`."""
+
+    type: Literal["request_command"] = "request_command"
+    request_id: UUID
+    command: ClientCommand
+    params: dict[str, Any]
+
+
 class Dashboard(ProtocolModel):
     """Show a monitoring report until the user closes it."""
 
@@ -117,6 +127,17 @@ class Dashboard(ProtocolModel):
 
 
 type ServerMessage = Annotated[
-    Session | AiChunk | Input | System | Error | History | Effort | Completions | ConfirmTool | AskUser | Dashboard,
+    Session
+    | AiChunk
+    | Input
+    | System
+    | Error
+    | History
+    | Effort
+    | Completions
+    | ConfirmTool
+    | AskUser
+    | Dashboard
+    | RequestCommand,
     Field(discriminator="type"),
 ]
