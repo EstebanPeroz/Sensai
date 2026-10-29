@@ -9,10 +9,12 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label
 
 import sensai.ui.tui._effect as fx
-from sensai.ui.adapter import Confirmation
+from sensai.ui.adapter import CompressionChoice, Confirmation
 
 if TYPE_CHECKING:
     from textual.app import ComposeResult
+
+    from sensai.monitoring.budget import ContextUsage
 
 MAX_ARGUMENT_LEN = 200
 
@@ -95,6 +97,45 @@ class ConfirmScreen(ModalScreen[Confirmation]):
     def action_answer(self, answer: str) -> None:
         """Close the dialog with `answer`, denying anything unexpected."""
         self.dismiss(self._ANSWERS.get(answer, Confirmation.DENY))
+
+
+class CompressionScreen(ModalScreen[CompressionChoice]):
+    """Asks how to go on with a conversation near its budget: summarise its oldest messages, or start anew."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("c", "answer('compress')", "Compress"),
+        Binding("n", "answer('new')", "New conversation"),
+        Binding("escape", "answer('compress')", "Compress", show=False),
+    ]
+    DEFAULT_CSS = f"CompressionScreen {{ {DIALOG_CSS} }}"
+
+    _ANSWERS: ClassVar[dict[str, CompressionChoice]] = {
+        "compress": CompressionChoice.COMPRESS,
+        "new": CompressionChoice.NEW_CONVERSATION,
+    }
+
+    def __init__(self, usage: ContextUsage) -> None:
+        """Ask about a conversation taking `usage` of its budget."""
+        super().__init__()
+        self._usage = usage
+
+    def compose(self) -> ComposeResult:
+        """Build the question and the two ways to go on."""
+        share = "most" if self._usage.ratio is None else f"{self._usage.ratio:.0%}"
+        with VerticalGroup(id="dialog"):
+            yield Label(fx.bold(f"The conversation takes {share} of its context budget."))
+            yield Label("Summarise its oldest messages to go on, or start a new conversation with this message?")
+            with HorizontalGroup(id="buttons"):
+                yield Button("Compress and continue (c)", id="compress", variant="primary")
+                yield Button("New conversation (n)", id="new", variant="success")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Close the dialog with the answer of the button pressed."""
+        self.action_answer(event.button.id or "compress")
+
+    def action_answer(self, answer: str) -> None:
+        """Close the dialog with `answer`, compressing on anything unexpected."""
+        self.dismiss(self._ANSWERS.get(answer, CompressionChoice.COMPRESS))
 
 
 class QuestionScreen(ModalScreen[str | None]):
