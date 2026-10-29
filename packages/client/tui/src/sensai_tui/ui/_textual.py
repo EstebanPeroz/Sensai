@@ -21,6 +21,7 @@ from sensai_protocol import (
     History,
     Login,
     Logout,
+    RequestCommand,
     Role,
     Session,
     System,
@@ -34,6 +35,7 @@ from textual.markup import escape
 from textual.widgets import Input, Label, ListItem, ListView, OptionList
 
 import sensai_tui.ui._style as fx
+from sensai_tui.client_commands.dispatch import run_client_command
 from sensai_tui.completion import Completer
 from sensai_tui.ui._dashboard import DashboardScreen
 from sensai_tui.ui._dialogs import ConfirmScreen, QuestionScreen
@@ -213,17 +215,23 @@ class ChatApp(App):
                 self.update_thinking_effort(message.level)
             case Completions():
                 self._receive_completions(message)
-            case ConfirmTool() | AskUser() | Dashboard():
-                self._open_screen(message)
+            case ConfirmTool() | AskUser() | Dashboard() | RequestCommand():
+                self._on_request(message)
+
+    async def _run_client_command(self, message: RequestCommand) -> None:
+        """Run the client command the server asked for, and send its answer back."""
+        self._send(await run_client_command(message))
 
     def _receive_completions(self, message: Completions) -> None:
         """Show the received completions, unless they answer an outdated input."""
         if self._completer.receive(message.text, message.values):
             self._refresh_completions(self.query_one("#input", Input).value)
 
-    def _open_screen(self, message: ConfirmTool | AskUser | Dashboard) -> None:
-        """Open the dialog or the dashboard the server asked for."""
+    def _on_request(self, message: ConfirmTool | AskUser | Dashboard | RequestCommand) -> None:
+        """Open the dialog or the dashboard the server asked for, or run the client command it asked for."""
         match message:
+            case RequestCommand():
+                self.run_worker(self._run_client_command(message))
             case ConfirmTool():
                 self.ask_confirmation(message)
             case AskUser():
