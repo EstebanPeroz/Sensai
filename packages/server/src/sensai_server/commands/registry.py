@@ -23,8 +23,11 @@ class CommandRegistry:
 
     _commands: dict[str, Command]
 
-    def __init__(self, commands: list[Command]) -> None:
+    def __init__(self) -> None:
         """Initialize the command registry."""
+
+    def set_commands(self, commands: list[Command]) -> None:
+        """Set the commands in the registry."""
         self._commands = {command.name: command for command in commands}
 
     def names(self) -> list[str]:

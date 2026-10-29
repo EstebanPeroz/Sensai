@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sensai_server.commands._help import Help
 from sensai_server.commands._persona import PersonaCommand
 
 if TYPE_CHECKING:
+    from sensai_server.commands import CommandRegistry
     from sensai_server.commands._base import Command
     from sensai_server.session import SessionRegistry
 
 
-def build_commands(sessions: SessionRegistry) -> list[Command]:
+def build_commands(sessions: SessionRegistry, commands: CommandRegistry) -> list[Command]:
     """Build every command of the server, to register in the `CommandRegistry`.
 
     `sessions` are the live sessions, for the commands that act on other sessions than the caller's.
     """
-    return [PersonaCommand(sessions)]
+    return [PersonaCommand(sessions), Help(commands)]

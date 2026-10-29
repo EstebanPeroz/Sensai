@@ -31,6 +31,8 @@ from sensai_protocol import (
     parse_server_message,
 )
 from sensai_server.app import _handlers as handlers
+from sensai_server.commands import PersonaCommand
+from sensai_server.commands._help import Help
 from sensai_server.session import SessionRegistry
 from starlette.testclient import WebSocketTestSession
 
@@ -92,7 +94,7 @@ class TestLogin:
         with client.websocket_connect("/ws") as ws:
             session = _login(ws)
             assert session.model == MODEL
-            assert session.commands == ["/persona"]
+            assert session.commands == ["/persona", "/help"]
             assert registry.get(session.client_id) is not None
 
     def test_login_twice_keeps_session(self, client: TestClient, registry: SessionRegistry) -> None:
@@ -409,7 +411,9 @@ class TestCommandAndComplete:
             _login(ws)
             _send(ws, Command(command="/help"))
             assert _receive(ws) == Input(role=Role.USER, content="/help", command=True)
-            assert _receive(ws) == System(message="Unknown command: help")
+            assert _receive(ws) == System(
+                message=f"Available commands:\n- help: {Help.help}\n- persona: {PersonaCommand.help}"
+            )
 
     def test_complete(self, client: TestClient) -> None:
         with client.websocket_connect("/ws") as ws:

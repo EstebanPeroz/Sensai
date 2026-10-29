@@ -56,6 +56,9 @@ def create_app(
         persona_manager.create_default_persona()
 
     sessions = SessionRegistry(pm, persona_manager)
+    commands = CommandRegistry()
+    commands.set_commands(build_commands(sessions, commands))
+
     app = FastAPI()
     set_app_state(
         app,
@@ -65,7 +68,7 @@ def create_app(
             db=db,
             persona_manager=persona_manager,
             registry=sessions,
-            commands=CommandRegistry(build_commands(sessions)),
+            commands=commands,
         ),
     )
     app.include_router(router)

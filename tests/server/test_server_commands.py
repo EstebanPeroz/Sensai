@@ -3,8 +3,9 @@ from uuid import uuid4
 
 import pytest
 from sensai_protocol import System
-from sensai_server.commands import CommandRegistry, PersonaCommand
+from sensai_server.commands import CommandRegistry, PersonaCommand, build_commands
 from sensai_server.commands._base import Command
+from sensai_server.commands._help import Help
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory import Conversation
@@ -36,7 +37,16 @@ def sessions(manager: PersonaManager) -> SessionRegistry:
 
 @pytest.fixture
 def commands(sessions: SessionRegistry) -> CommandRegistry:
-    return CommandRegistry([PersonaCommand(sessions)])
+    """The server's commands, built as `create_app` does."""
+    commands = CommandRegistry()
+    commands.set_commands(build_commands(sessions, commands))
+    return commands
+
+
+def _registry(*commands: Command) -> CommandRegistry:
+    registry = CommandRegistry()
+    registry.set_commands(list(commands))
+    return registry
 
 
 async def _open(sessions: SessionRegistry) -> tuple[Session, RecordingOutbound]:
@@ -73,21 +83,21 @@ class _Echo(Command):
 
 class TestCommandRegistry:
     async def test_names(self, commands: CommandRegistry) -> None:
-        assert commands.names() == ["/persona"]
+        assert commands.names() == ["/persona", "/help"]
 
     async def test_execute_splits_the_arguments(self, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)
-        await CommandRegistry([_Echo()]).execute(session, "/echo  a   b")
+        await _registry(_Echo()).execute(session, "/echo  a   b")
         assert _system(out) == "a b"
 
     async def test_unknown_command_is_reported(self, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)
-        await CommandRegistry([_Echo()]).execute(session, "/nope x")
+        await _registry(_Echo()).execute(session, "/nope x")
         assert _system(out) == "Unknown command: nope"
 
     async def test_empty_line_does_nothing(self, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)
-        await CommandRegistry([_Echo()]).execute(session, "/")
+        await _registry(_Echo()).execute(session, "/")
         assert out.sent == []
 
     @pytest.mark.parametrize(
@@ -99,15 +109,29 @@ class TestCommandRegistry:
     ) -> None:
         session, _ = await _open(sessions)
         echo = _Echo()
-        assert CommandRegistry([echo]).completions(session, text) == ["x"]
+        assert _registry(echo).completions(session, text) == ["x"]
         assert echo.completed == [finished]
 
     @pytest.mark.parametrize("text", ["", "hello", "/echo", "/nope "])
     async def test_no_completions(self, sessions: SessionRegistry, text: str) -> None:
         session, _ = await _open(sessions)
         echo = _Echo()
-        assert CommandRegistry([echo]).completions(session, text) == []
+        assert _registry(echo).completions(session, text) == []
         assert echo.completed == []
+
+
+class TestHelp:
+    async def test_lists_every_command_by_name(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/help")
+        assert _system(out) == (f"Available commands:\n- help: {Help.help}\n- persona: {PersonaCommand.help}")
+
+    async def test_lists_the_commands_of_its_registry(self, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        registry = CommandRegistry()
+        registry.set_commands([_Echo(), Help(registry)])
+        await registry.execute(session, "/help extra")
+        assert _system(out) == f"Available commands:\n- echo: {_Echo.help}\n- help: {Help.help}"
 
 
 class TestPersonaCommand:
