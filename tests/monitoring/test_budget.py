@@ -94,6 +94,16 @@ class TestContextBudget:
         assert [usage.budget for usage in usages] == [32768, 32768]
         assert lookups == ["m"]
 
+    def test_looks_the_context_length_up_again_while_the_model_cannot_tell(self) -> None:
+        lengths = iter([None, 32768, 65536])
+        bus, usages = EventBus(), []
+        ContextBudget(ContextSettings(), lambda _: next(lengths), usages.append).attach(bus)
+
+        for _ in range(3):
+            bus.emit(chat_call(1000))
+
+        assert [usage.budget for usage in usages] == [None, 32768, 32768]
+
     def test_starts_empty(self) -> None:
         budget = ContextBudget(ContextSettings(budget=8192), lambda _: None, lambda _: None)
 

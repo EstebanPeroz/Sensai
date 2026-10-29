@@ -43,7 +43,7 @@ class ContextBudget:
     _settings: ContextSettings
     _context_length: Callable[[str], int | None]
     _on_change: Callable[[ContextUsage], object]
-    _lengths: dict[str, int | None]
+    _lengths: dict[str, int]
     _used: int
 
     def __init__(
@@ -54,7 +54,7 @@ class ContextBudget:
     ) -> None:
         """Measure against the budget of `settings`, else the `context_length` of the model, reporting to `on_change`.
 
-        `context_length` is looked up once per model.
+        `context_length` is looked up once per model, again on the next usage while it cannot tell.
         """
         self._settings = settings
         self._context_length = context_length
@@ -82,5 +82,8 @@ class ContextBudget:
         if self._settings.budget is not None:
             return self._settings.budget
         if model not in self._lengths:
-            self._lengths[model] = self._context_length(model)
+            length = self._context_length(model)
+            if length is None:
+                return None
+            self._lengths[model] = length
         return self._lengths[model]

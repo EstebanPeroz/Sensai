@@ -77,9 +77,10 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         self._events = EventBus()
-        InteractionLogger(db.interactions, settings.logging).attach(self._events)
+        # Before the logger, whose database failure would stop the event from reaching the budget.
         self._context_budget = ContextBudget(settings.context, self._context_length, ui.update_context_usage)
         self._context_budget.attach(self._events)
+        InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder, self._ui.ask_user)
         if self._mcp_client is not None:
