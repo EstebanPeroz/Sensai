@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from collections.abc import Coroutine
     from uuid import UUID
 
+    from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider.provider_manager import ProviderManager
     from sensai_server.outbound import Outbound
 
@@ -22,18 +23,35 @@ class Session:
     conv: Conversation
     effort: str
     out: Outbound
+    persona_manager: PersonaManager
+    provider_manager: ProviderManager
     task: asyncio.Task[None] | None
 
     def __init__(
-        self, client_id: UUID, model: str, out: Outbound, pm: ProviderManager, effort: str = DEFAULT_EFFORT
+        self,
+        client_id: UUID,
+        out: Outbound,
+        pm: ProviderManager,
+        persona_manager: PersonaManager,
+        *,
+        effort: str = DEFAULT_EFFORT,
     ) -> None:
-        """Build the session of `client_id`, chatting with `model` and sending on `out`."""
+        """Build the session of `client_id`, chatting with `model`, sending on `out`, using the shared managers."""
         self.client_id = client_id
-        self.model = model
         self.effort = effort
         self.out = out
+        self.persona_manager = persona_manager
         self.task = None
-        self.conv = Conversation(provider_manager=pm, model=model)
+        self.provider_manager = pm
+        self.conv = Conversation()
+
+    async def set_model(self, model: str) -> bool:
+        """Set the model the Session will use from now on."""
+        provider = self.provider_manager.get_provider(model)
+        if provider is None:
+            return False
+        self.conv.model = model
+        return True
 
     @property
     def busy(self) -> bool:

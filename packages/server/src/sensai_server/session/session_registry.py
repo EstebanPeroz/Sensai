@@ -11,6 +11,7 @@ from sensai_server.session import Session
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.outbound import Outbound
 
@@ -21,10 +22,12 @@ class SessionRegistry:
     _sessions: dict[UUID, Session]
     _lock: asyncio.Lock
     _pm: ProviderManager
+    _persona_manager: PersonaManager
 
-    def __init__(self, pm: ProviderManager) -> None:
-        """Open sessions on the models served by `pm`."""
+    def __init__(self, pm: ProviderManager, persona_manager: PersonaManager) -> None:
+        """Open sessions on the models served by `pm`, sharing `persona_manager`."""
         self._pm = pm
+        self._persona_manager = persona_manager
         self._sessions = {}
         self._lock = asyncio.Lock()
 
@@ -39,12 +42,11 @@ class SessionRegistry:
                 f"Unknown model '{model}'. Available models: {', '.join(self._pm.get_models()) or 'none'}"
             )
             return None
-        session = Session(uuid4(), model, out, self._pm)
+        session = Session(uuid4(), out, self._pm, self._persona_manager)
+        await session.set_model(model)
         async with self._lock:
             self._sessions[session.client_id] = session
-        await out.send(
-            SessionMessage(client_id=session.client_id, model=session.model, commands=[], effort=session.effort)
-        )
+        await out.send(SessionMessage(client_id=session.client_id, model=model, commands=[], effort=session.effort))
         return session
 
     async def close(self, client_id: UUID) -> None:

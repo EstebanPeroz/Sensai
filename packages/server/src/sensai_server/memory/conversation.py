@@ -5,8 +5,6 @@ from sensai_server.memory.history import History
 if TYPE_CHECKING:
     from uuid import UUID
 
-    from sensai_server.llm.provider import ProviderManager
-
 
 class Conversation:
     """Drives a chat exchange with a provider, streaming its response back to a UI.
@@ -14,13 +12,11 @@ class Conversation:
     Every call to the model, whatever its outcome, is emitted on `events` as an `Interaction`.
     """
 
-    _provider_manager: ProviderManager
     history: History
-    model: str
+    model: str | None
     uuid: UUID | None = None
 
-    def __init__(self, *, provider_manager: ProviderManager, model: str) -> None:
+    def __init__(self) -> None:
         """Init the conversation on the `pipeline` it chats through, the `events` it reports on, and its cache."""
-        self._provider_manager = provider_manager
-        self.model = model
+        self.model = None
         self.history = History()

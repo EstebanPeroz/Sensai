@@ -20,6 +20,9 @@ class PersonaManager:
 
     Shared by every session: it holds no per-client state. The persona applied to a
     conversation is kept by that conversation.
+
+    Its database calls are synchronous: an async caller should run them in `asyncio.to_thread`, and
+    `asyncio.shield` the writes so that a cancelled task does not lose the user's message.
     """
 
     _db: PersistentDatabase

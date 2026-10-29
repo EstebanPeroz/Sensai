@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
@@ -17,7 +18,10 @@ from sensai_protocol import (
 )
 
 from sensai_server import handlers
+from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
+from sensai_server.memory.persistent_db.base import get_db, set_db
+from sensai_server.memory.persistent_db.error import DbConnectionError
 from sensai_server.outbound import Outbound
 from sensai_server.session import SessionRegistry
 
@@ -39,15 +43,26 @@ def create_app(
 ) -> FastAPI:
     """Build a new app serving the `/ws` route, logging clients in on the models of the configured providers.
 
-    `settings` are the loaded settings, kept in the app state. `chat` and `command` run a chat prompt and a
-    command as a session's task.
+    `settings` are the loaded settings, kept in the app state. The persistent database is opened, and the default
+    persona is stored in it if it is not there yet. `chat` and `command` run a chat prompt and a command as a
+    session's task.
     """
     pm: ProviderManager = ProviderManager(settings.llm)
+    set_db(settings.db.persistent)
+    db = get_db()
+    if db is None:
+        msg = "the persistent database is not open"
+        raise DbConnectionError(msg)
+    persona_manager = PersonaManager(db)
+    with contextlib.suppress(DuplicatePersonaError):
+        persona_manager.create_default_persona()
 
     app = FastAPI()
     app.state.settings = settings
     app.state.provider_manager = pm
-    app.state.registry = SessionRegistry(pm)
+    app.state.db = db
+    app.state.persona_manager = persona_manager
+    app.state.registry = SessionRegistry(pm, persona_manager)
     app.state.chat = chat
     app.state.command = command
     app.include_router(router)
