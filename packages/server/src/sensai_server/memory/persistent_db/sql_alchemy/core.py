@@ -1,13 +1,13 @@
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, override
 
+from sensai_protocol.server_messages import Role
 from sqlalchemy import Connection, Engine, create_engine, event, select
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from sensai_server.llm.persona.persona import Persona
 from sensai_server.memory import Message
-from sensai_server.memory.message import Role
 from sensai_server.memory.persistent_db import PersistentDatabase
 from sensai_server.memory.persistent_db.error import DatabaseError, DbConnectionError, InvalidInstanceError
 from sensai_server.memory.persistent_db.sql_alchemy.table import Base, BranchTable, MessageTable, PersonaTable

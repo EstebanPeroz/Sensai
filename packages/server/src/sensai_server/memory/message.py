@@ -1,18 +1,10 @@
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from uuid import UUID
 
-
-class Role(StrEnum):
-    """Author of a chat message, as expected by the chat endpoint."""
-
-    SYSTEM = "system"
-    USER = "user"
-    ASSISTANT = "assistant"
-    TOOL = "tool"
+    from sensai_protocol.server_messages import Role
 
 
 @dataclass(frozen=True)
