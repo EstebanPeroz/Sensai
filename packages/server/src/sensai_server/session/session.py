@@ -19,7 +19,6 @@ class Session:
     """The state of one logged-in client, and the single task it may run at a time."""
 
     client_id: UUID
-    model: str
     conv: Conversation
     effort: str
     out: Outbound
@@ -34,7 +33,7 @@ class Session:
         self.effort = effort
         self.out = out
         self.task = None
-        self.conv = Conversation(pm)
+        self.conv = Conversation(provider_manager=pm, model=model)
 
     @property
     def busy(self) -> bool:

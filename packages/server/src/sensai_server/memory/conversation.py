@@ -16,12 +16,11 @@ class Conversation:
 
     _provider_manager: ProviderManager
     history: History
+    model: str
     uuid: UUID | None = None
 
-    def __init__(
-        self,
-        provider_manager: ProviderManager,
-    ) -> None:
+    def __init__(self, *, provider_manager: ProviderManager, model: str) -> None:
         """Init the conversation on the `pipeline` it chats through, the `events` it reports on, and its cache."""
         self._provider_manager = provider_manager
+        self.model = model
         self.history = History()
