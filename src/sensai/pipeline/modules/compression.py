@@ -77,6 +77,18 @@ class Compressor:
         self._context_window = context_window
         self._on_interaction = on_interaction
 
+    def apply(self, branch_id: UUID, messages: list[dict]) -> list[dict]:
+        """Return the `messages` of the branch `branch_id` with the ones its summary stands for replaced by it.
+
+        Raises:
+            DatabaseError: If the summary could not be read.
+
+        """
+        summary = self._summaries.get(branch_id)
+        if summary is None:
+            return messages
+        return [self._summary_message(summary.content), *messages[summary.covered :]]
+
     def compress(self, branch_id: UUID, messages: list[dict]) -> Compression | None:
         """Extend the summary of the branch `branch_id` to all but the last of its `messages`.
 
@@ -135,3 +147,7 @@ class Compressor:
             msg = "the model wrote an empty summary"
             raise CompressionError(msg)
         return content.strip(), metrics
+
+    @staticmethod
+    def _summary_message(content: str) -> dict:
+        return {"role": Role.SYSTEM.value, "content": f"{SUMMARY_HEADER}\n{content}"}

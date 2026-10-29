@@ -176,6 +176,22 @@ class TestCompress:
         assert summaries.stored == {}
 
 
+class TestApply:
+    def test_replaces_the_messages_the_summary_stands_for(self) -> None:
+        summaries = FakeSummaries()
+        summaries.stored[BRANCH] = Summary(covered=4, content="Ada introduced herself.")
+
+        messages = compressor(summaries=summaries).apply(BRANCH, conversation(6))
+
+        assert messages == [
+            {"role": "system", "content": f"{SUMMARY_HEADER}\nAda introduced herself."},
+            *conversation(6)[4:],
+        ]
+
+    def test_leaves_the_messages_of_a_branch_without_summary(self) -> None:
+        assert compressor().apply(BRANCH, conversation(6)) == conversation(6)
+
+
 class TestCompressionDescription:
     def test_tells_the_tokens_saved(self) -> None:
         assert Compression(4, 900, 40).describe() == (
