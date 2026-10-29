@@ -1,24 +1,39 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast, override
 
+from sensai_protocol import ClientCommand, FileContent, ReadFileParams
 from sensai_protocol.error import SensaiError
 
+from sensai_server.app.outbound import ClientCommandError
 from sensai_server.commands._base import Command
-from sensai_server.llm.persona import read_persona_file
+from sensai_server.llm.persona import Persona, PersonaFileError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
     from typing import Any
 
-    from sensai_server.llm.persona import Persona
+    from sensai_server.app.outbound import Outbound
     from sensai_server.session import Session, SessionRegistry
 
 # The fields `/persona update` can set, and the keyword each one maps onto in the manager.
 UPDATABLE_FIELDS = {"name": "new_name", "description": "description", "prompt": "prompt"}
 # The sub-commands whose argument is the name of a stored persona.
 NAMED_SUBCOMMANDS = ("info", "load", "update")
+
+
+async def read_persona_file(out: Outbound, path: str) -> Persona:
+    """Ask the client for the file at `path` and parse its content into an unsaved persona.
+
+    The client only reads the file: the server parses it. Raises PersonaFileError when the file cannot be read or
+    does not describe a persona.
+    """
+    try:
+        file = await out.request_command(ClientCommand.READ_FILE, ReadFileParams(path=path))
+    except ClientCommandError as err:
+        raise PersonaFileError(path, err.reason) from err
+    return Persona.from_toml(cast("FileContent", file).content, path)
 
 
 class PersonaArgumentError(SensaiError):

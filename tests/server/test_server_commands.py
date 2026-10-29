@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from sensai_protocol import System
 from sensai_server.commands import CommandRegistry, PersonaCommand
-from sensai_server.commands.base import Command
+from sensai_server.commands._base import Command
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory import Conversation

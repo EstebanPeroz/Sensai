@@ -31,7 +31,7 @@ from sensai_protocol import (
     System,
     parse_server_message,
 )
-from sensai_server.outbound import ClientCommandError, Outbound
+from sensai_server.app.outbound import ClientCommandError, Outbound
 
 
 class FakeWebSocket:

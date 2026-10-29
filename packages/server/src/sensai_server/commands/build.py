@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sensai_server.commands.persona import PersonaCommand
+from sensai_server.commands._persona import PersonaCommand
 
 if TYPE_CHECKING:
-    from sensai_server.commands.base import Command
+    from sensai_server.commands._base import Command
     from sensai_server.session import SessionRegistry
 
 

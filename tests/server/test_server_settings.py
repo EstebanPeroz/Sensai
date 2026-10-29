@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 from sensai_protocol.error import SensaiError
 from sensai_server.app import create_app
+from sensai_server.app._state import app_state
 from sensai_server.config.settings import (
     PROVIDERS,
     CacheSettings,
@@ -20,7 +21,6 @@ from sensai_server.config.settings import (
 from sensai_server.llm.persona import PersonaManager
 from sensai_server.memory.persistent_db import base
 from sensai_server.memory.persistent_db.error import DbConnectionError
-from sensai_server.state import app_state
 
 from tests.server.conftest import settings_with_db
 

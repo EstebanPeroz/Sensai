@@ -5,8 +5,8 @@ import pytest
 import sensai_server
 from fastapi import FastAPI
 from sensai_server import main
+from sensai_server.app._state import app_state
 from sensai_server.config.settings import OllamaSettings, Settings
-from sensai_server.state import app_state
 
 
 class FakeUvicorn:

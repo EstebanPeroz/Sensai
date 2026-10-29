@@ -1,6 +1,6 @@
-from .base import Command
+from ._base import Command
+from ._persona import PersonaCommand
 from .build import build_commands
-from .persona import PersonaCommand
 from .registry import CommandRegistry, UnknownCommandError
 
 __all__ = [

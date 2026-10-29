@@ -18,9 +18,9 @@ from sensai_protocol import (
     parse_client_message,
 )
 
-from sensai_server.app import Outbound
 from sensai_server.app import _handlers as handlers
 from sensai_server.app._state import AppState, app_state, set_app_state
+from sensai_server.app.outbound import Outbound
 from sensai_server.commands import CommandRegistry, build_commands
 from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager

@@ -21,8 +21,8 @@ if TYPE_CHECKING:
         UserAnswer,
     )
 
+    from sensai_server.app.outbound import Outbound
     from sensai_server.commands import CommandRegistry
-    from sensai_server.outbound import Outbound
     from sensai_server.session import Session, SessionRegistry
 
 type ChatRunner = Callable[[Session, str], Coroutine[Any, Any, None]]

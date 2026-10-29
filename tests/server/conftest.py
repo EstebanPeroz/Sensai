@@ -6,14 +6,15 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sensai_protocol import AiChunk
-from sensai_server.app import create_app
+from sensai_server.app import _handlers, create_app
+from sensai_server.app._state import app_state
+from sensai_server.commands._persona import read_persona_file
 from sensai_server.config.settings import DBSettings, LLMSettings, OllamaSettings, PersistentDBSettings, Settings
-from sensai_server.llm.persona import PersonaError, PersonaManager, read_persona_file
+from sensai_server.llm.persona import PersonaError, PersonaManager
 from sensai_server.llm.provider import provider_manager
 from sensai_server.memory.persistent_db import base
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai_server.session import Session, SessionRegistry
-from sensai_server.state import app_state
 
 from tests.server.fakes import FakeAdapter
 
@@ -90,8 +91,10 @@ def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def app(tmp_path: Path) -> FastAPI:
-    return create_app(settings_with_db(tmp_path), chat=fake_chat)
+def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:
+    """The app, answering chats with `fake_chat` instead of the real chat."""
+    monkeypatch.setattr(_handlers, "chat", fake_chat)
+    return create_app(settings_with_db(tmp_path))
 
 
 @pytest.fixture

@@ -30,7 +30,7 @@ from sensai_protocol import (
     UserAnswer,
     parse_server_message,
 )
-from sensai_server import handlers
+from sensai_server.app import _handlers as handlers
 from sensai_server.session import SessionRegistry
 from starlette.testclient import WebSocketTestSession
 
