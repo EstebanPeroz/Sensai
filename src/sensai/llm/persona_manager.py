@@ -19,19 +19,32 @@ if TYPE_CHECKING:
 
     from sensai.memory.persistent_db.adapter import PersistentDatabase
 
+_SECURITY_PATH = "sensai.config.personas/security.toml"
+
 
 class PersonaManager:
     """Name-based access to the personas held by the database, and to the one currently applied."""
 
     _db: PersistentDatabase
     _active_persona: Persona | None
+    _security_persona: Persona | None
     _store_error_message: str = "the persona could not be stored"
     _record_error_message: str = "the database returned a persona without an id"
 
     def __init__(self, db: PersistentDatabase) -> None:
         """Read the personas from `db`, and start with none applied."""
         self._db = db
+        self._security_persona = self._init_security_persona()
         self._active_persona = None
+
+    def _init_security_persona(self) -> Persona | None:
+        package, _, filename = _SECURITY_PATH.partition("/")
+        source = resources.files(package).joinpath(filename)
+        with resources.as_file(source) as path:
+            existing = self._find(Persona.from_file(path).name)
+            if existing is not None:
+                return existing
+            return self.create_persona_from_file(path)
 
     def create_persona_from_file(self, path: str | Path) -> Persona:
         """Store the persona described by the file at `path` and return  it."""
