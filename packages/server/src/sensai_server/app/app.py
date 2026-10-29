@@ -18,21 +18,20 @@ from sensai_protocol import (
     parse_client_message,
 )
 
-from sensai_server import handlers
+from sensai_server.app import Outbound
+from sensai_server.app import _handlers as handlers
+from sensai_server.app._state import AppState, app_state, set_app_state
 from sensai_server.commands import CommandRegistry, build_commands
 from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
-from sensai_server.outbound import Outbound
 from sensai_server.session import SessionRegistry
-from sensai_server.state import AppState, app_state, set_app_state
 
 if TYPE_CHECKING:
     from sensai_protocol import ClientMessage
 
     from sensai_server.config.settings import Settings
-    from sensai_server.handlers import ChatRunner
     from sensai_server.session.session import Session
 
 router = APIRouter()
@@ -40,8 +39,6 @@ router = APIRouter()
 
 def create_app(
     settings: Settings,
-    *,
-    chat: ChatRunner = handlers.placeholder_chat,
 ) -> FastAPI:
     """Build a new app serving the `/ws` route, logging clients in on the models of the configured providers.
 
@@ -69,7 +66,6 @@ def create_app(
             persona_manager=persona_manager,
             registry=sessions,
             commands=CommandRegistry(build_commands(sessions)),
-            chat=chat,
         ),
     )
     app.include_router(router)
@@ -120,7 +116,7 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message, state.chat)
+            await handlers.handle_chat(session, message)
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():

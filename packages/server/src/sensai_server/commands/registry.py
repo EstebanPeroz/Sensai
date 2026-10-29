@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from sensai_protocol.error import SensaiError
 
 if TYPE_CHECKING:
-    from sensai_server.commands.base import Command
+    from sensai_server.commands._base import Command
     from sensai_server.session import Session
 
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from typing import TYPE_CHECKING, Any
 
-from sensai_protocol import AiChunk, Role
+from sensai_protocol import Role
+
+from sensai_server.chat import chat
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine, Sequence
@@ -27,15 +28,6 @@ if TYPE_CHECKING:
 type ChatRunner = Callable[[Session, str], Coroutine[Any, Any, None]]
 
 PLACEHOLDER_DELAY = 0.3
-
-
-# TEMPORARY: replaced by the conversation's chat once it is copied from `src/`.
-async def placeholder_chat(session: Session, prompt: str) -> None:
-    """Stream the words of `prompt` back as the answer, until the conversation is copied from `src/`."""
-    for word in prompt.split():
-        await session.out.send_ai_response(AiChunk(content=f"{word} "))
-        await asyncio.sleep(PLACEHOLDER_DELAY)
-    await session.out.send_ai_response(AiChunk(done=True))
 
 
 async def handle_login(
@@ -69,7 +61,7 @@ async def _stop_client_command(session: Session) -> None:
         await session.out.send_system_message(f"{stopped} stopped: a new message was sent.")
 
 
-async def handle_chat(session: Session, message: Chat, run: ChatRunner) -> None:
+async def handle_chat(session: Session, message: Chat) -> None:
     """Echo the prompt as `input`, then start the answer as the session's task, streamed as `ai_chunk`.
 
     A task waiting for a client command is stopped first. Refused with an `error` while another task is running.
@@ -79,7 +71,7 @@ async def handle_chat(session: Session, message: Chat, run: ChatRunner) -> None:
         await session.out.send_error("An answer is already running: cancel it first.")
         return
     await session.out.send_input(Role.USER, message.prompt)
-    session.start(run(session, message.prompt))
+    session.start(chat(session, message.prompt))
 
 
 async def handle_command(session: Session, message: Command, command_registry: CommandRegistry) -> None:

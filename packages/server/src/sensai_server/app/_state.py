@@ -8,7 +8,6 @@ if TYPE_CHECKING:
 
     from sensai_server.commands import CommandRegistry
     from sensai_server.config.settings import Settings
-    from sensai_server.handlers import ChatRunner
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
@@ -32,7 +31,6 @@ class AppState:
     persona_manager: PersonaManager
     registry: SessionRegistry
     commands: CommandRegistry
-    chat: ChatRunner
 
 
 def set_app_state(app: Starlette, state: AppState) -> None:

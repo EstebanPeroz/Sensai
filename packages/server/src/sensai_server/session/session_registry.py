@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from uuid import UUID
 
+    from sensai_server.app import Outbound
     from sensai_server.llm.persona import Persona, PersonaManager
     from sensai_server.llm.provider import ProviderManager
-    from sensai_server.outbound import Outbound
 
 
 class SessionRegistry:

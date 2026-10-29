@@ -9,9 +9,9 @@ if TYPE_CHECKING:
     from collections.abc import Coroutine
     from uuid import UUID
 
+    from sensai_server.app import Outbound
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider.provider_manager import ProviderManager
-    from sensai_server.outbound import Outbound
 
 DEFAULT_EFFORT = "high"
 

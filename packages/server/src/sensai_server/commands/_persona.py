@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, override
 
 from sensai_protocol.error import SensaiError
 
-from sensai_server.commands.base import Command
+from sensai_server.commands._base import Command
 from sensai_server.llm.persona import read_persona_file
 
 if TYPE_CHECKING:
