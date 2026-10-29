@@ -8,7 +8,17 @@ from sensai_protocol import AiChunk, Role
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
-    from sensai_protocol import Cancel, Chat, Command, Complete, ConfirmAnswer, Login, Logout, UserAnswer
+    from sensai_protocol import (
+        Cancel,
+        Chat,
+        Command,
+        CommandContext,
+        Complete,
+        ConfirmAnswer,
+        Login,
+        Logout,
+        UserAnswer,
+    )
 
     from sensai_server.outbound import Outbound
     from sensai_server.session import Session, SessionRegistry
@@ -44,7 +54,7 @@ async def handle_login(
     session.
     """
     if session is not None:
-        await out.send_error(f"Already logged in with {session.model}.")
+        await out.send_error(f"Already logged in with {session.conv.model}.")
         return session
     return await registry.open(out, message.model)
 
@@ -100,3 +110,11 @@ async def handle_confirm_answer(session: Session, message: ConfirmAnswer) -> Non
 async def handle_user_answer(session: Session, message: UserAnswer) -> None:
     """Give the answer to the waiting `ask_user`. It is not refused while busy: the busy task is the one waiting."""
     session.out.resolve(message.request_id, message.answer)
+
+
+async def handle_command_context(session: Session, message: CommandContext) -> None:
+    """Give the answer to the waiting `request_command`. It is not refused while busy: the busy task is the one waiting.
+
+    An answer to no pending question, such as the late answer to a stopped command, is dropped.
+    """
+    session.out.resolve(message.request_id, message)

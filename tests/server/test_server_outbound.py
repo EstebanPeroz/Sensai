@@ -9,6 +9,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sensai_protocol import (
     AiChunk,
     AskUser,
+    ClientCommand,
+    CommandContext,
     Completions,
     Confirmation,
     ConfirmTool,
@@ -17,16 +19,19 @@ from sensai_protocol import (
     DashboardSummary,
     Effort,
     Error,
+    FileContent,
     History,
     HistoryMessage,
     Input,
     Period,
+    ReadFileParams,
+    RequestCommand,
     Role,
     ServerMessage,
     System,
     parse_server_message,
 )
-from sensai_server.outbound import Outbound
+from sensai_server.outbound import ClientCommandError, Outbound
 
 
 class FakeWebSocket:
@@ -149,3 +154,68 @@ class TestQuestions:
         assert not out.waiting
         assert isinstance(request, ConfirmTool)
         out.resolve(request.request_id, Confirmation.ALLOW)
+
+
+class TestRequestCommand:
+    async def _request(self, answer: CommandContext | None = None, **fields: object) -> FileContent:
+        """Ask `read_file`, answer the request with `answer` (or with `fields`), and return the command's result."""
+        ws = FakeWebSocket()
+        out = _outbound(ws)
+        task = asyncio.create_task(out.request_command(ClientCommand.READ_FILE, ReadFileParams(path="me.toml")))
+        request = await _asked(ws)
+        assert request == RequestCommand(
+            request_id=request.request_id,  # type: ignore[union-attr]
+            command=ClientCommand.READ_FILE,
+            params={"path": "me.toml"},
+        )
+        assert isinstance(request, RequestCommand)
+        assert out.waiting
+        if answer is None:
+            answer = CommandContext(request_id=request.request_id, **fields)  # type: ignore[arg-type]
+        out.resolve(request.request_id, answer)
+        try:
+            return cast("FileContent", await task)
+        finally:
+            assert not out.waiting
+            assert not out._client_requests  # noqa: SLF001
+
+    async def test_returns_the_checked_context(self) -> None:
+        result = await self._request(command=ClientCommand.READ_FILE, ctx={"content": "raw"})
+        assert result == FileContent(content="raw")
+
+    async def test_client_error_is_raised(self) -> None:
+        with pytest.raises(ClientCommandError) as info:
+            await self._request(command=ClientCommand.READ_FILE, error="file not found")
+        assert info.value.reason == "file not found"
+        assert info.value.command == ClientCommand.READ_FILE
+
+    async def test_invalid_context_is_raised(self) -> None:
+        with pytest.raises(ClientCommandError):
+            await self._request(command=ClientCommand.READ_FILE, ctx={"text": "raw"})
+
+    async def test_answer_for_another_command_is_raised(self) -> None:
+        # Only one client command exists yet: build an answer for another one without validation.
+        other = CommandContext.model_construct(request_id=uuid4(), command="other", ctx={"content": "x"}, error=None)
+        with pytest.raises(ClientCommandError):
+            await self._request(other)
+
+    async def test_closed_socket_is_raised(self) -> None:
+        out = _outbound(FakeWebSocket(RuntimeError("closed")))
+        with pytest.raises(ClientCommandError):
+            await out.request_command(ClientCommand.READ_FILE, ReadFileParams(path="me.toml"))
+        assert not out.waiting
+
+    async def test_cancel_forgets_the_request(self) -> None:
+        ws = FakeWebSocket()
+        out = _outbound(ws)
+        task = asyncio.create_task(out.request_command(ClientCommand.READ_FILE, ReadFileParams(path="me.toml")))
+        request = await _asked(ws)
+        task.cancel()
+        await asyncio.wait({task})
+        assert not out.waiting
+        assert not out._client_requests  # noqa: SLF001
+        assert isinstance(request, RequestCommand)
+        out.resolve(
+            request.request_id,
+            CommandContext(request_id=request.request_id, command=ClientCommand.READ_FILE, error="x"),
+        )

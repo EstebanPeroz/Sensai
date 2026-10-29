@@ -8,6 +8,7 @@ from sensai_protocol import (
     Cancel,
     Chat,
     Command,
+    CommandContext,
     Complete,
     ConfirmAnswer,
     Login,
@@ -125,4 +126,6 @@ async def _dispatch(ws: WebSocket, session: Session, message: ClientMessage) -> 
             await handlers.handle_confirm_answer(session, message)
         case UserAnswer():
             await handlers.handle_user_answer(session, message)
+        case CommandContext():
+            await handlers.handle_command_context(session, message)
     return True

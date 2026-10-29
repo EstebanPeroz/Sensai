@@ -9,8 +9,10 @@ from sensai_protocol import (
     AskUser,
     Cancel,
     Chat,
+    ClientCommand,
     ClientMessage,
     Command,
+    CommandContext,
     Complete,
     Completions,
     ConfirmAnswer,
@@ -20,6 +22,7 @@ from sensai_protocol import (
     Input,
     Login,
     Logout,
+    RequestCommand,
     Role,
     ServerMessage,
     Session,
@@ -31,7 +34,7 @@ from sensai_server import handlers
 from sensai_server.session import SessionRegistry
 from starlette.testclient import WebSocketTestSession
 
-from tests.server.conftest import ASK, CONFIRM, MODEL, SLOW
+from tests.server.conftest import ASK, CONFIRM, FILE, MODEL, PERSONA_PATH, SLOW
 
 
 def _receive(ws: WebSocketTestSession) -> ServerMessage:
@@ -206,6 +209,64 @@ class TestQuestions:
             _sync(ws)
 
 
+PERSONA_TOML = 'name = "Pirate"\ndescription = "Talks like a pirate"\nprompt = "Arr."\n'
+
+
+def _request_file(ws: WebSocketTestSession) -> RequestCommand:
+    """Start the `file` chat and return the `request_command` it sends."""
+    _send(ws, Chat(prompt=FILE))
+    assert _receive(ws) == Input(role=Role.USER, content=FILE)
+    request = _receive(ws)
+    assert isinstance(request, RequestCommand)
+    assert (request.command, request.params) == (ClientCommand.READ_FILE, {"path": PERSONA_PATH})
+    return request
+
+
+class TestClientCommands:
+    def test_file_content_is_parsed_by_the_server(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            request = _request_file(ws)
+            _send(
+                ws,
+                CommandContext(request_id=request.request_id, command=request.command, ctx={"content": PERSONA_TOML}),
+            )
+            assert _receive(ws) == AiChunk(content="Pirate")
+            assert _receive(ws) == AiChunk(done=True)
+
+    @pytest.mark.parametrize(
+        ("fields", "reason"),
+        [
+            ({"error": "file not found"}, "file not found"),
+            ({"ctx": {"content": "name = "}}, "invalid TOML"),
+            ({"ctx": {"content": 'name = "x"'}}, "missing key(s): description, prompt"),
+        ],
+        ids=["client-error", "invalid-toml", "missing-keys"],
+    )
+    def test_unusable_file_is_reported(self, client: TestClient, fields: dict, reason: str) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            request = _request_file(ws)
+            _send(ws, CommandContext(request_id=request.request_id, command=request.command, **fields))
+            answer = _receive(ws)
+            assert isinstance(answer, AiChunk)
+            assert answer.content is not None
+            assert f"invalid persona file '{PERSONA_PATH}'" in answer.content
+            assert reason in answer.content
+
+    def test_answer_to_another_request_is_dropped(self, client: TestClient, registry: SessionRegistry) -> None:
+        with client.websocket_connect("/ws") as ws:
+            session = _login(ws)
+            request = _request_file(ws)
+            _send(ws, CommandContext(request_id=uuid4(), command=request.command, ctx={"content": PERSONA_TOML}))
+            _sync(ws)
+            server_session = registry.get(session.client_id)
+            assert server_session is not None
+            assert server_session.busy
+            _send(ws, CommandContext(request_id=request.request_id, command=request.command, error="late"))
+            assert "late" in (_receive(ws).content or "")  # type: ignore[union-attr]
+
+
 class TestCommandAndComplete:
     def test_command(self, client: TestClient) -> None:
         with client.websocket_connect("/ws") as ws:
@@ -231,6 +292,10 @@ class TestDispatch:
             ("handle_complete", Complete(text="/model ")),
             ("handle_confirm_answer", ConfirmAnswer(request_id=uuid4(), answer=Confirmation.ALLOW)),
             ("handle_user_answer", UserAnswer(request_id=uuid4(), answer="x")),
+            (
+                "handle_command_context",
+                CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, error="x"),
+            ),
         ],
     )
     def test_message_reaches_its_handler(

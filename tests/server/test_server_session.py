@@ -12,7 +12,7 @@ from tests.server.fakes import RecordingOutbound
 
 def _session(persona_manager: PersonaManager) -> tuple[Session, RecordingOutbound]:
     out = RecordingOutbound()
-    return Session(uuid4(), "fake-model", out, ProviderManager(SETTINGS.llm), persona_manager), out
+    return Session(uuid4(), out, ProviderManager(SETTINGS.llm), persona_manager), out
 
 
 async def _forever(started: asyncio.Event) -> None:

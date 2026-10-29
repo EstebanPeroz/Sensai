@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sensai_protocol import AiChunk
 from sensai_server.app import create_app
 from sensai_server.config.settings import DBSettings, LLMSettings, OllamaSettings, PersistentDBSettings, Settings
-from sensai_server.llm.persona import PersonaManager
+from sensai_server.llm.persona import PersonaError, PersonaManager, read_persona_file
 from sensai_server.llm.provider import provider_manager
 from sensai_server.memory.persistent_db import base
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
@@ -20,15 +20,23 @@ MODEL = "a"
 SLOW = "slow"
 CONFIRM = "confirm"
 ASK = "ask"
+FILE = "file"
+PERSONA_PATH = "x.toml"
 
 
 async def fake_chat(session: Session, prompt: str) -> None:
     """Answer with the prompt in one chunk. A `slow` prompt then streams forever, until cancelled.
 
     A `confirm` prompt first asks to run a tool, an `ask` prompt asks the user a question, and the answer is the
-    chunk sent.
+    chunk sent. A `file` prompt reads the persona file `x.toml` from the client, and the persona's name, or the
+    error, is the chunk sent.
     """
-    if prompt == CONFIRM:
+    if prompt == FILE:
+        try:
+            prompt = (await read_persona_file(session.out, PERSONA_PATH)).name
+        except PersonaError as err:
+            prompt = err.message
+    elif prompt == CONFIRM:
         prompt = await session.out.ask_confirmation("web_search", {"query": "paris"})
     elif prompt == ASK:
         prompt = await session.out.ask_user("Which city?") or "(none)"
