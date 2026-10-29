@@ -13,6 +13,7 @@ from sensai_server.llm.provider import provider_manager
 from sensai_server.memory.persistent_db import base
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai_server.session import Session, SessionRegistry
+from sensai_server.state import app_state
 
 from tests.server.fakes import FakeAdapter
 
@@ -44,10 +45,6 @@ async def fake_chat(session: Session, prompt: str) -> None:
     if prompt == SLOW:
         await asyncio.sleep(3600)
     await session.out.send_ai_response(AiChunk(done=True))
-
-
-async def fake_command(session: Session, command: str) -> None:
-    await session.out.send_system_message(f"ran {command}")
 
 
 SETTINGS = Settings(llm=LLMSettings(providers={"ollama": OllamaSettings()}))
@@ -94,12 +91,12 @@ def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def app(tmp_path: Path) -> FastAPI:
-    return create_app(settings_with_db(tmp_path), chat=fake_chat, command=fake_command)
+    return create_app(settings_with_db(tmp_path), chat=fake_chat)
 
 
 @pytest.fixture
 def registry(app: FastAPI) -> SessionRegistry:
-    return app.state.registry
+    return app_state(app).registry
 
 
 @pytest.fixture

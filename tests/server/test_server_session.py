@@ -50,6 +50,15 @@ class TestSession:
         assert not session.busy
         assert out.sent == [Error(message="ran")]
 
+    async def test_task_label_kept_while_running(self, persona_manager: PersonaManager) -> None:
+        session, _ = _session(persona_manager)
+        started = asyncio.Event()
+        assert session.start(_forever(started), "/persona create x.toml")
+        await started.wait()
+        assert session.task_label == "/persona create x.toml"
+        await session.stop()
+        assert session.task_label is None
+
     async def test_cancel_stops_task_silently(self, persona_manager: PersonaManager) -> None:
         session, out = _session(persona_manager)
         started = asyncio.Event()

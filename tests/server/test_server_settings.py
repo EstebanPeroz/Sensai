@@ -20,6 +20,7 @@ from sensai_server.config.settings import (
 from sensai_server.llm.persona import PersonaManager
 from sensai_server.memory.persistent_db import base
 from sensai_server.memory.persistent_db.error import DbConnectionError
+from sensai_server.state import app_state
 
 from tests.server.conftest import settings_with_db
 
@@ -52,12 +53,12 @@ class TestApp:
     def test_keeps_the_settings_in_its_state(self, tmp_path: Path) -> None:
         settings = settings_with_db(tmp_path)
 
-        assert create_app(settings).state.settings is settings
+        assert app_state(create_app(settings)).settings is settings
 
     def test_builds_the_provider_manager_from_the_llm_settings(self, tmp_path: Path) -> None:
         app = create_app(settings_with_db(tmp_path))
 
-        assert app.state.provider_manager.get_models() == ["a", "b"]
+        assert app_state(app).provider_manager.get_models() == ["a", "b"]
 
     def test_fails_without_a_database_url(self) -> None:
         with pytest.raises(DbConnectionError):
@@ -66,20 +67,20 @@ class TestApp:
     def test_keeps_the_persona_manager_in_its_state(self, tmp_path: Path) -> None:
         app = create_app(settings_with_db(tmp_path))
 
-        assert isinstance(app.state.persona_manager, PersonaManager)
-        assert app.state.db is not None
+        assert isinstance(app_state(app).persona_manager, PersonaManager)
+        assert app_state(app).db is not None
 
     def test_seeds_the_default_persona(self, tmp_path: Path) -> None:
         app = create_app(settings_with_db(tmp_path))
 
-        assert [persona.name for persona in app.state.persona_manager.get_personas()] == ["Analyst"]
+        assert [persona.name for persona in app_state(app).persona_manager.get_personas()] == ["Analyst"]
 
     def test_seeds_the_default_persona_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         create_app(settings_with_db(tmp_path))
         monkeypatch.setattr(base._State, "db", None)  # noqa: SLF001 - reopen the same file, as a restart does
         app = create_app(settings_with_db(tmp_path))
 
-        assert [persona.name for persona in app.state.persona_manager.get_personas()] == ["Analyst"]
+        assert [persona.name for persona in app_state(app).persona_manager.get_personas()] == ["Analyst"]
 
     def test_fails_without_a_configured_provider(self) -> None:
         with pytest.raises(SensaiError, match="no configured provider found"):

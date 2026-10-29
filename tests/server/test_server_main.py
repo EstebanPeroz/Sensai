@@ -6,6 +6,7 @@ import sensai_server
 from fastapi import FastAPI
 from sensai_server import main
 from sensai_server.config.settings import OllamaSettings, Settings
+from sensai_server.state import app_state
 
 
 class FakeUvicorn:
@@ -35,7 +36,7 @@ class TestMain:
 
         [(app, address)] = uvicorn.calls
         assert address == {"host": "0.0.0.0", "port": 9000}  # noqa: S104
-        settings: Settings = app.state.settings
+        settings: Settings = app_state(app).settings
         assert settings.llm.providers == {"ollama": OllamaSettings(base_url="http://ollama:1234")}
 
     def test_missing_config_fails_without_serving(
