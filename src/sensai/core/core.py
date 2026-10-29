@@ -26,6 +26,7 @@ from sensai.monitoring.budget import ContextBudget
 from sensai.monitoring.logger import InteractionLogger
 from sensai.pipeline import ChatPipeline
 from sensai.pipeline.modules import ModelStage, PersonaStage, RagStage
+from sensai.pipeline.modules.compression import CompressionStage, Compressor
 from sensai.pipeline.modules.guardrails import BadWordsGuard
 from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
@@ -56,6 +57,7 @@ class Core:
     _mcp_client: MCPClient | None
     _tool_manager: ToolManager
     _context_budget: ContextBudget
+    _compressor: Compressor
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
@@ -94,6 +96,13 @@ class Core:
         self._react = ReAct(self._provider_manager, self._tool_manager, context_window=settings.context.budget)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
         indexer, retrieval = self._build_rag()
+        self._compressor = Compressor(
+            self._provider_manager,
+            db.summaries,
+            settings.context.keep_recent,
+            context_window=settings.context.budget,
+            on_interaction=self._emit_interaction,
+        )
         self.conversation = Conversation(
             self._provider_manager, self._persona_manager, self._build_pipeline(retrieval), self._events, cache
         )
@@ -143,6 +152,7 @@ class Core:
         """Build the chain every chat exchange goes through, from the first guard down to the model."""
         pipeline = ChatPipeline(ModelStage(self._react))
         pipeline.use(BadWordsGuard())
+        pipeline.use(CompressionStage(self._compressor, self._near_budget))
         pipeline.use(PersonaStage(self._persona_manager))
         pipeline.use(RagStage(retrieval))
         return pipeline
@@ -202,6 +212,11 @@ class Core:
         """Show the context usage of the current branch against the budget of the current model."""
         model = self._provider_manager.provider().current_model()
         self._ui.update_context_usage(self._context_budget.usage(model, self.conversation.uuid))
+
+    def _near_budget(self) -> bool:
+        """Whether the conversation, as last measured, takes enough of its budget to be compressed."""
+        model = self._provider_manager.provider().current_model()
+        return self._context_budget.usage(model, self.conversation.uuid).near_limit
 
     def _context_length(self, model: str) -> int | None:
         """Return the context length of `model`, None when its provider cannot tell."""
