@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sensai_server.memory import History
+from sensai_server.memory.history import History
 
 if TYPE_CHECKING:
     from uuid import UUID

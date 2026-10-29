@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sensai_server.memory import Message
+from sensai_server.memory.message import Message
 
 if TYPE_CHECKING:
-    from sensai_server.memory import Role
+    from sensai_server.memory.message import Role
 
 
 class History:
