@@ -9,6 +9,7 @@ from sensai_protocol import Session as SessionMessage
 from sensai_server.session import Session
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from uuid import UUID
 
     from sensai_server.llm.persona import Persona, PersonaManager
@@ -31,8 +32,8 @@ class SessionRegistry:
         self._sessions = {}
         self._lock = asyncio.Lock()
 
-    async def open(self, out: Outbound, model: str) -> Session | None:
-        """Open and register a session on `model`, and answer the client with `session`.
+    async def open(self, out: Outbound, model: str, commands: Sequence[str] = ()) -> Session | None:
+        """Open and register a session on `model`, and answer the client with `session`, listing `commands`.
 
         If no provider serves `model`, an `error` listing the available models is sent and None is returned.
         """
@@ -46,7 +47,9 @@ class SessionRegistry:
         await session.set_model(model)
         async with self._lock:
             self._sessions[session.client_id] = session
-        await out.send(SessionMessage(client_id=session.client_id, model=model, commands=[], effort=session.effort))
+        await out.send(
+            SessionMessage(client_id=session.client_id, model=model, commands=list(commands), effort=session.effort)
+        )
         return session
 
     async def close(self, client_id: UUID) -> None:

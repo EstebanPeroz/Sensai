@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from sensai_protocol import AiChunk, Role
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Coroutine
+    from collections.abc import Callable, Coroutine, Sequence
 
     from sensai_protocol import (
         Cancel,
@@ -39,7 +39,7 @@ async def placeholder_chat(session: Session, prompt: str) -> None:
 
 
 async def handle_login(
-    registry: SessionRegistry, out: Outbound, session: Session | None, message: Login, commands: list[str]
+    registry: SessionRegistry, out: Outbound, session: Session | None, message: Login, commands: Sequence[str]
 ) -> Session | None:
     """Check that a provider serves `message.model`, then open a session and answer with `session`.
 

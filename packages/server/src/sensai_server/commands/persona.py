@@ -121,12 +121,11 @@ class PersonaCommand(Command):
 
     async def _load(self, session: Session, name: str) -> None:
         """Apply the persona named `name` to the session's conversation, and save it on its branch, if any."""
-        manager = session.persona_manager
-        persona = await asyncio.to_thread(manager.get_persona, name)
+        persona = await asyncio.to_thread(session.persona_manager.get_persona, name)
         session.conv.persona = persona
         branch = session.conv.uuid
         if branch is not None and not await asyncio.shield(
-            asyncio.to_thread(manager.set_branch_persona, branch, persona)
+            asyncio.to_thread(session.persona_manager.set_branch_persona, branch, persona)
         ):
             await session.out.send_system_message(f"Persona '{persona.name}' loaded, but not saved on the branch.")
             return

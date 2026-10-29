@@ -26,6 +26,7 @@ class Session:
     persona_manager: PersonaManager
     provider_manager: ProviderManager
     task: asyncio.Task[None] | None
+    task_label: str | None
 
     def __init__(
         self,
@@ -42,6 +43,7 @@ class Session:
         self.out = out
         self.persona_manager = persona_manager
         self.task = None
+        self.task_label = None
         self.provider_manager = pm
         self.conv = Conversation()
 
@@ -58,8 +60,10 @@ class Session:
         """Whether a task is running."""
         return self.task is not None and not self.task.done()
 
-    def start(self, coro: Coroutine[Any, Any, None]) -> bool:
+    def start(self, coro: Coroutine[Any, Any, None], label: str | None = None) -> bool:
         """Run `coro` as the session's task. Returns False, without running it, if a task is already running.
+
+        `label` names the task in messages, such as the typed command; it is kept in `task_label` while it runs.
 
         An exception raised by `coro` is sent to the client as an `error`; a cancellation sends nothing.
         """
@@ -67,6 +71,7 @@ class Session:
             coro.close()
             return False
         self.task = asyncio.create_task(self._run(coro))
+        self.task_label = label
         return True
 
     async def _run(self, coro: Coroutine[Any, Any, None]) -> None:
@@ -79,6 +84,7 @@ class Session:
         finally:
             if self.task is asyncio.current_task():
                 self.task = None
+                self.task_label = None
 
     def cancel(self) -> None:
         """Cancel the running task, if any."""

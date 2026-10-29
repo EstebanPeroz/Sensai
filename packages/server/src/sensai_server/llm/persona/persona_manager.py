@@ -86,6 +86,10 @@ class PersonaManager:
         """Update the stored persona named like the unsaved persona `draft` with its description and prompt."""
         return self.update_persona(draft.name, description=draft.description, prompt=draft.prompt)
 
+    def set_branch_persona(self, branch: UUID, persona: Persona) -> bool:
+        """Save `persona` as the one the branch `branch` uses. Returns False if it could not be saved."""
+        return self._db.set_branch_persona(branch, self._stored_uuid(persona))
+
     def _find(self, name: str) -> Persona | None:
         """Return the stored persona named `name`, whatever its case, or None if there is none."""
         key = name.casefold()
