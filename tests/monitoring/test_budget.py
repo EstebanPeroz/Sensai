@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -8,13 +8,18 @@ from sensai.llm.responses import ChatMetrics
 from sensai.monitoring.budget import ContextBudget, ContextUsage
 from sensai.monitoring.interaction import Interaction, InteractionStatus
 
+BRANCH = uuid4()
+OTHER_BRANCH = uuid4()
 
-def chat_call(prompt_tokens: int | None, completion_tokens: int | None = 0, *, in_branch: bool = True) -> Interaction:
+
+def chat_call(
+    prompt_tokens: int | None, completion_tokens: int | None = 0, *, branch_id: UUID | None = BRANCH
+) -> Interaction:
     return Interaction(
         model="m",
         status=InteractionStatus.OK,
         latency_ms=1.0,
-        branch_id=uuid4() if in_branch else None,
+        branch_id=branch_id,
         metrics=ChatMetrics(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens),
     )
 
@@ -35,6 +40,12 @@ def attached(
 class TestContextUsage:
     def test_ratio_is_the_share_of_the_budget_in_use(self) -> None:
         assert ContextUsage(used=2048, budget=8192, warning_threshold=0.8).ratio == 0.25
+
+    def test_has_no_ratio_without_a_measure(self) -> None:
+        usage = ContextUsage(used=None, budget=8192, warning_threshold=0.8)
+
+        assert usage.ratio is None
+        assert usage.near_limit is False
 
     def test_has_no_ratio_without_a_budget(self) -> None:
         usage = ContextUsage(used=2048, budget=None, warning_threshold=0.8)
@@ -59,7 +70,7 @@ class TestContextBudget:
     def test_ignores_calls_outside_of_a_branch(self) -> None:
         bus, usages, _ = attached(ContextSettings(budget=8192))
 
-        bus.emit(chat_call(1000, in_branch=False))
+        bus.emit(chat_call(1000, branch_id=None))
 
         assert usages == []
 
@@ -104,7 +115,23 @@ class TestContextBudget:
 
         assert [usage.budget for usage in usages] == [None, 32768, 32768]
 
-    def test_starts_empty(self) -> None:
+    def test_a_conversation_not_started_takes_nothing(self) -> None:
         budget = ContextBudget(ContextSettings(budget=8192), lambda _: None, lambda _: None)
 
-        assert budget.usage("m") == ContextUsage(0, 8192, 0.8)
+        assert budget.usage("m", None) == ContextUsage(0, 8192, 0.8)
+
+    def test_a_branch_not_measured_yet_has_an_unknown_usage(self) -> None:
+        budget = ContextBudget(ContextSettings(budget=8192), lambda _: None, lambda _: None)
+
+        assert budget.usage("m", BRANCH) == ContextUsage(None, 8192, 0.8)
+
+    def test_keeps_the_usage_of_each_branch(self) -> None:
+        budget = ContextBudget(ContextSettings(budget=8192), lambda _: None, lambda _: None)
+        bus = EventBus()
+        budget.attach(bus)
+
+        bus.emit(chat_call(1000, branch_id=BRANCH))
+        bus.emit(chat_call(3000, branch_id=OTHER_BRANCH))
+
+        assert budget.usage("m", BRANCH).used == 1000
+        assert budget.usage("m", OTHER_BRANCH).used == 3000

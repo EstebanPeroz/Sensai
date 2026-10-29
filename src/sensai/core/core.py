@@ -122,7 +122,7 @@ class Core:
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
         self._ui.update_thinking_effort(Effort.effort_level(self._react.max_iterations))
-        self._ui.update_context_usage(self._context_budget.usage(self._provider_manager.provider().current_model()))
+        self._refresh_context_usage()
 
         event: ui.Event | None = None
         while not self._is_quit(event):
@@ -155,9 +155,9 @@ class Core:
         StateCommand.bind_db(db)
         registry = CommandRegistry(
             [
-                Model(self._provider_manager),
+                Model(self._provider_manager, self._refresh_context_usage),
                 PersonaCommand(self._persona_manager),
-                Branch(self.conversation, self._provider_manager),
+                Branch(self.conversation, self._provider_manager, self._refresh_context_usage),
                 ToolsCommand(self._tool_manager),
                 Effort(self._react),
                 Export(self.conversation),
@@ -197,6 +197,11 @@ class Core:
             self._events.emit(interaction)
         except SensaiError as err:
             self._ui.send_system_message(f"Failed to log interaction: {err}")
+
+    def _refresh_context_usage(self) -> None:
+        """Show the context usage of the current branch against the budget of the current model."""
+        model = self._provider_manager.provider().current_model()
+        self._ui.update_context_usage(self._context_budget.usage(model, self.conversation.uuid))
 
     def _context_length(self, model: str) -> int | None:
         """Return the context length of `model`, None when its provider cannot tell."""

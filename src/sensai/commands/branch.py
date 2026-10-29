@@ -21,9 +21,14 @@ class Branch(StateCommand):
     _subcommands: dict[str, Callable[..., None]]
     _conv: Conversation
     _pm: ProviderManager
+    _refresh_context_usage: Callable[[], object]
 
-    def __init__(self, conv: Conversation, provider_manager: ProviderManager) -> None:
+    def __init__(
+        self, conv: Conversation, provider_manager: ProviderManager, refresh_context_usage: Callable[[], object]
+    ) -> None:
         """Initialize the Branch command and its subcommand map.
+
+        `refresh_context_usage` is called once a branch is loaded, since the usage is kept per branch.
 
         Raise:
             DatabaseError: Failed to get db
@@ -39,6 +44,7 @@ class Branch(StateCommand):
         }
         self._conv = conv
         self._pm = provider_manager
+        self._refresh_context_usage = refresh_context_usage
 
     def _list(self) -> None:
         """Display the available branches."""
@@ -65,6 +71,7 @@ class Branch(StateCommand):
             self._ui.send_system_message(str(err))
             return
         self._ui.load_conversation(self._conv.history)
+        self._refresh_context_usage()
 
     def _remove(self, uuid: str) -> None:
         """Remove the branch identified by uuid."""

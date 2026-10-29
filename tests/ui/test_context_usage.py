@@ -15,6 +15,8 @@ class TestFormatUsage:
             (ContextUsage(0, 8192, 0.8), "context: 0 / 8.2k (0%)"),
             (ContextUsage(2048, 8192, 0.8), "context: 2.0k / 8.2k (25%)"),
             (ContextUsage(950, None, 0.8), "context: 950"),
+            (ContextUsage(None, 8192, 0.8), "context: ? / 8.2k"),
+            (ContextUsage(None, None, 0.8), "context: ?"),
         ],
     )
     def test_shows_the_usage_against_the_budget(self, usage: ContextUsage, expected: str) -> None:

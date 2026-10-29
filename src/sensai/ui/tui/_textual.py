@@ -41,9 +41,10 @@ def _tokens(count: int) -> str:
 
 
 def _format_usage(usage: ContextUsage) -> str:
-    """Render the context `usage` as `context: used / budget (share)`, in red once near the limit."""
+    """Render the context `usage` as `context: used / budget (share)`, in red once near the limit, `?` when unknown."""
+    used = "?" if usage.used is None else _tokens(usage.used)
     if usage.budget is None or usage.ratio is None:
-        return f"context: {_tokens(usage.used)}"
+        return f"context: {used}" if usage.budget is None else f"context: {used} / {_tokens(usage.budget)}"
     text = f"context: {_tokens(usage.used)} / {_tokens(usage.budget)} ({usage.ratio:.0%})"
     return fx.red(text) if usage.near_limit else text
 
