@@ -173,7 +173,10 @@ sensai/
   token count of the call (prompt and answer) as the context the conversation
   takes, against the `[context]` budget, or the context length of the model
   without one. The UI shows it on the input box, in red past the warning
-  threshold. Past it, the compression stage of the pipeline asks the model to
+  threshold. Past it, the next message first asks the user, in a dialog
+  (`ask_compression`), whether to compress the conversation and go on, or to
+  start a new conversation with that message. To go on, the compression stage
+  of the pipeline asks the model to
   summarise all but the last messages, keeping figures, names and decisions;
   the summary is stored per branch with the number of messages it stands for,
   sent in their place from then on, and extended by the next compression.
