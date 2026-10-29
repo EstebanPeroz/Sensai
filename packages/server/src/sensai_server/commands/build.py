@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sensai_server.commands._branch import Branch
+from sensai_server.commands._effort import Effort
 from sensai_server.commands._help import Help
+from sensai_server.commands._model import Model
 from sensai_server.commands._persona import PersonaCommand
 
 if TYPE_CHECKING:
@@ -21,4 +23,4 @@ def build_commands(
 
     `sessions` are the live sessions, for the commands that act on other sessions than the caller's.
     """
-    return [PersonaCommand(sessions), Help(commands), Branch(db, pm)]
+    return [PersonaCommand(sessions), Help(commands), Branch(db, pm), Effort(), Model()]

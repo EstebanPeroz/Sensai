@@ -32,7 +32,10 @@ from sensai_protocol import (
 )
 from sensai_server.app import _handlers as handlers
 from sensai_server.commands import PersonaCommand
+from sensai_server.commands._branch import Branch
+from sensai_server.commands._effort import Effort as EffortCommand
 from sensai_server.commands._help import Help
+from sensai_server.commands._model import Model
 from sensai_server.session import SessionRegistry
 from starlette.testclient import WebSocketTestSession
 
@@ -94,7 +97,7 @@ class TestLogin:
         with client.websocket_connect("/ws") as ws:
             session = _login(ws)
             assert session.model == MODEL
-            assert session.commands == ["/persona", "/help"]
+            assert session.commands == ["/persona", "/help", "/branch", "/effort", "/model"]
             assert registry.get(session.client_id) is not None
 
     def test_login_twice_keeps_session(self, client: TestClient, registry: SessionRegistry) -> None:
@@ -412,14 +415,17 @@ class TestCommandAndComplete:
             _send(ws, Command(command="/help"))
             assert _receive(ws) == Input(role=Role.USER, content="/help", command=True)
             assert _receive(ws) == System(
-                message=f"Available commands:\n- help: {Help.help}\n- persona: {PersonaCommand.help}"
+                message=(
+                    f"Available commands:\n- branch: {Branch.help}\n- effort: {EffortCommand.help}\n"
+                    f"- help: {Help.help}\n- model: {Model.help}\n- persona: {PersonaCommand.help}"
+                )
             )
 
     def test_complete(self, client: TestClient) -> None:
         with client.websocket_connect("/ws") as ws:
             _login(ws)
             _send(ws, Complete(text="/model "))
-            assert _receive(ws) == Completions(text="/model ", values=[])
+            assert _receive(ws) == Completions(text="/model ", values=[MODEL, "b"])
 
 
 class TestDispatch:

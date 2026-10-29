@@ -2,10 +2,14 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from sensai_protocol import Effort as EffortMessage
 from sensai_protocol import System
 from sensai_server.commands import CommandRegistry, PersonaCommand, build_commands
 from sensai_server.commands._base import Command
+from sensai_server.commands._branch import Branch
+from sensai_server.commands._effort import EFFORTS, Effort
 from sensai_server.commands._help import Help
+from sensai_server.commands._model import Model
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory import Conversation
@@ -31,15 +35,20 @@ def manager(db: SqlAlchemy) -> PersonaManager:
 
 
 @pytest.fixture
-def sessions(manager: PersonaManager) -> SessionRegistry:
-    return SessionRegistry(ProviderManager(SETTINGS.llm), manager)
+def pm() -> ProviderManager:
+    return ProviderManager(SETTINGS.llm)
 
 
 @pytest.fixture
-def commands(sessions: SessionRegistry) -> CommandRegistry:
+def sessions(pm: ProviderManager, manager: PersonaManager) -> SessionRegistry:
+    return SessionRegistry(pm, manager)
+
+
+@pytest.fixture
+def commands(sessions: SessionRegistry, db: SqlAlchemy, pm: ProviderManager) -> CommandRegistry:
     """The server's commands, built as `create_app` does."""
     commands = CommandRegistry()
-    commands.set_commands(build_commands(sessions, commands))
+    commands.set_commands(build_commands(sessions, commands, db, pm))
     return commands
 
 
@@ -83,7 +92,7 @@ class _Echo(Command):
 
 class TestCommandRegistry:
     async def test_names(self, commands: CommandRegistry) -> None:
-        assert commands.names() == ["/persona", "/help"]
+        assert commands.names() == ["/persona", "/help", "/branch", "/effort", "/model"]
 
     async def test_execute_splits_the_arguments(self, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)
@@ -124,7 +133,10 @@ class TestHelp:
     async def test_lists_every_command_by_name(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)
         await commands.execute(session, "/help")
-        assert _system(out) == (f"Available commands:\n- help: {Help.help}\n- persona: {PersonaCommand.help}")
+        assert _system(out) == (
+            f"Available commands:\n- branch: {Branch.help}\n- effort: {Effort.help}\n- help: {Help.help}"
+            f"\n- model: {Model.help}\n- persona: {PersonaCommand.help}"
+        )
 
     async def test_lists_the_commands_of_its_registry(self, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)
@@ -251,3 +263,61 @@ class TestPersonaCommand:
     ) -> None:
         session, _ = await _open(sessions)
         assert commands.completions(session, text) == values
+
+
+class TestEffortCommand:
+    async def test_display(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/effort")
+        assert _system(out).startswith(f"Current effort: {session.effort}\nAvailable efforts:\n- off:")
+
+    async def test_set(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/effort low")
+        assert session.effort == "low"
+        assert out.sent[0] == EffortMessage(level="low")
+        assert _system(out) == "Effort set to 'low': up to 1 thinking steps."
+
+    async def test_unknown_effort_is_reported(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        before = session.effort
+        await commands.execute(session, "/effort extreme")
+        assert session.effort == before
+        assert _system(out) == f"Effort 'extreme' does not exist. Usage: {Effort.usage}"
+
+    async def test_too_many_arguments(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/effort low high")
+        assert _system(out) == f"Invalid number of arguments. Usage: {Effort.usage}"
+
+    async def test_completions(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, _ = await _open(sessions)
+        assert commands.completions(session, "/effort ") == list(EFFORTS)
+
+
+class TestModelCommand:
+    async def test_display(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/model")
+        assert _system(out) == f"Current model: {MODEL}\nAvailable models:\n- a\n- b"
+
+    async def test_set(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/model b")
+        assert session.conv.model == "b"
+        assert _system(out) == "Model set to 'b'."
+
+    async def test_unknown_model_is_reported(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/model nope")
+        assert session.conv.model == MODEL
+        assert _system(out) == "Model 'nope' is not available."
+
+    async def test_too_many_arguments(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/model a b")
+        assert _system(out) == f"Invalid number of arguments. Usage: {Model.usage}"
+
+    async def test_completions(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, _ = await _open(sessions)
+        assert commands.completions(session, "/model ") == ["a", "b"]
