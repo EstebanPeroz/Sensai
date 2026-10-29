@@ -39,7 +39,7 @@ class SessionRegistry:
                 f"Unknown model '{model}'. Available models: {', '.join(self._pm.get_models()) or 'none'}"
             )
             return None
-        session = Session(uuid4(), model, out)
+        session = Session(uuid4(), model, out, self._pm)
         async with self._lock:
             self._sessions[session.client_id] = session
         await out.send(
