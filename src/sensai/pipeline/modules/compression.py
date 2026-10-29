@@ -11,12 +11,14 @@ from sensai.monitoring.interaction import InteractionStatus, ignore_interaction
 from sensai.monitoring.recorder import InteractionRecorder
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
     from uuid import UUID
 
     from sensai.llm.provider_manager import ProviderManager
+    from sensai.llm.responses import ChatResponse
     from sensai.memory.summary import SummaryRepository
     from sensai.monitoring.interaction import Interaction
+    from sensai.pipeline.chain import ChatContext, Next
 
 # Given after the conversation: placed before it, a small model reads the conversation as one to go on with, and
 # answers its last message instead of summarising it.
@@ -151,3 +153,29 @@ class Compressor:
     @staticmethod
     def _summary_message(content: str) -> dict:
         return {"role": Role.SYSTEM.value, "content": f"{SUMMARY_HEADER}\n{content}"}
+
+
+class CompressionStage:
+    """Send the model the summary of the oldest messages in their place, summarising more once the budget runs low."""
+
+    def __init__(self, compressor: Compressor, should_compress: Callable[[], bool]) -> None:
+        """Compress with `compressor` whenever `should_compress` says the context is near its budget."""
+        self._compressor = compressor
+        self._should_compress = should_compress
+
+    def __call__(self, context: ChatContext, next_stage: Next) -> Iterator[ChatResponse]:
+        """Shorten the messages of `context`, and stream what the rest of the chain answers.
+
+        A failed compression is reported to the UI, and the chat goes on with the messages it could not shorten.
+        """
+        if context.branch_id is None:
+            return next_stage(context)
+        try:
+            if self._should_compress():
+                compression = self._compressor.compress(context.branch_id, context.messages)
+                if compression is not None:
+                    context.ui.send_system_message(compression.describe())
+            context.messages = self._compressor.apply(context.branch_id, context.messages)
+        except SensaiError as err:
+            context.ui.send_system_message(f"The conversation could not be compressed: {err.message}")
+        return next_stage(context)

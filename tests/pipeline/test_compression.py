@@ -8,13 +8,16 @@ from sensai.llm.responses import ChatResponse
 from sensai.memory.persistent_db.error import DatabaseError
 from sensai.memory.summary import Summary
 from sensai.monitoring.interaction import Interaction, InteractionStatus
+from sensai.pipeline.chain import ChatContext
 from sensai.pipeline.modules.compression import (
     SUMMARY_HEADER,
     SUMMARY_INSTRUCTION,
     Compression,
     CompressionError,
+    CompressionStage,
     Compressor,
 )
+from tests.commands.fakes import FakeUI
 
 BRANCH = uuid4()
 
@@ -200,3 +203,67 @@ class TestCompressionDescription:
 
     def test_without_token_counts(self) -> None:
         assert Compression(4, None, None).describe() == "Summarised the 4 oldest messages of the conversation."
+
+
+def run_stage(
+    stage: CompressionStage, messages: list[dict], branch_id: UUID | None = BRANCH
+) -> tuple[FakeUI, list[dict]]:
+    ui, seen = FakeUI(), []
+    context = ChatContext(message="last", ui=ui, messages=messages, branch_id=branch_id)
+
+    def model(context: ChatContext) -> Iterator[ChatResponse]:
+        seen.extend(context.messages)
+        return iter([])
+
+    list(stage(context, model))
+    return ui, seen
+
+
+class TestCompressionStage:
+    def test_compresses_near_the_limit_and_sends_the_summary(self) -> None:
+        stage = CompressionStage(compressor(), lambda: True)
+
+        ui, seen = run_stage(stage, conversation(6))
+
+        assert seen == [
+            {"role": "system", "content": f"{SUMMARY_HEADER}\nAda wants a 300 EUR budget."},
+            *conversation(6)[4:],
+        ]
+        assert ui.messages == ["Summarised the 4 oldest messages of the conversation: 900 -> 40 tokens."]
+
+    def test_sends_the_stored_summary_without_compressing_below_the_limit(self) -> None:
+        provider, summaries = FakeProvider(), FakeSummaries()
+        summaries.stored[BRANCH] = Summary(covered=2, content="Ada introduced herself.")
+
+        ui, seen = run_stage(CompressionStage(compressor(provider, summaries), lambda: False), conversation(6))
+
+        assert seen[0] == {"role": "system", "content": f"{SUMMARY_HEADER}\nAda introduced herself."}
+        assert len(seen) == 5
+        assert provider.payloads == []
+        assert ui.messages == []
+
+    def test_leaves_a_conversation_without_branch(self) -> None:
+        provider = FakeProvider()
+
+        _, seen = run_stage(CompressionStage(compressor(provider), lambda: True), conversation(6), branch_id=None)
+
+        assert seen == conversation(6)
+        assert provider.payloads == []
+
+    def test_a_failed_compression_goes_on_with_the_full_messages(self) -> None:
+        stage = CompressionStage(compressor(FakeProvider(error=RequestCallError("refused"))), lambda: True)
+
+        ui, seen = run_stage(stage, conversation(6))
+
+        assert seen == conversation(6)
+        assert len(ui.messages) == 1
+        assert ui.messages[0].startswith("The conversation could not be compressed:")
+        assert ui.messages[0].endswith("refused")
+
+    def test_an_unreadable_summary_goes_on_with_the_full_messages(self) -> None:
+        stage = CompressionStage(compressor(summaries=FakeSummaries(DatabaseError("down"))), lambda: False)
+
+        ui, seen = run_stage(stage, conversation(6))
+
+        assert seen == conversation(6)
+        assert ui.messages == ["The conversation could not be compressed: [DatabaseError]down"]
