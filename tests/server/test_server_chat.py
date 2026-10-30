@@ -16,6 +16,7 @@ from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import ModelStage, PersonaStage
 from sensai_server.pipeline.modules.guardrails import WARNING, BadWordsGuard
 from sensai_server.session import Session
+from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import MODEL, SETTINGS, db_url
 from tests.server.fakes import FakeAdapter, RecordingNext, RecordingOutbound, chunk
@@ -36,7 +37,7 @@ def pm() -> ProviderManager:
 
 @pytest.fixture
 def session(pm: ProviderManager, persona_manager: PersonaManager) -> Session:
-    session = Session(uuid4(), RecordingOutbound(), pm, persona_manager)
+    session = Session(uuid4(), RecordingOutbound(), pm, persona_manager, ToolManager())
     session.conv.model = MODEL
     return session
 

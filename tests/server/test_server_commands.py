@@ -15,6 +15,7 @@ from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory import Conversation
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai_server.session import Session, SessionRegistry
+from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import MODEL, SETTINGS, db_url
 from tests.server.fakes import RecordingOutbound
@@ -41,7 +42,7 @@ def pm() -> ProviderManager:
 
 @pytest.fixture
 def sessions(pm: ProviderManager, manager: PersonaManager) -> SessionRegistry:
-    return SessionRegistry(pm, manager)
+    return SessionRegistry(pm, manager, ToolManager())
 
 
 @pytest.fixture

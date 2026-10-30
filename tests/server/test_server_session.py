@@ -5,6 +5,7 @@ from sensai_protocol import Error
 from sensai_server.llm.persona import PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.session.session import DEFAULT_EFFORT, Session
+from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import SETTINGS
 from tests.server.fakes import RecordingOutbound
@@ -12,7 +13,7 @@ from tests.server.fakes import RecordingOutbound
 
 def _session(persona_manager: PersonaManager) -> tuple[Session, RecordingOutbound]:
     out = RecordingOutbound()
-    return Session(uuid4(), out, ProviderManager(SETTINGS.llm), persona_manager), out
+    return Session(uuid4(), out, ProviderManager(SETTINGS.llm), persona_manager, ToolManager()), out
 
 
 async def _forever(started: asyncio.Event) -> None:
