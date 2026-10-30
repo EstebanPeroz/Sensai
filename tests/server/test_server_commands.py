@@ -197,9 +197,8 @@ class TestPersonaCommand:
         self, commands: CommandRegistry, sessions: SessionRegistry, db: SqlAlchemy
     ) -> None:
         session, out = await _open(sessions)
-        branch = db.create_branch()
+        branch = db.create_branch(model=MODEL)
         assert branch is not None
-        db.set_branch_model(branch, MODEL)
         session.conv.uuid = branch
         await commands.execute(session, f"/persona load {ANALYST}")
         assert _system(out) == f"Persona '{ANALYST}' loaded."

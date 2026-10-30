@@ -21,9 +21,8 @@ def persona(db: SqlAlchemy) -> Persona:
 
 
 def _branch(db: SqlAlchemy) -> UUID:
-    branch = db.create_branch()
+    branch = db.create_branch(model=MODEL)
     assert branch is not None
-    db.set_branch_model(branch, MODEL)
     return branch
 
 
@@ -47,7 +46,7 @@ class TestBranchPersona:
         branch = _branch(db)
         assert persona.uuid is not None
         db.set_branch_persona(branch, persona.uuid)
-        copy = db.create_branch(branch)
+        copy = db.create_branch(model=MODEL, current_branch=branch)
         assert copy is not None
         conv = Conversation()
         db.get_branch(conv, copy, ProviderManager(SETTINGS.llm))
