@@ -10,3 +10,8 @@ class TestMCPStartupErrorFromError:
 
     def test_falls_back_to_the_error_type_without_a_message(self) -> None:
         assert str(MCPStartupError.from_error(EOFError(), 10)) == "EOFError"
+
+    def test_describes_an_exception_group_by_its_first_failure(self) -> None:
+        group = BaseExceptionGroup("unhandled errors", [KeyboardInterrupt(), OSError("connection refused")])
+
+        assert str(MCPStartupError.from_error(BaseExceptionGroup("outer", [group]), 10)) == "connection refused"

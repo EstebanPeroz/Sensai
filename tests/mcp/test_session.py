@@ -1,5 +1,7 @@
+import socket
 from unittest.mock import AsyncMock, patch
 
+import anyio
 import pytest
 
 from sensai.mcp.config import MCPServerConfig
@@ -207,13 +209,54 @@ async def test_converts_disconnected_server_to_mcp_call_error() -> None:
 
 
 @pytest.mark.anyio
-async def test_refuses_http_transport_until_it_is_supported() -> None:
+async def test_connects_over_streamable_http_with_the_configured_headers() -> None:
+    streams = ("read-stream", "write-stream")
+    client = FakeClientSession()
+    config = MCPServerConfig(
+        name="remote",
+        transport="http",
+        url="https://example.com/mcp",
+        headers={"Authorization": "Bearer token"},
+    )
+    http_client = AsyncContext("http-client")
+
+    with (
+        patch("sensai.mcp.session.httpx2.AsyncClient", return_value=http_client) as async_client,
+        patch("sensai.mcp.session.streamable_http_client", return_value=AsyncContext(streams)) as http_transport,
+        patch("sensai.mcp.session.stdio_client") as stdio_client,
+        patch("sensai.mcp.session.ClientSession", return_value=AsyncContext(client)) as client_session,
+    ):
+        await MCPServerSession(config).start()
+
+    assert async_client.call_args.kwargs["headers"] == {"Authorization": "Bearer token"}
+    http_transport.assert_called_once_with("https://example.com/mcp", http_client="http-client")
+    stdio_client.assert_not_called()
+    client_session.assert_called_once_with(*streams)
+    assert client.initialized is True
+
+
+@pytest.mark.anyio
+async def test_closes_http_client_when_session_closes() -> None:
+    http_client = AsyncContext("http-client")
     session = MCPServerSession(MCPServerConfig(name="remote", transport="http", url="http://localhost/mcp"))
 
     with (
-        patch("sensai.mcp.session.stdio_client") as stdio_client,
-        pytest.raises(MCPStartupError, match="transport 'http' is not supported yet"),
+        patch("sensai.mcp.session.httpx2.AsyncClient", return_value=http_client),
+        patch("sensai.mcp.session.streamable_http_client", return_value=AsyncContext(("read", "write"))),
+        patch("sensai.mcp.session.ClientSession", return_value=AsyncContext(FakeClientSession())),
     ):
         await session.start()
+        await session.close()
 
-    stdio_client.assert_not_called()
+    assert http_client.closed is True
+
+
+@pytest.mark.anyio
+async def test_reports_a_refused_http_connection_as_a_startup_error() -> None:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    session = MCPServerSession(MCPServerConfig(name="remote", transport="http", url=f"http://127.0.0.1:{port}/mcp"))
+
+    with anyio.fail_after(10), pytest.raises(MCPStartupError, match="connection attempts failed"):
+        await session.start()

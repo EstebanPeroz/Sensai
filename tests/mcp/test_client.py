@@ -1,4 +1,7 @@
+import socket
+import subprocess
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,6 +12,7 @@ from sensai.mcp.client import MCPClient, start_clients
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.errors import MCPStartupError
+from sensai.tools.tool_manager import ToolManager
 
 FIXTURE_SERVER = Path(__file__).parent / "fixtures" / "tiny_server.py"
 
@@ -183,3 +187,47 @@ async def test_start_clients_starts_fixture_next_to_a_missing_server() -> None:
 @pytest.mark.anyio
 async def test_start_clients_without_clients_returns_no_tools() -> None:
     assert await start_clients([]) == ([], {})
+
+
+@pytest.fixture
+def http_fixture_url() -> Iterator[str]:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = subprocess.Popen(  # noqa: S603
+        [sys.executable, str(FIXTURE_SERVER), "--http", str(port)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        anyio.run(_wait_for_port, port)
+        yield f"http://127.0.0.1:{port}/mcp"
+    finally:
+        server.terminate()
+        server.wait()
+
+
+async def _wait_for_port(port: int) -> None:
+    with anyio.fail_after(10):
+        while True:
+            try:
+                stream = await anyio.connect_tcp("127.0.0.1", port)
+            except OSError:
+                await anyio.sleep(0.05)
+            else:
+                await stream.aclose()
+                return
+
+
+@pytest.mark.anyio
+async def test_discovers_and_calls_fixture_tool_over_http(http_fixture_url: str) -> None:
+    client = MCPClient(MCPServerConfig(name="remote", transport="http", url=http_fixture_url))
+
+    tools = await client.start()
+    result = await anyio.to_thread.run_sync(
+        ToolManager(tools).call,
+        {"function": {"name": "remote__echo", "arguments": {"message": "hello over http"}}},
+    )
+
+    assert [tool.name for tool in tools] == ["remote__echo"]
+    assert result == {"role": "tool", "tool_name": "remote__echo", "content": "hello over http"}

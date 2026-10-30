@@ -4,8 +4,10 @@ from contextlib import AsyncExitStack
 from typing import TYPE_CHECKING
 
 import anyio
+import httpx2
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
 
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.errors import MCPCallError, MCPProtocolError, MCPShutdownError, MCPStartupError
@@ -13,9 +15,13 @@ from sensai.mcp.errors import MCPCallError, MCPProtocolError, MCPShutdownError, 
 if TYPE_CHECKING:
     from sensai.mcp.config import MCPServerConfig
 
+# The MCP SDK's own defaults: a server may hold a response stream open, hence the long read timeout.
+# The startup and call timeouts of the configuration still bound every request made through the session.
+_HTTP_TIMEOUT = httpx2.Timeout(30.0, read=300.0)
+
 
 class MCPServerSession:
-    """Manage one initialized MCP server session over stdio."""
+    """Manage one initialized MCP server session, over stdio or streamable HTTP."""
 
     def __init__(self, config: MCPServerConfig) -> None:
         """Store the server configuration without starting the process."""
@@ -32,12 +38,40 @@ class MCPServerSession:
         """Start the configured server and initialize its MCP session."""
         if self._session is not None:
             return
-        if self._config.command is None:
-            msg = f"transport {self._config.transport!r} is not supported yet"
-            raise MCPStartupError(msg)
 
         exit_stack = AsyncExitStack()
         try:
+            session = await self._open_session(exit_stack)
+            with anyio.fail_after(self._config.startup_timeout):
+                await session.initialize()
+        except BaseException as err:
+            # A transport whose background task fails, such as an http connection refused, cancels `start` and
+            # only raises the failure itself once closed: always close it, and report that failure instead.
+            cause = err
+            try:
+                await exit_stack.aclose()
+            except Exception as close_err:  # noqa: BLE001
+                cause = close_err
+            if not isinstance(cause, Exception):
+                raise
+            raise MCPStartupError.from_error(cause, self._config.startup_timeout) from cause
+
+        self._exit_stack = exit_stack
+        self._session = session
+
+    async def _open_session(self, exit_stack: AsyncExitStack) -> ClientSession:
+        """Connect to the server over its transport, leaving `exit_stack` to disconnect it.
+
+        A validated configuration has a url for the http transport and a command for the stdio one.
+        """
+        if self._config.url is not None:
+            http_client = await exit_stack.enter_async_context(
+                httpx2.AsyncClient(headers=self._config.headers, timeout=_HTTP_TIMEOUT),
+            )
+            streams = await exit_stack.enter_async_context(
+                streamable_http_client(self._config.url, http_client=http_client),
+            )
+        elif self._config.command is not None:
             streams = await exit_stack.enter_async_context(
                 stdio_client(
                     StdioServerParameters(
@@ -46,15 +80,10 @@ class MCPServerSession:
                     ),
                 )
             )
-            session = await exit_stack.enter_async_context(ClientSession(*streams))
-            with anyio.fail_after(self._config.startup_timeout):
-                await session.initialize()
-        except Exception as err:
-            await exit_stack.aclose()
-            raise MCPStartupError.from_error(err, self._config.startup_timeout) from err
-
-        self._exit_stack = exit_stack
-        self._session = session
+        else:
+            msg = "MCP server has neither a url nor a command"
+            raise MCPStartupError(msg)
+        return await exit_stack.enter_async_context(ClientSession(*streams))
 
     async def close(self) -> None:
         """Close the MCP session and its server process."""
