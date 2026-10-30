@@ -263,7 +263,7 @@ def load_settings(path: Path | None = None) -> Settings:
                 if provider.name in llm
             }
             cache = CacheSettings(**_pop_table(data, "cache"))
-            mcp = MCPServerConfig(**mcp_data) if mcp_data else None
+            mcp = MCPServerConfig(**{"name": "mcp", **mcp_data}) if mcp_data else None
             web = WebSettings(**_pop_table(data, "web"))
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
             rag = RagDBSettings(**_pop_table(db, "rag"))

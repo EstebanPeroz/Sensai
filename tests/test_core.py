@@ -151,7 +151,7 @@ def test_core_does_not_create_mcp_client_without_configuration() -> None:
 def test_core_creates_mcp_client_for_configured_server() -> None:
     provider_manager = MagicMock()
     provider_manager.set_model.return_value = True
-    config = MCPServerConfig(command="server")
+    config = MCPServerConfig(name="server", command="server")
     db = MagicMock()
 
     with (
@@ -177,7 +177,7 @@ def test_core_registers_discovered_mcp_tools() -> None:
     provider_manager = MagicMock()
     provider_manager.set_model.return_value = True
     db = MagicMock()
-    config = MCPServerConfig(command="server")
+    config = MCPServerConfig(name="server", command="server")
     mcp_tool = MCPTool(MCPToolInfo("echo", "Echo text", {"type": "object"}), MagicMock())
 
     with (
@@ -227,7 +227,7 @@ def test_core_runs_with_mcp_client() -> None:
             return_value=[],
         ) as run,
     ):
-        core = Core(ui, Settings(mcp=MCPServerConfig(command="server")), Namespace(model="model"))
+        core = Core(ui, Settings(mcp=MCPServerConfig(name="server", command="server")), Namespace(model="model"))
         core.run()
 
     run.assert_called_once()

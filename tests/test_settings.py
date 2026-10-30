@@ -84,6 +84,7 @@ class TestMCP:
         )
 
         assert settings.mcp is not None
+        assert settings.mcp.name == "mcp"
         assert settings.mcp.command == "uv"
         assert settings.mcp.args == ["run", "server.py"]
         assert settings.mcp.enabled is True

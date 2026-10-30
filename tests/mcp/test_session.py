@@ -46,7 +46,7 @@ async def test_starts_and_initializes_session() -> None:
     streams = ("read-stream", "write-stream")
     stdio = AsyncContext(streams)
     client = FakeClientSession()
-    config = MCPServerConfig(command="fake-server", args=["--test"])
+    config = MCPServerConfig(name="server", command="fake-server", args=["--test"])
     session = MCPServerSession(config)
 
     with (
@@ -62,7 +62,7 @@ async def test_starts_and_initializes_session() -> None:
 
 @pytest.mark.anyio
 async def test_raises_startup_error_when_server_fails_to_start() -> None:
-    config = MCPServerConfig(command="missing-server")
+    config = MCPServerConfig(name="server", command="missing-server")
     session = MCPServerSession(config)
     stdio = AsyncContext((), error=RuntimeError("could not start"))
 
@@ -81,7 +81,7 @@ async def test_closes_server_process_when_session_initialization_fails() -> None
     stdio = AsyncContext(("read-stream", "write-stream"))
     client_context = AsyncContext(FakeClientSession())
     client_context.value.initialize = AsyncMock(side_effect=RuntimeError("initialization failed"))
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
 
     with (
         patch("sensai.mcp.session.stdio_client", return_value=stdio),
@@ -98,7 +98,7 @@ async def test_closes_server_process_when_session_initialization_fails() -> None
 async def test_closes_session_and_server_process() -> None:
     stdio = AsyncContext(("read-stream", "write-stream"))
     client_context = AsyncContext(FakeClientSession())
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
 
     with (
         patch("sensai.mcp.session.stdio_client", return_value=stdio),
@@ -113,7 +113,7 @@ async def test_closes_session_and_server_process() -> None:
 
 @pytest.mark.anyio
 async def test_rejects_tool_listing_before_startup() -> None:
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
 
     with pytest.raises(MCPProtocolError, match="session is not started"):
         await session.list_tools()
@@ -127,7 +127,7 @@ async def test_calls_tool_and_returns_one_text_result() -> None:
         (),
         {"isError": False, "content": [type("Text", (), {"type": "text", "text": "Echoed message"})()]},
     )()
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
     client_context = AsyncContext(client)
 
     with (
@@ -148,7 +148,7 @@ async def test_calls_tool_sync_from_an_active_event_loop() -> None:
         (),
         {"isError": False, "content": [type("Text", (), {"type": "text", "text": "Echoed message"})()]},
     )()
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
     client_context = AsyncContext(client)
 
     with (
@@ -166,7 +166,7 @@ async def test_calls_tool_sync_from_an_active_event_loop() -> None:
 async def test_converts_invalid_arguments_to_mcp_call_error() -> None:
     client = FakeClientSession()
     client.call_error = ValueError("invalid arguments")
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
     client_context = AsyncContext(client)
 
     with (
@@ -186,7 +186,7 @@ async def test_converts_mcp_reported_error_to_mcp_call_error() -> None:
         (),
         {"isError": True, "content": [type("Text", (), {"type": "text", "text": "tool failed"})()]},
     )()
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
     client_context = AsyncContext(client)
 
     with (
@@ -200,7 +200,7 @@ async def test_converts_mcp_reported_error_to_mcp_call_error() -> None:
 
 @pytest.mark.anyio
 async def test_converts_disconnected_server_to_mcp_call_error() -> None:
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
 
     with pytest.raises(MCPCallError, match="session is not started"):
         await session.call_tool("echo", {})

@@ -18,6 +18,7 @@ async def test_filesystem_server_tool_runs_through_host_path(tmp_path: Path) -> 
 
     client = MCPClient(
         MCPServerConfig(
+            name="server",
             command=npx,
             args=["--yes", "@modelcontextprotocol/server-filesystem", str(tmp_path)],
             startup_timeout=30,
