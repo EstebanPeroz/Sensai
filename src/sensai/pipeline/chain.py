@@ -8,6 +8,7 @@ from sensai.monitoring.interaction import ignore_interaction
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
+    from uuid import UUID
 
     from sensai.monitoring.interaction import Interaction
     from sensai.ui.adapter import UIAdapter
@@ -20,6 +21,8 @@ class ChatContext:
     message: str
     ui: UIAdapter
     messages: list[dict] = field(default_factory=list)
+    branch_id: UUID | None = None
+    """Branch of the conversation the messages come from, oldest first."""
     on_interaction: Callable[[Interaction], None] = ignore_interaction
     """Called once for every call to the model this exchange makes, whatever its outcome."""
 

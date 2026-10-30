@@ -1,6 +1,7 @@
 from .ask import Ask
 from .base import Command, StateCommand
 from .branch import Branch
+from .compress import Compress
 from .dashboard import Dashboard
 from .help import Help
 from .index import Index
@@ -14,6 +15,7 @@ __all__ = [
     "Branch",
     "Command",
     "CommandRegistry",
+    "Compress",
     "Dashboard",
     "Help",
     "Index",

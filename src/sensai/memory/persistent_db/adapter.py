@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from sensai.llm.message import Message, Role
     from sensai.llm.persona import Persona
     from sensai.llm.provider_manager import ProviderManager
+    from sensai.memory.summary import SummaryRepository
     from sensai.monitoring.interaction_repository import InteractionRepository
 
 
@@ -150,3 +151,8 @@ class PersistentDatabase(ABC):
     @abstractmethod
     def interactions(self) -> InteractionRepository:
         """Logged calls to the model, stored alongside the rest of the persistent data."""
+
+    @property
+    @abstractmethod
+    def summaries(self) -> SummaryRepository:
+        """Summaries of the oldest messages of each branch, stored alongside the branches."""
