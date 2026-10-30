@@ -26,8 +26,10 @@ class RecordingOutbound(Outbound):
 class FakeAdapter(ProviderAdapter):
     """A provider serving `models` without any network call; `load` can be made to refuse or fail.
 
-    A streamed `chat` records its payload in `last_payload` and yields `replies`, each an Ollama payload. When
-    `block` is set, it waits on it after the first reply. The `closed` event is set once the stream has been closed.
+    A streamed `chat` records its payload in `payloads` and `last_payload`. It yields the next stream of `script`,
+    one per call (think, act, observe...), each a list of Ollama payloads; once `script` runs out, it yields
+    `replies`. When `block` is set, it waits on it after the first reply. The `closed` event is set once a stream
+    has been closed. `show` records the model in `shown` and reports `tools` as its tool capability.
     """
 
     models: ClassVar[list[str]] = ["a", "b"]
@@ -35,7 +37,11 @@ class FakeAdapter(ProviderAdapter):
     failing: ClassVar[set[str]] = set()
     unreachable: ClassVar[bool] = False
     replies: ClassVar[list[dict]] = []
+    script: ClassVar[list[list[dict]]] = []
+    payloads: ClassVar[list[dict]] = []
     last_payload: ClassVar[dict | None] = None
+    tools: ClassVar[bool] = False
+    shown: ClassVar[list[str]] = []
     block: ClassVar[threading.Event | None] = None
     closed: ClassVar[threading.Event] = threading.Event()
 
@@ -53,11 +59,13 @@ class FakeAdapter(ProviderAdapter):
         if not stream:
             raise NotImplementedError
         type(self).last_payload = payload
-        return self._stream()
+        self.payloads.append(payload)
+        replies = self.script.pop(0) if self.script else self.replies
+        return self._stream(replies)
 
-    def _stream(self) -> Iterator[ChatResponse]:
+    def _stream(self, replies: list[dict]) -> Iterator[ChatResponse]:
         try:
-            for index, reply in enumerate(self.replies):
+            for index, reply in enumerate(replies):
                 if index == 1 and self.block is not None:
                     self.block.wait()
                 yield ChatResponse(reply)
@@ -74,7 +82,8 @@ class FakeAdapter(ProviderAdapter):
 
     @override
     def show(self, model_name: str) -> ShowResponse:
-        raise NotImplementedError
+        self.shown.append(model_name)
+        return ShowResponse(model_name, tools=self.tools)
 
     @override
     def load(self, model_name: str) -> bool:
@@ -101,6 +110,16 @@ class FakeAdapter(ProviderAdapter):
 def chunk(content: str, *, done: bool = False) -> dict:
     """An Ollama `/api/chat` payload streaming `content`."""
     return {"done": done, "message": {"role": "assistant", "content": content}}
+
+
+def tool_call_chunk(*calls: dict) -> dict:
+    """An Ollama `/api/chat` payload calling `calls`, sent before the `done` chunk as Ollama does."""
+    return {"done": False, "message": {"role": "assistant", "content": "", "tool_calls": list(calls)}}
+
+
+def call(name: str, arguments: dict | None = None) -> dict:
+    """An LLM-style call to the tool `name`."""
+    return {"function": {"name": name, "arguments": arguments or {}}}
 
 
 class RecordingNext:

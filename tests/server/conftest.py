@@ -91,7 +91,11 @@ def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(FakeAdapter, "failing", set())
     monkeypatch.setattr(FakeAdapter, "unreachable", False)
     monkeypatch.setattr(FakeAdapter, "replies", [])
+    monkeypatch.setattr(FakeAdapter, "script", [])
+    monkeypatch.setattr(FakeAdapter, "payloads", [])
     monkeypatch.setattr(FakeAdapter, "last_payload", None)
+    monkeypatch.setattr(FakeAdapter, "tools", False)
+    monkeypatch.setattr(FakeAdapter, "shown", [])
     monkeypatch.setattr(FakeAdapter, "block", None)
     monkeypatch.setattr(FakeAdapter, "closed", threading.Event())
 
