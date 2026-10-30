@@ -1,0 +1,419 @@
+# Cases of the embedding model benchmark: `python -m benchmarks.embeddings run <model>`.
+#
+# [[passages]]: every passage the queries are searched in, all at once, with its language. Each topic holds passages close to one
+# another, so that a query must find the right one among neighbours, not only the right topic.
+# [[queries]]: a question, the passage holding its answer, and its language; a query in another language than its
+# passage asks across languages, as a French question answered by an English page.
+# [[pairs]]: two questions, `same` when one rephrases the other, so that the cache may answer it with the other's
+# answer, and not `same` when they look alike but ask for something else.
+
+[cost]
+# Texts of a single embedding request, as the RAG indexation sends them.
+batch = 8
+runs = 3
+
+# --- Composting (French) ---
+
+[[passages]]
+id = "compost-dechets"
+language = "fr"
+text = """Dans un composteur domestique, on peut mettre les épluchures de fruits et de légumes, le marc de café avec
+son filtre, les sachets de thé, les coquilles d'œufs écrasées, les fleurs fanées et les tontes de gazon en petite
+quantité. Il vaut mieux éviter la viande, le poisson, les produits laitiers et les restes de plats cuisinés, qui
+attirent les rongeurs et se décomposent mal."""
+
+[[passages]]
+id = "compost-equilibre"
+language = "fr"
+text = """Un bon compost mélange des matières vertes, humides et riches en azote, comme les déchets de cuisine,
+et des matières brunes, sèches et riches en carbone, comme les feuilles mortes, le carton brun ou les branchages
+broyés. On vise à peu près autant de brun que de vert en volume. Trop de vert donne une masse collante, trop de
+brun ralentit la décomposition."""
+
+[[passages]]
+id = "compost-humidite"
+language = "fr"
+text = """Le tas doit rester humide comme une éponge essorée. S'il est trop sec, les micro-organismes cessent de
+travailler et rien ne bouge pendant des semaines ; on l'arrose alors légèrement ou on ajoute des déchets frais.
+S'il est détrempé, l'air ne circule plus : on ajoute du carton déchiré ou des feuilles sèches, et on couvre le bac
+quand il pleut beaucoup."""
+
+[[passages]]
+id = "compost-odeurs"
+language = "fr"
+text = """Une odeur d'œuf pourri ou d'ammoniaque signale un manque d'air. Il suffit souvent de brasser le tas avec
+une fourche ou un aérateur, une fois par semaine au début, pour faire entrer de l'oxygène. Un compost bien aéré ne
+sent que le sous-bois. Les moucherons sont sans danger, mais on les limite en recouvrant chaque apport de cuisine
+d'une couche de matière sèche."""
+
+[[passages]]
+id = "compost-maturite"
+language = "fr"
+text = """Il faut compter de six à douze mois avant d'obtenir un compost mûr, selon la saison et le brassage. Il
+est prêt quand il est sombre, friable et sent la terre de forêt, et qu'on ne reconnaît plus les déchets d'origine,
+à part quelques coquilles. On le tamise avant de l'étaler au potager ou de le mélanger au terreau des jardinières."""
+
+[[passages]]
+id = "compost-emplacement"
+language = "fr"
+text = """On installe le composteur directement sur la terre, jamais sur une dalle, pour que les vers et les
+insectes puissent y monter. Un coin à mi-ombre convient le mieux : en plein soleil le tas sèche, à l'ombre totale il
+reste froid. Il doit rester facile d'accès depuis la cuisine, sinon on finit par jeter les épluchures à la poubelle."""
+
+# --- Renting (French) ---
+
+[[passages]]
+id = "bail-depot"
+language = "fr"
+text = """Le dépôt de garantie ne peut pas dépasser un mois de loyer hors charges pour un logement vide, et deux
+mois pour un meublé. Le propriétaire doit le rendre dans un délai d'un mois après la remise des clés si l'état des
+lieux de sortie est conforme à celui d'entrée, et de deux mois sinon, en retenant le coût justifié des réparations."""
+
+[[passages]]
+id = "bail-preavis"
+language = "fr"
+text = """Le locataire d'un logement vide qui veut partir donne un préavis de trois mois, réduit à un mois en zone
+tendue, en cas de mutation, de perte d'emploi ou pour raison de santé. Il l'envoie par lettre recommandée, par acte
+de commissaire de justice ou le remet en main propre contre signature. Le délai court à partir de la réception."""
+
+[[passages]]
+id = "bail-etat-des-lieux"
+language = "fr"
+text = """L'état des lieux est rédigé à l'entrée et à la sortie, pièce par pièce, en présence du locataire et du
+bailleur. Il décrit les murs, les sols, les équipements et relève les compteurs. Pendant les dix premiers jours, le
+locataire peut demander de le compléter s'il découvre un défaut, et pendant le premier mois de chauffe pour le
+chauffage."""
+
+[[passages]]
+id = "bail-charges"
+language = "fr"
+text = """Les charges récupérables, comme l'eau froide, l'entretien des parties communes, l'ascenseur ou la taxe
+d'enlèvement des ordures ménagères, sont payées par le locataire en plus du loyer. Elles sont versées chaque mois
+sous forme de provisions, puis régularisées une fois par an : le bailleur rembourse le trop-perçu ou réclame le
+complément, justificatifs à l'appui."""
+
+[[passages]]
+id = "bail-revision"
+language = "fr"
+text = """Si le bail le prévoit, le loyer peut être révisé une fois par an, à la date anniversaire du contrat. La
+hausse ne peut pas dépasser la variation de l'indice de référence des loyers publié par l'Insee sur les douze
+derniers mois. Le bailleur qui oublie de la demander dispose d'un an pour le faire, sans effet rétroactif."""
+
+[[passages]]
+id = "bail-assurance"
+language = "fr"
+text = """Le locataire doit assurer son logement au moins contre les risques locatifs, c'est-à-dire l'incendie,
+l'explosion et les dégâts des eaux, et fournir une attestation à la remise des clés puis chaque année. À défaut,
+le bailleur peut souscrire une assurance pour son compte et lui en refacturer le prix, majoré de dix pour cent."""
+
+# --- Sourdough baking (English) ---
+
+[[passages]]
+id = "bread-starter"
+language = "en"
+text = """A sourdough starter is a mix of flour and water colonised by wild yeast and lactic bacteria. Feed it once
+or twice a day by discarding most of it and adding equal weights of fresh flour and water. It is ready to bake with
+when it doubles in size within four to six hours of a feeding and smells pleasantly sour, like yoghurt."""
+
+[[passages]]
+id = "bread-hydration"
+language = "en"
+text = """Hydration is the weight of water divided by the weight of flour. A dough at 65 percent is firm and easy to
+shape, while 80 percent gives an open, glossy crumb but sticks to everything. Whole wheat and rye flours absorb more
+water than white flour, so raise the hydration by a few percent when you swap part of the flour for them."""
+
+[[passages]]
+id = "bread-bulk"
+language = "en"
+text = """Bulk fermentation is the first rise, from mixing until shaping, and usually takes four to six hours at 24
+degrees. During the first two hours, perform a set of stretch and folds every thirty minutes to build strength. The
+dough is done when it has grown by about half, feels airy and jiggles when you shake the bowl."""
+
+[[passages]]
+id = "bread-shaping"
+language = "en"
+text = """To shape a boule, turn the dough onto an unfloured counter, fold its edges toward the centre, then flip it
+seam side down and drag it toward you with a bench scraper to tighten the surface. Rest it in a floured banneton,
+seam up, and leave it in the fridge overnight: the cold proof adds flavour and makes the loaf easier to score."""
+
+[[passages]]
+id = "bread-scoring"
+language = "en"
+text = """Scoring means slashing the top of the loaf just before it goes into the oven, with a razor blade held at a
+shallow angle. The cut guides where the bread expands, so it does not tear at random along its weakest point. A
+single confident slash about one centimetre deep produces the raised flap bakers call the ear."""
+
+[[passages]]
+id = "bread-baking"
+language = "en"
+text = """Bake the loaf in a Dutch oven preheated to 250 degrees for twenty minutes with the lid on, so that the
+steam trapped inside keeps the crust soft while the bread rises. Then remove the lid, lower the heat to 230 degrees
+and bake for another twenty to twenty-five minutes until the crust is deep brown and the bottom sounds hollow."""
+
+# --- Home Wi-Fi (English) ---
+
+[[passages]]
+id = "wifi-placement"
+language = "en"
+text = """Put the router in a central, raised spot, away from thick walls, mirrors, fish tanks and the microwave
+oven. Signals spread outward and slightly downward, so a router on a high shelf in the middle of the home covers far
+more rooms than one hidden in a cabinet near the front door where the fibre line comes in."""
+
+[[passages]]
+id = "wifi-bands"
+language = "en"
+text = """Dual-band routers broadcast on 2.4 GHz and 5 GHz. The 2.4 GHz band goes through walls better and reaches
+further, but it is slower and crowded by neighbours' networks. The 5 GHz band is much faster at short range, which
+suits streaming and video calls in the same room or the next one, but it fades quickly behind walls."""
+
+[[passages]]
+id = "wifi-channels"
+language = "en"
+text = """In an apartment building, dozens of networks may share the same channels. Use a Wi-Fi analyser app to see
+which ones are busy, then pick a free channel in the router settings; on 2.4 GHz, only channels 1, 6 and 11 do not
+overlap. Many routers can also choose automatically, but they rarely check again after the first boot."""
+
+[[passages]]
+id = "wifi-mesh"
+language = "en"
+text = """When a single router cannot reach the far end of a house, a mesh system places two or three units around
+it that form one network with a single name. Your devices move between them without reconnecting. Mesh units
+should be connected with Ethernet cables when possible, since a wireless link between them halves the speed."""
+
+[[passages]]
+id = "wifi-security"
+language = "en"
+text = """Protect the network with WPA3, or WPA2 with AES on older devices, and a long passphrase. Change the
+default administrator password of the router, which is often printed on a sticker or shared by every unit of a
+model, and turn off WPS, whose PIN can be guessed in a few hours by anyone within range."""
+
+[[passages]]
+id = "wifi-guest"
+language = "en"
+text = """A guest network gives visitors internet access without letting them reach the computers, printers or
+storage of the main network. It is also a good place for smart plugs, cameras and other connected gadgets, which are
+seldom updated: if one of them is compromised, the attacker stays cut off from the rest of the home."""
+
+# --- Queries ---
+
+[[queries]]
+id = "compost-meat"
+prompt = "Est-ce que je peux jeter des restes de poulet dans mon bac à compost ?"
+passage = "compost-dechets"
+language = "fr"
+
+[[queries]]
+id = "compost-sticky"
+prompt = "Mon compost est devenu une bouillie gluante, quelle proportion de feuilles sèches ajouter ?"
+passage = "compost-equilibre"
+language = "fr"
+
+[[queries]]
+id = "compost-smell"
+prompt = "Pourquoi mon tas sent mauvais et comment régler ça ?"
+passage = "compost-odeurs"
+language = "fr"
+
+[[queries]]
+id = "compost-ready"
+prompt = "Comment savoir si je peux utiliser mon compost au jardin ?"
+passage = "compost-maturite"
+language = "fr"
+
+[[queries]]
+id = "compost-where-en"
+prompt = "Where in the garden should I put my compost bin?"
+passage = "compost-emplacement"
+language = "en"
+
+[[queries]]
+id = "bail-deposit"
+prompt = "Combien de temps le propriétaire a-t-il pour me rendre ma caution ?"
+passage = "bail-depot"
+language = "fr"
+
+[[queries]]
+id = "bail-leaving"
+prompt = "Je veux déménager, combien de temps à l'avance dois-je prévenir mon bailleur ?"
+passage = "bail-preavis"
+language = "fr"
+
+[[queries]]
+id = "bail-yearly-bill"
+prompt = "J'ai reçu une facture de régularisation en fin d'année, c'est normal ?"
+passage = "bail-charges"
+language = "fr"
+
+[[queries]]
+id = "bail-rent-increase"
+prompt = "Mon propriétaire peut-il augmenter mon loyer comme il veut ?"
+passage = "bail-revision"
+language = "fr"
+
+[[queries]]
+id = "bail-insurance-en"
+prompt = "Does a tenant in France have to take out home insurance?"
+passage = "bail-assurance"
+language = "en"
+
+[[queries]]
+id = "bread-levain-ready"
+prompt = "How do I know my levain is active enough to make bread?"
+passage = "bread-starter"
+language = "en"
+
+[[queries]]
+id = "bread-too-sticky"
+prompt = "My dough is so wet I can't handle it, what should I change?"
+passage = "bread-hydration"
+language = "en"
+
+[[queries]]
+id = "bread-first-rise"
+prompt = "How long should the dough rise before I shape it?"
+passage = "bread-bulk"
+language = "en"
+
+[[queries]]
+id = "bread-ear"
+prompt = "How do I get that raised lip on top of the loaf?"
+passage = "bread-scoring"
+language = "en"
+
+[[queries]]
+id = "bread-oven-fr"
+prompt = "À quelle température et combien de temps faut-il cuire un pain au levain ?"
+passage = "bread-baking"
+language = "fr"
+
+[[queries]]
+id = "wifi-weak-rooms"
+prompt = "The connection is terrible in my bedroom, where should the box go?"
+passage = "wifi-placement"
+language = "en"
+
+[[queries]]
+id = "wifi-which-band"
+prompt = "Should my TV use the faster frequency or the one with better range?"
+passage = "wifi-bands"
+language = "en"
+
+[[queries]]
+id = "wifi-neighbours"
+prompt = "Lots of networks around my flat slow mine down, how do I avoid them?"
+passage = "wifi-channels"
+language = "en"
+
+[[queries]]
+id = "wifi-visitors"
+prompt = "How can friends use my internet without seeing my files?"
+passage = "wifi-guest"
+language = "en"
+
+[[queries]]
+id = "wifi-secure-fr"
+prompt = "Comment empêcher mes voisins de pirater mon réseau sans fil ?"
+passage = "wifi-security"
+language = "fr"
+
+# --- Pairs of questions, for the semantic cache ---
+
+[[pairs]]
+first = "Quelle est la capitale de l'Australie ?"
+second = "C'est quoi la capitale australienne ?"
+same = true
+
+[[pairs]]
+first = "Comment faire une pâte à crêpes ?"
+second = "Donne-moi une recette de pâte à crêpes"
+same = true
+
+[[pairs]]
+first = "Quel temps fera-t-il à Lyon demain ?"
+second = "Météo de demain à Lyon ?"
+same = true
+
+[[pairs]]
+first = "Combien de calories dans une banane ?"
+second = "Une banane, ça fait combien de calories ?"
+same = true
+
+[[pairs]]
+first = "Traduis « good morning » en espagnol"
+second = "Comment dit-on « good morning » en espagnol ?"
+same = true
+
+[[pairs]]
+first = "How do I reverse a list in Python?"
+second = "What's the way to reverse a Python list?"
+same = true
+
+[[pairs]]
+first = "Who wrote Pride and Prejudice?"
+second = "Who is the author of Pride and Prejudice?"
+same = true
+
+[[pairs]]
+first = "What is the boiling point of water at sea level?"
+second = "At what temperature does water boil at sea level?"
+same = true
+
+[[pairs]]
+first = "Explain what a black hole is"
+second = "What is a black hole?"
+same = true
+
+[[pairs]]
+first = "What's the best way to remove a coffee stain from a shirt?"
+second = "How can I get a coffee stain out of my shirt?"
+same = true
+
+[[pairs]]
+first = "Quelle est la capitale de l'Australie ?"
+second = "Quelle est la capitale de l'Autriche ?"
+same = false
+
+[[pairs]]
+first = "Comment faire une pâte à crêpes ?"
+second = "Comment faire une pâte à pizza ?"
+same = false
+
+[[pairs]]
+first = "Quel temps fera-t-il à Lyon demain ?"
+second = "Quel temps fera-t-il à Paris demain ?"
+same = false
+
+[[pairs]]
+first = "Combien de calories dans une banane ?"
+second = "Combien de protéines dans une banane ?"
+same = false
+
+[[pairs]]
+first = "Traduis « good morning » en espagnol"
+second = "Traduis « good morning » en italien"
+same = false
+
+[[pairs]]
+first = "How do I reverse a list in Python?"
+second = "How do I sort a list in Python?"
+same = false
+
+[[pairs]]
+first = "Who wrote Pride and Prejudice?"
+second = "Who wrote War and Peace?"
+same = false
+
+[[pairs]]
+first = "What is the boiling point of water at sea level?"
+second = "What is the freezing point of water at sea level?"
+same = false
+
+[[pairs]]
+first = "Convert 100 dollars to euros"
+second = "Convert 100 euros to dollars"
+same = false
+
+[[pairs]]
+first = "How long should I boil an egg for a runny yolk?"
+second = "How long should I boil an egg for a firm yolk?"
+same = false
