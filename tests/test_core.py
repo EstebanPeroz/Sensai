@@ -12,6 +12,7 @@ from sensai.config.settings import FeatureSettings, LLMSettings, OllamaSettings,
 from sensai.core.core import Core
 from sensai.llm.error import ModelError
 from sensai.llm.responses import ChatMetrics
+from sensai.mcp.client import start_clients
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.tool import MCPTool
@@ -192,8 +193,8 @@ def test_core_creates_one_mcp_client_per_configured_server() -> None:
         ) as mcp_client_type,
         patch(
             "sensai.core.core.anyio.run",
-            side_effect=[[first_tool], [second_tool]],
-        ),
+            return_value=[first_tool, second_tool],
+        ) as run,
         patch(
             "sensai.core.core.ToolManager",
         ) as tool_manager_type,
@@ -201,6 +202,7 @@ def test_core_creates_one_mcp_client_per_configured_server() -> None:
         Core(MagicMock(), Settings(mcp=[first, second]), Namespace(model="model"))
 
     assert [call.args for call in mcp_client_type.call_args_list] == [(first,), (second,)]
+    run.assert_called_once_with(start_clients, [mcp_client_type.return_value, mcp_client_type.return_value])
     assert tool_manager_type.call_args.args[0][-2:] == [first_tool, second_tool]
 
 
@@ -230,7 +232,7 @@ def test_core_registers_discovered_mcp_tools() -> None:
     ):
         Core(MagicMock(), Settings(mcp=[config]), Namespace(model="model"))
 
-    run.assert_called_once_with(mcp_client_type.return_value.start)
+    run.assert_called_once_with(start_clients, [mcp_client_type.return_value])
     tool_manager_type.assert_called_once()
     registered_tools = tool_manager_type.call_args.args[0]
     assert registered_tools[-1] is mcp_tool

@@ -1,12 +1,14 @@
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 
-from sensai.mcp.client import MCPClient
+from sensai.mcp.client import MCPClient, start_clients
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
+from sensai.mcp.errors import MCPStartupError
 
 FIXTURE_SERVER = Path(__file__).parent / "fixtures" / "tiny_server.py"
 
@@ -95,3 +97,57 @@ async def test_starts_fixture_discovers_tool_and_creates_adapter() -> None:
             },
         },
     }
+
+
+def make_client(start: AsyncMock) -> MagicMock:
+    client = MagicMock(spec=MCPClient)
+    client.start = start
+    return client
+
+
+@pytest.mark.anyio
+async def test_start_clients_returns_tools_in_client_order() -> None:
+    first_tool, second_tool = MagicMock(), MagicMock()
+
+    async def slow_start() -> list[MagicMock]:
+        await anyio.sleep(0.01)
+        return [first_tool]
+
+    clients = [make_client(AsyncMock(side_effect=slow_start)), make_client(AsyncMock(return_value=[second_tool]))]
+
+    assert await start_clients(clients) == [first_tool, second_tool]
+
+
+@pytest.mark.anyio
+async def test_start_clients_starts_clients_concurrently() -> None:
+    both_started = anyio.Event()
+    started = 0
+
+    async def start() -> list[MagicMock]:
+        nonlocal started
+        started += 1
+        if started == 2:
+            both_started.set()
+        await both_started.wait()
+        return []
+
+    clients = [make_client(AsyncMock(side_effect=start)), make_client(AsyncMock(side_effect=start))]
+
+    with anyio.fail_after(1):
+        assert await start_clients(clients) == []
+
+
+@pytest.mark.anyio
+async def test_start_clients_raises_the_failure_itself_instead_of_a_group() -> None:
+    clients = [
+        make_client(AsyncMock(return_value=[])),
+        make_client(AsyncMock(side_effect=MCPStartupError("server failed"))),
+    ]
+
+    with pytest.raises(MCPStartupError, match="server failed"):
+        await start_clients(clients)
+
+
+@pytest.mark.anyio
+async def test_start_clients_without_clients_returns_no_tools() -> None:
+    assert await start_clients([]) == []

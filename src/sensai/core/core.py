@@ -19,7 +19,7 @@ from sensai.llm.persona import DuplicatePersonaError
 from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
-from sensai.mcp.client import MCPClient
+from sensai.mcp.client import MCPClient, start_clients
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.monitoring.budget import ContextBudget
@@ -83,8 +83,8 @@ class Core:
         InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder, self._ui.ask_user)
-        for mcp_client in self._mcp_clients:
-            tools.extend(anyio.run(mcp_client.start))
+        if self._mcp_clients:
+            tools.extend(anyio.run(start_clients, self._mcp_clients))
         self._tool_manager = ToolManager(
             tools,
             disabled=settings.features.disabled_in("tools"),
