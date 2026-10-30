@@ -71,7 +71,7 @@ def create_app(
 
     sessions = SessionRegistry(pm, persona_manager, tool_manager)
     commands = CommandRegistry()
-    commands.set_commands(build_commands(sessions, commands, db, pm))
+    commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager))
 
     app = FastAPI()
     set_app_state(

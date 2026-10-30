@@ -10,6 +10,7 @@ from sensai_server.commands._branch import Branch
 from sensai_server.commands._effort import EFFORTS, Effort
 from sensai_server.commands._help import Help
 from sensai_server.commands._model import Model
+from sensai_server.commands._tools import ToolsCommand
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory import Conversation
@@ -41,15 +42,22 @@ def pm() -> ProviderManager:
 
 
 @pytest.fixture
-def sessions(pm: ProviderManager, manager: PersonaManager) -> SessionRegistry:
-    return SessionRegistry(pm, manager, ToolManager())
+def tool_manager() -> ToolManager:
+    return ToolManager()
 
 
 @pytest.fixture
-def commands(sessions: SessionRegistry, db: SqlAlchemy, pm: ProviderManager) -> CommandRegistry:
+def sessions(pm: ProviderManager, manager: PersonaManager, tool_manager: ToolManager) -> SessionRegistry:
+    return SessionRegistry(pm, manager, tool_manager)
+
+
+@pytest.fixture
+def commands(
+    sessions: SessionRegistry, db: SqlAlchemy, pm: ProviderManager, tool_manager: ToolManager
+) -> CommandRegistry:
     """The server's commands, built as `create_app` does."""
     commands = CommandRegistry()
-    commands.set_commands(build_commands(sessions, commands, db, pm))
+    commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager))
     return commands
 
 
@@ -93,7 +101,7 @@ class _Echo(Command):
 
 class TestCommandRegistry:
     async def test_names(self, commands: CommandRegistry) -> None:
-        assert commands.names() == ["/persona", "/help", "/branch", "/effort", "/model"]
+        assert commands.names() == ["/persona", "/help", "/branch", "/effort", "/model", "/tools"]
 
     async def test_execute_splits_the_arguments(self, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)
@@ -136,7 +144,7 @@ class TestHelp:
         await commands.execute(session, "/help")
         assert _system(out) == (
             f"Available commands:\n- branch: {Branch.help}\n- effort: {Effort.help}\n- help: {Help.help}"
-            f"\n- model: {Model.help}\n- persona: {PersonaCommand.help}"
+            f"\n- model: {Model.help}\n- persona: {PersonaCommand.help}\n- tools: {ToolsCommand.help}"
         )
 
     async def test_lists_the_commands_of_its_registry(self, sessions: SessionRegistry) -> None:
