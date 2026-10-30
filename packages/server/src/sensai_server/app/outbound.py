@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from fastapi import WebSocket, WebSocketDisconnect
 from sensai_protocol import (
     AskUser,
+    ClientCommand,
     Completions,
     Confirmation,
     ConfirmTool,
@@ -15,11 +16,33 @@ from sensai_protocol import (
     Error,
     History,
     Input,
+    ProtocolError,
+    RequestCommand,
     System,
+    parse_ctx,
 )
+from sensai_protocol.error import SensaiError
 
 if TYPE_CHECKING:
-    from sensai_protocol import AiChunk, DashboardReport, HistoryMessage, Role, ServerMessage
+    from sensai_protocol import (
+        AiChunk,
+        CommandContext,
+        DashboardReport,
+        HistoryMessage,
+        ProtocolModel,
+        Role,
+        ServerMessage,
+    )
+
+
+class ClientCommandError(SensaiError):
+    """Raised when the client did not run a client command: no answer, a wrong one, or the error it failed with."""
+
+    def __init__(self, command: ClientCommand, reason: str) -> None:
+        """Build the error from the `command` asked and the `reason` it was not run."""
+        self.command = command
+        self.reason = reason
+        super().__init__(f"[ClientCommandError] {command}: {reason}")
 
 
 class Outbound:
@@ -31,16 +54,23 @@ class Outbound:
 
     _ws: WebSocket
     _pending: dict[UUID, asyncio.Future[Any]]
+    _client_requests: set[UUID]
 
     def __init__(self, ws: WebSocket) -> None:
         """Send on `ws`, an accepted websocket."""
         self._ws = ws
         self._pending = {}
+        self._client_requests = set()
 
     @property
     def waiting(self) -> bool:
         """Whether a question waits for the client's answer."""
         return bool(self._pending)
+
+    @property
+    def waiting_client_command(self) -> bool:
+        """Whether the running task waits for the client to run a client command."""
+        return bool(self._client_requests)
 
     async def send(self, message: ServerMessage) -> bool:
         """Send `message`. On a closed socket it is dropped: the receive loop sees the disconnection.
@@ -105,6 +135,30 @@ class Outbound:
         answer = await self._ask(request_id, AskUser(request_id=request_id, question=question))
         await self.send_system_message(f"Sensai asked: {question}\n> {answer or '(no answer)'}")
         return answer
+
+    async def request_command(self, command: ClientCommand, params: ProtocolModel) -> ProtocolModel:
+        """Ask the client to run `command` with `params`, waiting for its `command_context`.
+
+        Returns the context of the command, checked against its model. Raises ClientCommandError when the client
+        does not answer, answers for another command, reports an error, or sends a context that does not match.
+        """
+        request_id = uuid4()
+        message = RequestCommand(request_id=request_id, command=command, params=params.model_dump())
+        self._client_requests.add(request_id)
+        try:
+            answer: CommandContext | None = await self._ask(request_id, message)
+        finally:
+            self._client_requests.discard(request_id)
+        if answer is None:
+            raise ClientCommandError(command, "the client did not answer")
+        if answer.command != command:
+            raise ClientCommandError(command, f"the client answered for '{answer.command}'")
+        if answer.error is not None:
+            raise ClientCommandError(command, answer.error)
+        try:
+            return parse_ctx(command, answer.ctx)
+        except ProtocolError as err:
+            raise ClientCommandError(command, f"invalid answer ({err})") from err
 
     def resolve(self, request_id: UUID, answer: object) -> None:
         """Give `answer` to the question of `request_id`. An answer to no pending question is dropped."""

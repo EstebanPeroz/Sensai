@@ -1,0 +1,27 @@
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from uuid import UUID
+
+    from sensai_protocol.server_messages import Role
+
+
+@dataclass(frozen=True)
+class Message:
+    """One role-tagged turn of a conversation, mapping 1:1 onto a chat message."""
+
+    uuid: UUID | None
+    role: Role
+    content: str
+    tool_calls: list[dict] | None = None
+    tool_name: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the message in the format of the chat payload `messages` list."""
+        message: dict[str, object] = {"role": self.role.value, "content": self.content}
+        if self.tool_calls:
+            message["tool_calls"] = self.tool_calls
+        if self.tool_name is not None:
+            message["tool_name"] = self.tool_name
+        return message
