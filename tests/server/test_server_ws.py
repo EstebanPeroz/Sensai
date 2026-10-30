@@ -9,8 +9,10 @@ from sensai_protocol import (
     AskUser,
     Cancel,
     Chat,
+    ClientCommand,
     ClientMessage,
     Command,
+    CommandContext,
     Complete,
     Completions,
     ConfirmAnswer,
@@ -20,6 +22,7 @@ from sensai_protocol import (
     Input,
     Login,
     Logout,
+    RequestCommand,
     Role,
     ServerMessage,
     Session,
@@ -27,11 +30,16 @@ from sensai_protocol import (
     UserAnswer,
     parse_server_message,
 )
-from sensai_server import handlers
+from sensai_server.app import _handlers as handlers
+from sensai_server.commands import PersonaCommand
+from sensai_server.commands._branch import Branch
+from sensai_server.commands._effort import Effort as EffortCommand
+from sensai_server.commands._help import Help
+from sensai_server.commands._model import Model
 from sensai_server.session import SessionRegistry
 from starlette.testclient import WebSocketTestSession
 
-from tests.server.conftest import ASK, CONFIRM, MODEL, SLOW
+from tests.server.conftest import ASK, CONFIRM, FILE, MODEL, PERSONA_PATH, SLOW
 
 
 def _receive(ws: WebSocketTestSession) -> ServerMessage:
@@ -89,7 +97,7 @@ class TestLogin:
         with client.websocket_connect("/ws") as ws:
             session = _login(ws)
             assert session.model == MODEL
-            assert session.commands == []
+            assert session.commands == ["/persona", "/help", "/branch", "/effort", "/model"]
             assert registry.get(session.client_id) is not None
 
     def test_login_twice_keeps_session(self, client: TestClient, registry: SessionRegistry) -> None:
@@ -103,7 +111,7 @@ class TestLogin:
     def test_unknown_model_can_retry(self, client: TestClient, registry: SessionRegistry) -> None:
         with client.websocket_connect("/ws") as ws:
             _send(ws, Login(model="nope"))
-            assert MODEL in _receive_error(ws).message
+            assert f"Available models: {MODEL}, b" in _receive_error(ws).message
             assert len(registry) == 0
             _login(ws)
             assert len(registry) == 1
@@ -206,19 +214,218 @@ class TestQuestions:
             _sync(ws)
 
 
+PERSONA_TOML = 'name = "Pirate"\ndescription = "Talks like a pirate"\nprompt = "Arr."\n'
+
+
+def _request_file(ws: WebSocketTestSession) -> RequestCommand:
+    """Start the `file` chat and return the `request_command` it sends."""
+    _send(ws, Chat(prompt=FILE))
+    assert _receive(ws) == Input(role=Role.USER, content=FILE)
+    request = _receive(ws)
+    assert isinstance(request, RequestCommand)
+    assert (request.command, request.params) == (ClientCommand.READ_FILE, {"path": PERSONA_PATH})
+    return request
+
+
+class TestClientCommands:
+    def test_file_content_is_parsed_by_the_server(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            request = _request_file(ws)
+            _send(
+                ws,
+                CommandContext(request_id=request.request_id, command=request.command, ctx={"content": PERSONA_TOML}),
+            )
+            assert _receive(ws) == AiChunk(content="Pirate")
+            assert _receive(ws) == AiChunk(done=True)
+
+    @pytest.mark.parametrize(
+        ("fields", "reason"),
+        [
+            ({"error": "file not found"}, "file not found"),
+            ({"ctx": {"content": "name = "}}, "invalid TOML"),
+            ({"ctx": {"content": 'name = "x"'}}, "missing key(s): description, prompt"),
+        ],
+        ids=["client-error", "invalid-toml", "missing-keys"],
+    )
+    def test_unusable_file_is_reported(self, client: TestClient, fields: dict, reason: str) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            request = _request_file(ws)
+            _send(ws, CommandContext(request_id=request.request_id, command=request.command, **fields))
+            answer = _receive(ws)
+            assert isinstance(answer, AiChunk)
+            assert answer.content is not None
+            assert f"invalid persona file '{PERSONA_PATH}'" in answer.content
+            assert reason in answer.content
+
+    def test_answer_to_another_request_is_dropped(self, client: TestClient, registry: SessionRegistry) -> None:
+        with client.websocket_connect("/ws") as ws:
+            session = _login(ws)
+            request = _request_file(ws)
+            _send(ws, CommandContext(request_id=uuid4(), command=request.command, ctx={"content": PERSONA_TOML}))
+            _sync(ws)
+            server_session = registry.get(session.client_id)
+            assert server_session is not None
+            assert server_session.busy
+            _send(ws, CommandContext(request_id=request.request_id, command=request.command, error="late"))
+            assert "late" in (_receive(ws).content or "")  # type: ignore[union-attr]
+
+
+CREATE = f"/persona create {PERSONA_PATH}"
+
+
+def _run_command(ws: WebSocketTestSession, command: str) -> None:
+    _send(ws, Command(command=command))
+    assert _receive(ws) == Input(role=Role.USER, content=command, command=True)
+
+
+def _request_persona_file(ws: WebSocketTestSession, path: str = PERSONA_PATH) -> RequestCommand:
+    """Run `/persona create path` and return the `request_command` it sends."""
+    _run_command(ws, f"/persona create {path}")
+    request = _receive(ws)
+    assert isinstance(request, RequestCommand)
+    assert (request.command, request.params) == (ClientCommand.READ_FILE, {"path": path})
+    return request
+
+
+def _answer(ws: WebSocketTestSession, request: RequestCommand, **fields: object) -> None:
+    _send(ws, CommandContext(request_id=request.request_id, command=request.command, **fields))  # type: ignore[arg-type]
+
+
+def _system(ws: WebSocketTestSession) -> str:
+    message = _receive(ws)
+    assert isinstance(message, System)
+    return message.message
+
+
+def _stored_personas(ws: WebSocketTestSession) -> str:
+    """The output of `/persona list`."""
+    _run_command(ws, "/persona list")
+    return _system(ws)
+
+
+class TestPersonaCommand:
+    def test_create_from_the_client_file(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _answer(ws, _request_persona_file(ws), ctx={"content": PERSONA_TOML})
+            assert _system(ws) == f"Persona 'Pirate' created from '{PERSONA_PATH}'."
+            assert "- Pirate: Talks like a pirate" in _stored_personas(ws)
+
+    @pytest.mark.parametrize(
+        ("fields", "reason"),
+        [
+            ({"error": "file not found"}, "file not found"),
+            ({"ctx": {"content": "name = "}}, "invalid TOML"),
+            ({"ctx": {"content": 'name = "Pirate"'}}, "missing key(s): description, prompt"),
+        ],
+        ids=["client-error", "invalid-toml", "missing-keys"],
+    )
+    def test_unusable_file_stores_nothing(self, client: TestClient, fields: dict, reason: str) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _answer(ws, _request_persona_file(ws), **fields)
+            message = _system(ws)
+            assert f"invalid persona file '{PERSONA_PATH}'" in message
+            assert reason in message
+            assert "Pirate" not in _stored_personas(ws)
+
+    def test_answer_to_another_request_is_dropped(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            request = _request_persona_file(ws)
+            _send(ws, CommandContext(request_id=uuid4(), command=request.command, ctx={"content": PERSONA_TOML}))
+            _sync(ws)
+            _answer(ws, request, ctx={"content": PERSONA_TOML})
+            assert _system(ws) == f"Persona 'Pirate' created from '{PERSONA_PATH}'."
+
+    def test_chat_stops_the_waiting_command(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            request = _request_persona_file(ws)
+            _send(ws, Chat(prompt="hi"))
+            assert _system(ws) == f"Command '{CREATE}' stopped: a new message was sent."
+            assert _receive(ws) == Input(role=Role.USER, content="hi")
+            assert _receive(ws) == AiChunk(content="hi")
+            assert _receive(ws) == AiChunk(done=True)
+            _answer(ws, request, ctx={"content": PERSONA_TOML})
+            _sync(ws)
+            assert "Pirate" not in _stored_personas(ws)
+
+    def test_command_stops_the_waiting_command(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            first = _request_persona_file(ws)
+            _send(ws, Command(command="/persona create y.toml"))
+            assert _system(ws) == f"Command '{CREATE}' stopped: a new message was sent."
+            assert _receive(ws) == Input(role=Role.USER, content="/persona create y.toml", command=True)
+            second = _receive(ws)
+            assert isinstance(second, RequestCommand)
+            assert second.params == {"path": "y.toml"}
+            _answer(ws, first, ctx={"content": PERSONA_TOML})
+            _sync(ws)
+            _answer(ws, second, ctx={"content": PERSONA_TOML.replace("Pirate", "Ninja")})
+            assert _system(ws) == "Persona 'Ninja' created from 'y.toml'."
+            stored = _stored_personas(ws)
+            assert "Ninja" in stored
+            assert "Pirate" not in stored
+
+    def test_create_while_a_chat_runs_is_refused(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt=SLOW))
+            assert _receive(ws) == Input(role=Role.USER, content=SLOW)
+            assert _receive(ws) == AiChunk(content=SLOW)
+            _send(ws, Command(command=CREATE))
+            assert "already running" in _receive_error(ws).message
+            _send(ws, Cancel())
+            _sync(ws)
+
+    def test_chat_while_a_tool_waits_is_refused(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt=CONFIRM))
+            _receive(ws)
+            assert isinstance(_receive(ws), ConfirmTool)
+            _send(ws, Chat(prompt="hi"))
+            assert "already running" in _receive_error(ws).message
+
+    def test_cancel_while_waiting_stores_nothing(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            request = _request_persona_file(ws)
+            _send(ws, Cancel())
+            _sync(ws)
+            _answer(ws, request, ctx={"content": PERSONA_TOML})
+            _sync(ws)
+            assert "Pirate" not in _stored_personas(ws)
+
+    def test_complete_persona_names(self, client: TestClient) -> None:
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Complete(text="/persona load "))
+            assert _receive(ws) == Completions(text="/persona load ", values=["Analyst"])
+
+
 class TestCommandAndComplete:
     def test_command(self, client: TestClient) -> None:
         with client.websocket_connect("/ws") as ws:
             _login(ws)
             _send(ws, Command(command="/help"))
             assert _receive(ws) == Input(role=Role.USER, content="/help", command=True)
-            assert _receive(ws) == System(message="ran /help")
+            assert _receive(ws) == System(
+                message=(
+                    f"Available commands:\n- branch: {Branch.help}\n- effort: {EffortCommand.help}\n"
+                    f"- help: {Help.help}\n- model: {Model.help}\n- persona: {PersonaCommand.help}"
+                )
+            )
 
     def test_complete(self, client: TestClient) -> None:
         with client.websocket_connect("/ws") as ws:
             _login(ws)
             _send(ws, Complete(text="/model "))
-            assert _receive(ws) == Completions(text="/model ", values=[])
+            assert _receive(ws) == Completions(text="/model ", values=[MODEL, "b"])
 
 
 class TestDispatch:
@@ -231,6 +438,10 @@ class TestDispatch:
             ("handle_complete", Complete(text="/model ")),
             ("handle_confirm_answer", ConfirmAnswer(request_id=uuid4(), answer=Confirmation.ALLOW)),
             ("handle_user_answer", UserAnswer(request_id=uuid4(), answer="x")),
+            (
+                "handle_command_context",
+                CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, error="x"),
+            ),
         ],
     )
     def test_message_reaches_its_handler(
@@ -247,6 +458,23 @@ class TestDispatch:
         received_session, received_message = handler.await_args.args[:2]
         assert received_session.client_id == session.client_id
         assert received_message == message
+
+    def test_logout_reaches_its_handler_with_the_registry(
+        self, client: TestClient, registry: SessionRegistry, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        handler = AsyncMock()
+        monkeypatch.setattr(handlers, "handle_logout", handler)
+        with client.websocket_connect("/ws") as ws:
+            session = _login(ws)
+            _send(ws, Logout())
+            with pytest.raises(WebSocketDisconnect):
+                ws.receive_text()
+        handler.assert_awaited_once()
+        assert handler.await_args is not None
+        received_registry, received_session, received_message = handler.await_args.args
+        assert received_registry is registry
+        assert received_session.client_id == session.client_id
+        assert received_message == Logout()
 
 
 class TestCleanup:

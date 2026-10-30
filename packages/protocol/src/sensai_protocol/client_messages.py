@@ -1,10 +1,11 @@
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID  # noqa: TC003 - pydantic resolves annotations at runtime
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from sensai_protocol._base import ProtocolModel
+from sensai_protocol.client_commands import ClientCommand  # noqa: TC001 - pydantic resolves annotations at runtime
 
 
 class Login(ProtocolModel):
@@ -71,7 +72,25 @@ class UserAnswer(ProtocolModel):
     answer: str | None
 
 
+class CommandContext(ProtocolModel):
+    """Answer to the `request_command` of `request_id`: the `ctx` of the command, or the `error` it failed with."""
+
+    type: Literal["command_context"] = "command_context"
+    request_id: UUID
+    command: ClientCommand
+    ctx: dict[str, Any] | None = None
+    error: str | None = None
+
+    @model_validator(mode="after")
+    def _ctx_or_error(self) -> Self:
+        """Refuse an answer with both a `ctx` and an `error`, or with neither."""
+        if (self.ctx is None) == (self.error is None):
+            msg = "exactly one of ctx and error must be set"
+            raise ValueError(msg)
+        return self
+
+
 type ClientMessage = Annotated[
-    Login | Logout | Chat | Command | Cancel | Complete | ConfirmAnswer | UserAnswer,
+    Login | Logout | Chat | Command | Cancel | Complete | ConfirmAnswer | UserAnswer | CommandContext,
     Field(discriminator="type"),
 ]
