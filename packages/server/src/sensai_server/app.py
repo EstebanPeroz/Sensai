@@ -17,13 +17,14 @@ from sensai_protocol import (
 )
 
 from sensai_server import handlers
-from sensai_server.models import StaticModelCatalog
+from sensai_server.llm.provider import ProviderManager
 from sensai_server.outbound import Outbound
 from sensai_server.session import SessionRegistry
 
 if TYPE_CHECKING:
     from sensai_protocol import ClientMessage
 
+    from sensai_server.config.settings import Settings
     from sensai_server.handlers import ChatRunner, CommandRunner
     from sensai_server.session.session import Session
 
@@ -31,16 +32,22 @@ router = APIRouter()
 
 
 def create_app(
+    settings: Settings,
     *,
     chat: ChatRunner = handlers.placeholder_chat,
     command: CommandRunner = handlers.placeholder_command,
 ) -> FastAPI:
-    """Build a new app serving the `/ws` route, logging clients in on the models of `catalog`.
+    """Build a new app serving the `/ws` route, logging clients in on the models of the configured providers.
 
-    `chat` and `command` run a chat prompt and a command as a session's task.
+    `settings` are the loaded settings, kept in the app state. `chat` and `command` run a chat prompt and a
+    command as a session's task.
     """
+    pm: ProviderManager = ProviderManager(settings.llm)
+
     app = FastAPI()
-    app.state.registry = SessionRegistry(StaticModelCatalog())
+    app.state.settings = settings
+    app.state.provider_manager = pm
+    app.state.registry = SessionRegistry(pm)
     app.state.chat = chat
     app.state.command = command
     app.include_router(router)
