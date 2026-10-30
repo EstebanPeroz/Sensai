@@ -204,3 +204,16 @@ async def test_converts_disconnected_server_to_mcp_call_error() -> None:
 
     with pytest.raises(MCPCallError, match="session is not started"):
         await session.call_tool("echo", {})
+
+
+@pytest.mark.anyio
+async def test_refuses_http_transport_until_it_is_supported() -> None:
+    session = MCPServerSession(MCPServerConfig(name="remote", transport="http", url="http://localhost/mcp"))
+
+    with (
+        patch("sensai.mcp.session.stdio_client") as stdio_client,
+        pytest.raises(MCPStartupError, match="transport 'http' is not supported yet"),
+    ):
+        await session.start()
+
+    stdio_client.assert_not_called()

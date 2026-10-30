@@ -32,6 +32,9 @@ class MCPServerSession:
         """Start the configured server and initialize its MCP session."""
         if self._session is not None:
             return
+        if self._config.command is None:
+            msg = f"transport {self._config.transport!r} is not supported yet"
+            raise MCPStartupError(msg)
 
         exit_stack = AsyncExitStack()
         try:

@@ -98,6 +98,24 @@ class TestMCP:
             MCPServerConfig(name="filesystem", command="npx"),
         ]
 
+    def test_loads_http_server_with_headers(self, tmp_path: Path) -> None:
+        settings = load_settings(
+            write_config(
+                tmp_path,
+                '[mcp.remote]\ntransport = "http"\nurl = "https://example.com/mcp"\n'
+                'headers = { Authorization = "Bearer token" }\n',
+            ),
+        )
+
+        assert settings.mcp == [
+            MCPServerConfig(
+                name="remote",
+                transport="http",
+                url="https://example.com/mcp",
+                headers={"Authorization": "Bearer token"},
+            ),
+        ]
+
     def test_loads_disabled_server(self, tmp_path: Path) -> None:
         settings = load_settings(write_config(tmp_path, '[mcp.server]\ncommand = "server"\nenabled = false\n'))
 
@@ -110,6 +128,8 @@ class TestMCP:
             ('[mcp."my server"]\ncommand = "server"\n', "server name must be non-empty"),
             ('[mcp.server]\nname = "other"\ncommand = "server"\n', "multiple values for keyword argument 'name'"),
             ('[mcp.server]\ncommand = ""\n', "command must be a non-empty string"),
+            ('[mcp.server]\ntransport = "http"\n', r"url must be an http\(s\) URL"),
+            ('[mcp.server]\ntransport = "websocket"\nurl = "ws://host"\n', "transport must be 'stdio' or 'http'"),
             ('[mcp.server]\ncommand = "server"\nstartup_timeout = 0\n', "startup timeout must be greater than zero"),
             ('[mcp.server]\ncommand = "server"\ncall_timeout = -1\n', "call timeout must be greater than zero"),
         ],
