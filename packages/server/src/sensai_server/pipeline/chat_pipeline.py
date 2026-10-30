@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncGenerator
 
     from sensai_server.llm.responses import ChatResponse
     from sensai_server.pipeline.chain import ChatContext, Next, Stage
@@ -29,7 +29,7 @@ class ChatPipeline:
         self._stages.append(stage)
         return self
 
-    def execute(self, context: ChatContext) -> AsyncIterator[ChatResponse]:
+    def execute(self, context: ChatContext) -> AsyncGenerator[ChatResponse]:
         """Stream the answer to `context`, through every stage and back."""
         return self._chain()(context)
 
@@ -44,7 +44,7 @@ class ChatPipeline:
     def _link(stage: Stage, next_stage: Next) -> Next:
         """Bind `stage` to the `next_stage` it precedes, making the pair one step."""
 
-        def linked(context: ChatContext) -> AsyncIterator[ChatResponse]:
+        def linked(context: ChatContext) -> AsyncGenerator[ChatResponse]:
             return stage(context, next_stage)
 
         return linked

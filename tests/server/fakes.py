@@ -1,5 +1,5 @@
 import threading
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncGenerator, Iterator
 from typing import ClassVar, Literal, cast, overload, override
 
 from fastapi import WebSocket
@@ -111,7 +111,7 @@ class RecordingNext:
         self.calls: list[ChatContext] = []
         self.seen_messages: list[list[dict]] = []
 
-    async def __call__(self, context: ChatContext) -> AsyncIterator[ChatResponse]:
+    async def __call__(self, context: ChatContext) -> AsyncGenerator[ChatResponse]:
         self.calls.append(context)
         self.seen_messages.append(list(context.messages))
         for item in self.chunks:

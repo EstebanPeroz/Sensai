@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 from sensai_server.llm.responses import ChatResponse
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable
+    from collections.abc import AsyncGenerator, Callable
 
     from sensai_server.app.outbound import Outbound
     from sensai_server.llm.persona import Persona
@@ -50,10 +50,10 @@ class ChatContext:
     # this exchange makes, whatever its outcome.
 
 
-type Next = Callable[[ChatContext], AsyncIterator[ChatResponse]]
+type Next = Callable[[ChatContext], AsyncGenerator[ChatResponse]]
 """The rest of the chain, ending on the model: call it to go on, drop it to answer instead."""
 
-type Stage = Callable[[ChatContext, Next], AsyncIterator[ChatResponse]]
+type Stage = Callable[[ChatContext, Next], AsyncGenerator[ChatResponse]]
 """One step of the chain, wrapped around every step that follows it."""
 
 

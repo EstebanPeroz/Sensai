@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import aclosing
 
 import pytest
@@ -14,7 +14,7 @@ def _context() -> ChatContext:
 
 
 def _model(log: list[str], *, block: asyncio.Event | None = None) -> Next:
-    async def model(_context: ChatContext) -> AsyncIterator[ChatResponse]:
+    async def model(_context: ChatContext) -> AsyncGenerator[ChatResponse]:
         log.append("model")
         yield answer_chunk("a")
         if block is not None:
@@ -25,7 +25,7 @@ def _model(log: list[str], *, block: asyncio.Event | None = None) -> Next:
 
 
 def _stage(name: str, log: list[str]) -> Stage:
-    async def stage(context: ChatContext, next_stage: Next) -> AsyncIterator[ChatResponse]:
+    async def stage(context: ChatContext, next_stage: Next) -> AsyncGenerator[ChatResponse]:
         log.append(f"{name} in")
         try:
             async with aclosing(next_stage(context)) as chunks:
@@ -38,7 +38,7 @@ def _stage(name: str, log: list[str]) -> Stage:
     return stage
 
 
-async def _contents(chunks: AsyncIterator[ChatResponse]) -> list[str | None]:
+async def _contents(chunks: AsyncGenerator[ChatResponse]) -> list[str | None]:
     async with aclosing(chunks) as stream:
         return [chunk.content async for chunk in stream]
 
@@ -80,7 +80,7 @@ class TestChatPipeline:
     async def test_stage_answers_in_place_of_model(self) -> None:
         log: list[str] = []
 
-        async def guard(_context: ChatContext, _next_stage: Next) -> AsyncIterator[ChatResponse]:
+        async def guard(_context: ChatContext, _next_stage: Next) -> AsyncGenerator[ChatResponse]:
             yield answer_chunk("stop")
 
         pipeline = ChatPipeline(_model(log)).use(guard).use(_stage("a", log))
