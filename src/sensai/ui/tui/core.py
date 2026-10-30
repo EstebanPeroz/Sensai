@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from sensai.llm.message import Role
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
+    from sensai.monitoring.budget import ContextUsage
     from sensai.monitoring.metrics import Report
     from sensai.ui.completion import CompletionSource
 
@@ -125,6 +126,15 @@ class UITextualAdapter(ui.UIAdapter):
         """Show the thinking effort `level` in the UI."""
         try:
             self.app.call_from_thread(self.app.update_thinking_effort, level)
+        except RuntimeError:
+            return False
+        return True
+
+    @override
+    def update_context_usage(self, usage: ContextUsage) -> bool:
+        """Show the context usage in the UI."""
+        try:
+            self.app.call_from_thread(self.app.update_context_usage, usage)
         except RuntimeError:
             return False
         return True

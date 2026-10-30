@@ -68,16 +68,22 @@ class OllamaAdapter(ProviderAdapter):
     def show(self, model_name: str) -> ShowResponse:
         """Get info on a specified model on the ollama API."""
         content = self._post("api/show", {"model": model_name}, timeout=3)
-        response: ShowResponse = ShowResponse(model=model_name)
-
         capabilities: list = content.get("capabilities", [])
-        if capabilities == []:
-            return response
-        if "tools" in capabilities:
-            response.tools = True
-        if "thinking" in capabilities:
-            response.think = True
-        return response
+        return ShowResponse(
+            model=model_name,
+            tools="tools" in capabilities,
+            think="thinking" in capabilities,
+            context_length=self._context_length(content.get("model_info", {})),
+        )
+
+    @staticmethod
+    def _context_length(model_info: dict) -> int | None:
+        """Read the context length from `model_info`, where Ollama keys it by architecture (`llama.context_length`)."""
+        architecture = model_info.get("general.architecture")
+        if not isinstance(architecture, str):
+            return None
+        value = model_info.get(f"{architecture}.context_length")
+        return value if isinstance(value, int) else None
 
     def load(self, model_name: str) -> bool:
         """Load a model with the ollama API."""
