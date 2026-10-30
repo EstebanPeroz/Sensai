@@ -40,7 +40,7 @@ class TestRealServers:
         tools, failures = host.start()
         try:
             assert failures == {}
-            assert [tool.name for tool in tools] == ["local__echo"]
+            assert [tool.name for tool in tools] == ["local__echo", "local__reverse_echo"]
             assert tools[0].tool_rule == {
                 "type": "function",
                 "function": {
@@ -75,7 +75,7 @@ class TestRealServers:
         host = MCPHost([MCPServerConfig(name="missing", command="sensai-missing-mcp-server"), fixture_config()])
         tools, failures = host.start()
         try:
-            assert [tool.name for tool in tools] == ["local__echo"]
+            assert [tool.name for tool in tools] == ["local__echo", "local__reverse_echo"]
             assert list(failures) == ["missing"]
             assert isinstance(failures["missing"], MCPStartupError)
             assert echo(manager_of(tools), "local__echo", "still here") == "still here"
@@ -92,40 +92,58 @@ class TestRealServers:
 
 class TestHttpServer:
     @pytest.fixture
-    def http_server(self) -> Iterator[tuple[str, subprocess.Popen[bytes]]]:
+    def http_server(self, tmp_path: Path) -> Iterator[tuple[str, subprocess.Popen[bytes], Path]]:
+        """Serve the fixture over http, returning its url, its process, and the file receiving its stderr."""
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
-        server = subprocess.Popen(  # noqa: S603
-            [sys.executable, str(FIXTURE_SERVER), "--http", str(port)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        stderr = tmp_path / "server-stderr.log"
+        with stderr.open("wb") as stderr_file:
+            server = subprocess.Popen(  # noqa: S603
+                [sys.executable, str(FIXTURE_SERVER), "--http", str(port)],
+                stdout=subprocess.DEVNULL,
+                stderr=stderr_file,
+            )
         try:
             anyio.run(_wait_for_port, port)
-            yield f"http://127.0.0.1:{port}/mcp", server
+            yield f"http://127.0.0.1:{port}/mcp", server, stderr
         finally:
             server.terminate()
             server.wait()
 
     def test_discovers_and_calls_the_fixture_tool_over_http(
         self,
-        http_server: tuple[str, subprocess.Popen[bytes]],
+        http_server: tuple[str, subprocess.Popen[bytes], Path],
     ) -> None:
-        url, _ = http_server
+        url, _, _ = http_server
         host = MCPHost([MCPServerConfig(name="remote", transport="http", url=url)])
         tools, _ = host.start()
         try:
-            assert [tool.name for tool in tools] == ["remote__echo"]
+            assert [tool.name for tool in tools] == ["remote__echo", "remote__reverse_echo"]
             assert echo(manager_of(tools), "remote__echo", "hello over http") == "hello over http"
         finally:
             host.close()
 
+    def test_reverse_echo_shows_the_message_on_the_server_side(
+        self,
+        http_server: tuple[str, subprocess.Popen[bytes], Path],
+    ) -> None:
+        url, _, stderr = http_server
+        host = MCPHost([MCPServerConfig(name="remote", transport="http", url=url)])
+        tools, _ = host.start()
+        try:
+            result = echo(manager_of(tools), "remote__reverse_echo", "shown over there")
+        finally:
+            host.close()
+
+        assert result == "The message was shown in the terminal of the server."
+        assert "[reverse_echo] shown over there" in stderr.read_text()
+
     def test_a_server_going_down_leaves_the_others_open(
         self,
-        http_server: tuple[str, subprocess.Popen[bytes]],
+        http_server: tuple[str, subprocess.Popen[bytes], Path],
     ) -> None:
-        url, server = http_server
+        url, server, _ = http_server
         host = MCPHost([fixture_config(), MCPServerConfig(name="remote", transport="http", url=url)])
         tools, _ = host.start()
         try:
