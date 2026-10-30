@@ -23,7 +23,7 @@ async def test_reads_tool_name_description_and_input_schema() -> None:
             },
         )(),
     ]
-    session = MCPServerSession(MCPServerConfig(command="fake-server"))
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
 
     with (
         patch("sensai.mcp.session.stdio_client", return_value=stdio),

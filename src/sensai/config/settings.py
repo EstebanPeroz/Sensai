@@ -216,7 +216,7 @@ class Settings:
 
     llm: LLMSettings = field(default_factory=LLMSettings)
     cache: CacheSettings = field(default_factory=CacheSettings)
-    mcp: MCPServerConfig | None = None
+    mcp: list[MCPServerConfig] = field(default_factory=list)
     web: WebSettings = field(default_factory=WebSettings)
     db: DBSettings = field(default_factory=DBSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
@@ -263,7 +263,7 @@ def load_settings(path: Path | None = None) -> Settings:
                 if provider.name in llm
             }
             cache = CacheSettings(**_pop_table(data, "cache"))
-            mcp = MCPServerConfig(**mcp_data) if mcp_data else None
+            mcp = [MCPServerConfig(name=name, **_pop_table(mcp_data, name)) for name in list(mcp_data)]
             web = WebSettings(**_pop_table(data, "web"))
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
             rag = RagDBSettings(**_pop_table(db, "rag"))

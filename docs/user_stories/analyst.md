@@ -83,12 +83,43 @@ information starts silently getting lost.
 don't have to manually copy data into the chat.
 Example: You need a figure from an internal system, so Sensai fetches it
 directly instead of you copying it in by hand.
+Acceptance criteria:
+- The tools of every configured MCP server are listed by `/tools list`,
+  named `<server>__<tool>`.
+- When the model calls one of them, its result is sent back to the model,
+  which uses it in its answer.
+- When a call fails (server error, server gone, timeout), the model receives
+  an `error: ...` result and still answers, instead of the session stopping.
 
 **US-06** — As an analyst, I want the set of external data sources available
 to change depending on the investigation, so that each project can plug in
 the sources relevant to it without waiting on engineering work.
 Example: A new investigation needs a different data source than the last
 one, and you want to plug it in without asking a developer to add it.
+Acceptance criteria:
+- Adding or removing a `[mcp.<name>]` table in `settings.toml` adds or
+  removes a data source at the next start, without changing the code.
+- Several servers run side by side, even when two of them offer a tool with
+  the same name: each one is reachable under its own `<server>__` prefix.
+- A server that fails to start, or answers nothing within its
+  `startup_timeout`, is skipped with a message naming it and the reason, and
+  the other servers and Sensai itself still start.
+
+**US-58** — As an analyst, I want to connect to a data source another team
+hosts on the network, so that I can use it without installing and running it
+on my own machine.
+Example: The finance team exposes its reporting tools as an MCP server at an
+internal URL; you add its URL and your access token to your settings and
+query it like a local source.
+Acceptance criteria:
+- A `[mcp.<name>]` table with `transport = "http"` and a `url` connects to a
+  remote MCP server over streamable HTTP, and its tools work like local ones.
+- The `headers` of the table, such as an `Authorization` token, are sent with
+  every request to that server.
+- An unreachable URL or a server that does not answer is reported at start
+  (e.g. `All connection attempts failed`) like any other server failing,
+  and a configuration mixing stdio and http fields is refused with a message
+  saying which field does not apply.
 
 #### Web Search
 
@@ -574,3 +605,33 @@ opens, and give it the details it is missing instead of letting it guess.
 Note: whether the assistant opens a page or asks a question is decided by
 the model. Small models often answer from the search snippets without
 calling `web_fetch`, in which case no dialog appears.
+
+### Scenario 4 — Plugging the data sources of a new investigation
+
+**Persona:** the Analyst, starting an investigation that needs local files
+and a reporting service hosted by the finance team.
+**Goal:** give the assistant both sources for this project only, without
+asking a developer, and keep working if one of them is down.
+**Covers:** US-05, US-06, US-58.
+
+1. **Declaring the sources.** In `settings.toml`, the analyst adds a
+   `[mcp.filesystem]` table starting the official filesystem server on the
+   project folder, and a `[mcp.finance]` table with `transport = "http"`, the
+   service URL and an `Authorization` header holding their token.
+2. **Checking the setup.** The analyst starts Sensai. `/tools list` shows
+   the tools of both servers, such as `filesystem__read_text_file` and
+   `finance__quarterly_revenue`, next to the built-in ones.
+3. **Using both sources.** The analyst asks "Compare the Q3 revenue in the
+   finance service with the forecast in forecast.md". The reasoning shows
+   `-> Using finance__quarterly_revenue...` then
+   `-> Using filesystem__read_text_file...`, and the answer compares the two
+   figures.
+4. **A source goes down.** The next morning, the finance service is
+   unreachable. Sensai still opens, with the message
+   `MCP server 'finance' failed to start, its tools are unavailable: All
+   connection attempts failed`. The filesystem tools still work.
+5. **Changing project.** For the next investigation, the analyst replaces
+   the two tables by the sources of the new project and restarts Sensai.
+6. **Outcome.** Each investigation gets the sources it needs from a settings
+   change alone, and an unavailable source costs its own tools, not the
+   session.
