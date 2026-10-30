@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from starlette.applications import Starlette
 
+    from sensai_server.chat.react import ReAct
     from sensai_server.commands import CommandRegistry
     from sensai_server.config.settings import Settings
     from sensai_server.llm.embedder import Embedder
@@ -32,6 +33,7 @@ class AppState:
     provider_manager: ProviderManager
     embedder: Embedder | None
     tool_manager: ToolManager
+    react: ReAct
     db: PersistentDatabase
     persona_manager: PersonaManager
     registry: SessionRegistry

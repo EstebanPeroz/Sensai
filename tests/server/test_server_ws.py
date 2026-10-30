@@ -34,6 +34,7 @@ from sensai_protocol import (
 )
 from sensai_server.app import _handlers as handlers
 from sensai_server.app._state import app_state
+from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
 from sensai_server.commands._effort import Effort as EffortCommand
@@ -41,8 +42,10 @@ from sensai_server.commands._help import Help
 from sensai_server.commands._model import Model
 from sensai_server.commands._tools import ToolsCommand
 from sensai_server.pipeline import ChatPipeline
+from sensai_server.pipeline.modules import ModelStage
 from sensai_server.pipeline.modules.guardrails import WARNING
 from sensai_server.session import SessionRegistry
+from sensai_server.session.session import DEFAULT_EFFORT
 from starlette.testclient import WebSocketTestSession
 
 from tests.server.conftest import ASK, CONFIRM, FILE, MODEL, PERSONA_PATH, SLOW
@@ -74,6 +77,15 @@ def _login(ws: WebSocketTestSession) -> Session:
     message = _receive(ws)
     assert isinstance(message, Session)
     return message
+
+
+class TestAppState:
+    def test_model_stage_uses_the_shared_react(self, app: FastAPI) -> None:
+        state = app_state(app)
+        assert isinstance(state.react, ReAct)
+        model = state.pipeline._model  # noqa: SLF001
+        assert isinstance(model, ModelStage)
+        assert model._react is state.react  # noqa: SLF001
 
 
 class TestProtocolErrors:
@@ -540,6 +552,8 @@ class TestEndToEnd:
     @pytest.fixture(autouse=True)
     def replies(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(FakeAdapter, "replies", [chunk("Hel"), chunk("lo", done=True)])
+        # `FakeAdapter` answers every call with the same stream: the default effort makes a single answering call.
+        monkeypatch.setitem(EFFORTS, DEFAULT_EFFORT, 0)
 
     def test_app_state_has_a_pipeline(self, real_app: FastAPI) -> None:
         assert isinstance(app_state(real_app).pipeline, ChatPipeline)
@@ -554,7 +568,10 @@ class TestEndToEnd:
             _sync(ws)  # the prompt is echoed only once, and nothing follows the last chunk
         assert FakeAdapter.last_payload is not None
         assert FakeAdapter.last_payload["model"] == MODEL
-        assert FakeAdapter.last_payload["messages"][-1] == {"role": "user", "content": "hello"}
+        assert FakeAdapter.last_payload["messages"][-2:] == [
+            {"role": "user", "content": "hello"},
+            {"role": "user", "content": ANSWER_INSTRUCTION},
+        ]
 
     def test_bad_word_is_answered_without_the_model(self, real_client: TestClient) -> None:
         with real_client.websocket_connect("/ws") as ws:

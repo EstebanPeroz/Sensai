@@ -22,6 +22,7 @@ from sensai_protocol import (
 from sensai_server.app import _handlers as handlers
 from sensai_server.app._state import AppState, app_state, set_app_state
 from sensai_server.app.outbound import Outbound
+from sensai_server.chat.react import ReAct
 from sensai_server.commands import CommandRegistry, build_commands
 from sensai_server.llm.embedder import Embedder
 from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
@@ -54,12 +55,14 @@ def create_app(
     `settings` are the loaded settings, kept in the app state (see `app_state`). The persistent database is opened,
     and the default persona is stored in it if it is not there yet. The chat pipeline is built once
     (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task. So
-    is the tool manager (see `_build_tool_manager`): each session keeps only its own tool state.
+    is the tool manager (see `_build_tool_manager`): each session keeps only its own tool state. So is the ReAct loop
+    the pipeline's model stage hands each exchange to: it keeps nothing between two exchanges.
     """
     pm: ProviderManager = ProviderManager(settings.llm)
     embedder = _build_embedder(settings, pm)
     tool_manager = _build_tool_manager(settings, embedder)
-    pipeline = _build_pipeline(pm, tool_manager)
+    react = ReAct(pm, tool_manager)
+    pipeline = _build_pipeline(react)
     set_db(settings.db.persistent)
     db = get_db()
     if db is None:
@@ -81,6 +84,7 @@ def create_app(
             provider_manager=pm,
             embedder=embedder,
             tool_manager=tool_manager,
+            react=react,
             db=db,
             persona_manager=persona_manager,
             registry=sessions,
@@ -92,9 +96,9 @@ def create_app(
     return app
 
 
-def _build_pipeline(pm: ProviderManager, tool_manager: ToolManager) -> ChatPipeline:
-    """Build the chain every chat goes through: the guard first, then the persona, then the model."""
-    return ChatPipeline(ModelStage(pm, tool_manager)).use(BadWordsGuard()).use(PersonaStage())
+def _build_pipeline(react: ReAct) -> ChatPipeline:
+    """Build the chain every chat goes through: the guard first, then the persona, then the model's ReAct loop."""
+    return ChatPipeline(ModelStage(react)).use(BadWordsGuard()).use(PersonaStage())
 
 
 def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:

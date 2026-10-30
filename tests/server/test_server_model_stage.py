@@ -6,6 +6,7 @@ from contextlib import aclosing
 
 import pytest
 from sensai_protocol.error import SensaiError
+from sensai_server.chat.react import ANSWER_INSTRUCTION, ReAct
 from sensai_server.llm.error import RequestCallError
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.llm.threaded import iterate_in_thread
@@ -25,7 +26,7 @@ def _context(model: str = MODEL) -> ChatContext:
 
 
 async def _contents(context: ChatContext) -> list[str | None]:
-    async with aclosing(ModelStage(ProviderManager(SETTINGS.llm), ToolManager())(context)) as chunks:
+    async with aclosing(ModelStage(ReAct(ProviderManager(SETTINGS.llm), ToolManager()))(context)) as chunks:
         return [item.content async for item in chunks]
 
 
@@ -46,7 +47,11 @@ class TestModelStage:
         await _contents(context)
         payload = FakeAdapter.last_payload
         assert payload is not None
-        assert payload == {"model": MODEL, "messages": MESSAGES}
+        assert payload == {
+            "model": MODEL,
+            "messages": [*MESSAGES, {"role": "user", "content": ANSWER_INSTRUCTION}],
+            "think": False,
+        }
         assert payload["messages"] is not context.messages
 
     async def test_unknown_model(self) -> None:
@@ -72,7 +77,7 @@ class TestModelStage:
         first = asyncio.Event()
 
         async def consume() -> None:
-            async with aclosing(ModelStage(ProviderManager(SETTINGS.llm), ToolManager())(_context())) as chunks:
+            async with aclosing(ModelStage(ReAct(ProviderManager(SETTINGS.llm), ToolManager()))(_context())) as chunks:
                 async for _ in chunks:
                     first.set()
 

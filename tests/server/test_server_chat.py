@@ -7,7 +7,7 @@ import pytest
 from sensai_protocol import AiChunk, Error, Input, Role, ServerMessage, System
 from sensai_server.chat import chat
 from sensai_server.chat.chat import BRANCH_NAME_LENGTH, _to_ai_chunk
-from sensai_server.chat.react import EFFORTS
+from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.llm.error import RequestCallError
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ChatResponse, ProviderManager
@@ -39,13 +39,15 @@ def pm() -> ProviderManager:
 def session(pm: ProviderManager, persona_manager: PersonaManager) -> Session:
     session = Session(RecordingOutbound(), pm, persona_manager, ToolManager())
     session.conv.model = MODEL
+    # `FakeAdapter` answers every call with the same stream: the pipeline makes a single answering call.
+    session.effort = "off"
     return session
 
 
 @pytest.fixture
 def pipeline(pm: ProviderManager) -> ChatPipeline:
     """The pipeline `create_app` builds, on `FakeAdapter`."""
-    return ChatPipeline(ModelStage(pm, ToolManager())).use(BadWordsGuard()).use(PersonaStage())
+    return ChatPipeline(ModelStage(ReAct(pm, ToolManager()))).use(BadWordsGuard()).use(PersonaStage())
 
 
 class _SignallingOutbound(RecordingOutbound):
@@ -167,6 +169,7 @@ class TestChat:
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "hi"},
             {"role": "user", "content": "again"},
+            {"role": "user", "content": ANSWER_INSTRUCTION},
         ]
 
     async def test_no_model_sends_an_error(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
@@ -198,6 +201,7 @@ class TestChat:
         assert FakeAdapter.last_payload["messages"] == [
             {"role": "system", "content": PERSONA.prompt},
             {"role": "user", "content": "hello"},
+            {"role": "user", "content": ANSWER_INSTRUCTION},
         ]
         assert all(message["role"] != "system" for message in _history(session))
 
