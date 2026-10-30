@@ -290,3 +290,59 @@ for machines without a GPU.
   GPU. Its `llama-server` keeps a prompt cache of up to 8 GiB of RAM by
   default, which exhausted the memory of a 16 GB machine without swap;
   `LLAMA_ARG_CACHE_RAM` caps it (0 disables it).
+
+## Embedding model benchmark
+
+The embedding model serves three features: `web_fetch` keeps the 4 chunks of a
+page closest to the query, the RAG ranks the chunks of the user's documents, and
+the semantic cache answers a query with the answer of a cached one when their
+cosine similarity reaches `cache.similarity_threshold` (0.95). A second script,
+on the `feat/benchmarks` branch too, measures each model through Sensai's
+`Embedder` and cosine similarity, on texts sent as Sensai sends them, without
+the task prefixes some models are trained with (`search_query:` for nomic).
+Results are in `benchmarks/embeddings/results/`.
+
+- **Retrieval:** 20 questions, each searched among 24 passages on 4 topics
+  (composting and renting in French, sourdough and Wi-Fi in English), so the
+  other passages of its topic are close decoys. 4 questions are asked in the
+  other language than their passage, as a French question answered by an
+  English page.
+- **Cache:** 10 pairs of rephrased questions, which the cache should match, and
+  10 pairs that look alike but ask for something else (Lyon or Paris, crêpes or
+  pizza, dollars to euros or euros to dollars).
+- **Cost:** cold load and passages embedded per second, in requests of 8 as the
+  RAG indexation sends them.
+
+**Run (2026-10-30):** same machine as the chat models, every model on the GPU.
+
+| Model | Size | Speed | Right passage first | Right passage kept (top 4) | Across languages first | Cache at 0.95 (hits / false hits) | Best threshold (pairs right) |
+|---|---|---|---|---|---|---|---|
+| `all-minilm` | 0.05 GB | 191/s | 6/20 | 13/20 | 0/4 | 2/10 / 1/10 | 0.91 (16/20) |
+| `nomic-embed-text` | 0.27 GB | 115/s | 10/20 | 16/20 | 0/4 | 5/10 / 1/10 | 0.89 (16/20) |
+| `embeddinggemma` | 0.62 GB | 44/s | 17/20 | 20/20 | 4/4 | 4/10 / 1/10 | 0.89 (17/20) |
+| `mxbai-embed-large` | 0.67 GB | 82/s | 11/20 | 15/20 | 2/4 | 2/10 / 1/10 | 0.91 (18/20) |
+| `bge-m3` | 1.16 GB | 31/s | 19/20 | 20/20 | 4/4 | 7/10 / 1/10 | 0.94 (17/20) |
+| `snowflake-arctic-embed2` | 1.16 GB | 27/s | 17/20 | 20/20 | 4/4 | 4/10 / 1/10 | 0.86 (18/20) |
+
+- **Retrieval tells the models apart:** `nomic-embed-text` puts the right
+  passage first for half the questions only, and drops it from the 4 kept
+  chunks for 4 of them. Across languages it fails outright: a French question
+  on an English passage ranks it 14th and 20th of 24. The multilingual models
+  (`embeddinggemma`, `bge-m3`, `snowflake-arctic-embed2`) keep the right passage
+  every time, across languages included.
+- **The cache cannot rely on the embedding alone:** with every model, rephrased
+  and different questions overlap. The one false hit at 0.95 is the same for all
+  of them: "convert 100 dollars to euros" against "100 euros to dollars" scores
+  0.98 or more, above most rephrasings. No threshold separates them, and 0.95
+  already misses from 3 to 8 rephrasings out of 10. A false hit gives a wrong
+  answer while a miss only costs a call to the model, so the threshold stays
+  high.
+- **Speed is not a concern:** even the slowest model embeds a request of 8
+  passages in about 0.3 s, a small cost next to the answer of the chat model.
+
+**Choice:** `embeddinggemma` finds the right passage almost as often as
+`bge-m3` (17/20 first, 20/20 kept, 4/4 across languages) at half its size
+(0.62 GB). The size matters: `bge-m3` was dropped for `nomic-embed-text` because
+an Ollama sharing its memory with the chat model kept evicting it.
+`embeddinggemma` should replace `nomic-embed-text` as the default, and `bge-m3`
+is the choice when memory allows.
