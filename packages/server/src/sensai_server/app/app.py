@@ -32,6 +32,7 @@ from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import ModelStage, PersonaStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
 from sensai_server.session import SessionRegistry
+from sensai_server.tools.tool_manager import ToolManager
 
 if TYPE_CHECKING:
     from sensai_protocol import ClientMessage
@@ -65,7 +66,9 @@ def create_app(
     with contextlib.suppress(DuplicatePersonaError):
         persona_manager.create_default_persona()
 
-    sessions = SessionRegistry(pm, persona_manager)
+    # No tools yet: step 7 of Milestone.md registers the built tools and the disabled and confirm settings.
+    tool_manager = ToolManager()
+    sessions = SessionRegistry(pm, persona_manager, tool_manager)
     commands = CommandRegistry()
     commands.set_commands(build_commands(sessions, commands, db, pm))
 
