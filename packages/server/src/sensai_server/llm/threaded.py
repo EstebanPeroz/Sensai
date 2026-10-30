@@ -1,4 +1,4 @@
-"""Bridge a blocking iterator into async code, for the sync calls of the stages (provider, later RAG and ReAct)."""
+"""Bridge a blocking iterator into async code, for the sync calls of the provider (model stage, ReAct, later RAG)."""
 
 from __future__ import annotations
 

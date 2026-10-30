@@ -8,9 +8,9 @@ import pytest
 from sensai_protocol.error import SensaiError
 from sensai_server.llm.error import RequestCallError
 from sensai_server.llm.provider import ProviderManager
+from sensai_server.llm.threaded import iterate_in_thread
 from sensai_server.pipeline import ChatContext
 from sensai_server.pipeline.modules import ModelStage
-from sensai_server.pipeline.modules._threaded import iterate_in_thread
 from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import MODEL, SETTINGS

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from sensai_protocol.error import SensaiError
 
-from sensai_server.pipeline.modules._threaded import iterate_in_thread
+from sensai_server.llm.threaded import iterate_in_thread
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
