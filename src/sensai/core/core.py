@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
+    from sensai.mcp.errors import MCPError
     from sensai.memory.persistent_db.adapter import PersistentDatabase
     from sensai.monitoring.interaction import Interaction
 
@@ -54,6 +55,7 @@ class Core:
     _settings: Settings
     _events: EventBus
     _mcp_clients: list[MCPClient]
+    _mcp_failures: dict[str, MCPError]
     _tool_manager: ToolManager
     _context_budget: ContextBudget
 
@@ -83,8 +85,10 @@ class Core:
         InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder, self._ui.ask_user)
+        self._mcp_failures = {}
         if self._mcp_clients:
-            tools.extend(anyio.run(start_clients, self._mcp_clients))
+            mcp_tools, self._mcp_failures = anyio.run(start_clients, self._mcp_clients)
+            tools.extend(mcp_tools)
         self._tool_manager = ToolManager(
             tools,
             disabled=settings.features.disabled_in("tools"),
@@ -117,6 +121,8 @@ class Core:
         unknown = self._tool_manager.unknown_confirm()
         if unknown:
             self._ui.send_system_message(f"Unknown tools to confirm in the settings: {', '.join(unknown)}")
+        for name, err in self._mcp_failures.items():
+            self._ui.send_system_message(f"MCP server '{name}' failed to start, its tools are unavailable: {err}")
 
         self._ui.set_completions(
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}

@@ -48,7 +48,7 @@ class MCPServerSession:
                 await session.initialize()
         except Exception as err:
             await exit_stack.aclose()
-            raise MCPStartupError(str(err)) from err
+            raise MCPStartupError.from_error(err, self._config.startup_timeout) from err
 
         self._exit_stack = exit_stack
         self._session = session

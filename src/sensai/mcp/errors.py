@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sensai.error import SensaiError
 
 
@@ -7,6 +9,13 @@ class MCPError(SensaiError):
 
 class MCPStartupError(MCPError):
     """Raised when an MCP server cannot be started or initialized."""
+
+    @classmethod
+    def from_error(cls, err: Exception, timeout: float) -> MCPStartupError:
+        """Describe `err`, whose message is empty when it is a timeout, as a startup failure."""
+        if isinstance(err, TimeoutError):
+            return cls(f"no answer within {timeout:g}s")
+        return cls(str(err) or type(err).__name__)
 
 
 class MCPProtocolError(MCPError):

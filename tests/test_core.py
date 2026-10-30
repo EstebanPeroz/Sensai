@@ -15,6 +15,7 @@ from sensai.llm.responses import ChatMetrics
 from sensai.mcp.client import start_clients
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
+from sensai.mcp.errors import MCPStartupError
 from sensai.mcp.tool import MCPTool
 from sensai.memory.persistent_db.error import DatabaseError
 from sensai.monitoring.interaction import Interaction, InteractionStatus
@@ -166,7 +167,7 @@ def test_core_creates_mcp_client_for_configured_server() -> None:
         ) as mcp_client,
         patch(
             "sensai.core.core.anyio.run",
-            return_value=[],
+            return_value=([], {}),
         ),
     ):
         Core(MagicMock(), Settings(mcp=[config]), Namespace(model="model"))
@@ -193,7 +194,7 @@ def test_core_creates_one_mcp_client_per_configured_server() -> None:
         ) as mcp_client_type,
         patch(
             "sensai.core.core.anyio.run",
-            return_value=[first_tool, second_tool],
+            return_value=([first_tool, second_tool], {}),
         ) as run,
         patch(
             "sensai.core.core.ToolManager",
@@ -224,7 +225,7 @@ def test_core_registers_discovered_mcp_tools() -> None:
         ) as mcp_client_type,
         patch(
             "sensai.core.core.anyio.run",
-            return_value=[mcp_tool],
+            return_value=([mcp_tool], {}),
         ) as run,
         patch(
             "sensai.core.core.ToolManager",
@@ -257,10 +258,38 @@ def test_core_runs_with_mcp_client() -> None:
         ),
         patch(
             "sensai.core.core.anyio.run",
-            return_value=[],
+            return_value=([], {}),
         ) as run,
     ):
         core = Core(ui, Settings(mcp=[MCPServerConfig(name="server", command="server")]), Namespace(model="model"))
         core.run()
 
     run.assert_called_once()
+
+
+def test_core_reports_mcp_servers_that_failed_to_start() -> None:
+    provider_manager = MagicMock()
+    provider_manager.set_model.return_value = True
+    ui = MagicMock()
+    ui.get_event.return_value = MagicMock(type=EventType.Command, content="/q")
+
+    with (
+        patch("sensai.core.core.get_db", return_value=MagicMock()),
+        patch(
+            "sensai.core.core.ProviderManager",
+            return_value=provider_manager,
+        ),
+        patch(
+            "sensai.core.core.MCPClient",
+        ),
+        patch(
+            "sensai.core.core.anyio.run",
+            return_value=([], {"github": MCPStartupError("connection refused")}),
+        ),
+    ):
+        core = Core(ui, Settings(mcp=[MCPServerConfig(name="github", command="server")]), Namespace(model="model"))
+        core.run()
+
+    ui.send_system_message.assert_any_call(
+        "MCP server 'github' failed to start, its tools are unavailable: connection refused",
+    )

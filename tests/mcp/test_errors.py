@@ -1,0 +1,12 @@
+from sensai.mcp.errors import MCPStartupError
+
+
+class TestMCPStartupErrorFromError:
+    def test_describes_a_timeout_with_the_waited_time(self) -> None:
+        assert str(MCPStartupError.from_error(TimeoutError(), 2.5)) == "no answer within 2.5s"
+
+    def test_keeps_the_message_of_another_error(self) -> None:
+        assert str(MCPStartupError.from_error(OSError("connection refused"), 10)) == "connection refused"
+
+    def test_falls_back_to_the_error_type_without_a_message(self) -> None:
+        assert str(MCPStartupError.from_error(EOFError(), 10)) == "EOFError"
