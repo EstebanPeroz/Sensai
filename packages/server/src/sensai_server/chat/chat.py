@@ -8,6 +8,7 @@ from sensai_protocol import AiChunk
 from sensai_protocol.error import SensaiError
 from sensai_protocol.server_messages import Role
 
+from sensai_server.chat.react import EFFORTS
 from sensai_server.pipeline import ChatContext
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ async def run_chat(session: Session, prompt: str, pipeline: ChatPipeline, db: Pe
         persona=conv.persona,
         messages=conv.history.to_json(),
         tools=session.tools,
+        max_iterations=EFFORTS[session.effort],
     )
     content = await _stream(session.out, pipeline, context)
     if content.strip() == "":

@@ -4,10 +4,11 @@ from uuid import uuid4
 import pytest
 from sensai_protocol import Effort as EffortMessage
 from sensai_protocol import System
+from sensai_server.chat.react import EFFORTS
 from sensai_server.commands import CommandRegistry, PersonaCommand, build_commands
 from sensai_server.commands._base import Command
 from sensai_server.commands._branch import Branch
-from sensai_server.commands._effort import EFFORTS, Effort
+from sensai_server.commands._effort import Effort
 from sensai_server.commands._help import Help
 from sensai_server.commands._model import Model
 from sensai_server.commands._tools import ToolsCommand

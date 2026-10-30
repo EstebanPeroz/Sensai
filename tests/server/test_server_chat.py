@@ -7,6 +7,7 @@ import pytest
 from sensai_protocol import AiChunk, Error, Input, Role, ServerMessage, System
 from sensai_server.chat import chat
 from sensai_server.chat.chat import BRANCH_NAME_LENGTH, _to_ai_chunk
+from sensai_server.chat.react import EFFORTS
 from sensai_server.llm.error import RequestCallError
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ChatResponse, ProviderManager
@@ -205,6 +206,15 @@ class TestChat:
         await chat(session, "hello", ChatPipeline(model), db)
         assert [context.tools for context in model.calls] == [session.tools]
         assert model.calls[0].tools is session.tools
+
+    @pytest.mark.parametrize(("level", "steps"), list(EFFORTS.items()))
+    async def test_context_carries_the_effort_of_the_session(
+        self, session: Session, db: SqlAlchemy, level: str, steps: int
+    ) -> None:
+        session.effort = level
+        model = RecordingNext(ChatResponse(chunk("a", done=True)))
+        await chat(session, "hello", ChatPipeline(model), db)
+        assert [context.max_iterations for context in model.calls] == [steps]
 
     async def test_cancel_saves_no_answer(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         block = threading.Event()
