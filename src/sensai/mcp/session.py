@@ -23,6 +23,11 @@ class MCPServerSession:
         self._exit_stack: AsyncExitStack | None = None
         self._session: ClientSession | None = None
 
+    @property
+    def server_name(self) -> str:
+        """Return the configured name of the server."""
+        return self._config.name
+
     async def start(self) -> None:
         """Start the configured server and initialize its MCP session."""
         if self._session is not None:

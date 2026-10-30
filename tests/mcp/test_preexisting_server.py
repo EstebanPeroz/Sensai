@@ -27,17 +27,17 @@ async def test_filesystem_server_tool_runs_through_host_path(tmp_path: Path) -> 
     )
 
     tools = await client.start()
-    tool: Tool[object] = next(tool for tool in tools if tool.name == "list_allowed_directories")
+    tool: Tool[object] = next(tool for tool in tools if tool.name == "server__list_allowed_directories")
     manager = ToolManager([tool])
     result = await to_thread.run_sync(
         manager.call,
         {
             "type": "function",
-            "function": {"name": "list_allowed_directories", "arguments": {}},
+            "function": {"name": "server__list_allowed_directories", "arguments": {}},
         },
     )
 
     assert result is not None
     assert result["role"] == "tool"
-    assert result["tool_name"] == "list_allowed_directories"
+    assert result["tool_name"] == "server__list_allowed_directories"
     assert str(tmp_path) in result["content"]

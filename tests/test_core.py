@@ -211,7 +211,7 @@ def test_core_registers_discovered_mcp_tools() -> None:
     provider_manager.set_model.return_value = True
     db = MagicMock()
     config = MCPServerConfig(name="server", command="server")
-    mcp_tool = MCPTool(MCPToolInfo("echo", "Echo text", {"type": "object"}), MagicMock())
+    mcp_tool = MCPTool(MCPToolInfo("echo", "Echo text", {"type": "object"}), MagicMock(server_name="server"))
 
     with (
         patch("sensai.core.core.get_db", return_value=db),
@@ -236,7 +236,7 @@ def test_core_registers_discovered_mcp_tools() -> None:
     tool_manager_type.assert_called_once()
     registered_tools = tool_manager_type.call_args.args[0]
     assert registered_tools[-1] is mcp_tool
-    assert ToolManager(registered_tools).names() == ["ask_user", "echo"]
+    assert ToolManager(registered_tools).names() == ["ask_user", "server__echo"]
 
 
 def test_core_runs_with_mcp_client() -> None:

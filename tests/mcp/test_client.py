@@ -15,7 +15,7 @@ FIXTURE_SERVER = Path(__file__).parent / "fixtures" / "tiny_server.py"
 
 @pytest.mark.anyio
 async def test_starts_server_discovers_tools_and_creates_mcp_tools() -> None:
-    session = AsyncMock()
+    session = AsyncMock(server_name="server")
     session.list_tools.return_value = [MCPToolInfo("echo", "Echo text", {"type": "object"})]
     config = MCPServerConfig(name="server", command="server")
     client = MCPClient(config)
@@ -27,7 +27,7 @@ async def test_starts_server_discovers_tools_and_creates_mcp_tools() -> None:
     session.start.assert_awaited_once()
     session.list_tools.assert_awaited_once()
     assert len(tools) == 1
-    assert tools[0].name == "echo"
+    assert tools[0].name == "server__echo"
 
 
 @pytest.mark.anyio
@@ -83,11 +83,11 @@ async def test_starts_fixture_discovers_tool_and_creates_adapter() -> None:
     tools = await client.start()
 
     assert len(tools) == 1
-    assert tools[0].name == "echo"
+    assert tools[0].name == "server__echo"
     assert tools[0].tool_rule == {
         "type": "function",
         "function": {
-            "name": "echo",
+            "name": "server__echo",
             "description": "Echo a message",
             "parameters": {
                 "properties": {"message": {"title": "Message", "type": "string"}},
