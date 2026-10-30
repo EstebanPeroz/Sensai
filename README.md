@@ -112,8 +112,10 @@ Keep tokens in your git-ignored `settings.toml`, never in the template.
 All the tables above can be used at once: Sensai then offers `echo__echo`, the `filesystem__` tools and
 `remote__echo` side by side.
 
-Current limit: each tool call opens a new session to its server, then closes it. A server keeping state between
-calls (an open browser, a login) loses it, and every call to a remote server pays its connection again.
+Each server keeps one session open from the start of Sensai until it quits: tool calls reuse it, so a server
+keeps its state between calls (an open browser, a login) and a remote server is connected to only once. Current
+limit: a server that disconnects while Sensai runs is not reconnected. Its tools then answer
+`MCP server '<name>' disconnected, restart Sensai to reconnect: ...`, while the other servers keep working.
 
 ## Development
 

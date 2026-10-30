@@ -1,4 +1,4 @@
-from sensai.mcp.errors import MCPStartupError
+from sensai.mcp.errors import MCPStartupError, describe
 
 
 class TestMCPStartupErrorFromError:
@@ -15,3 +15,17 @@ class TestMCPStartupErrorFromError:
         group = BaseExceptionGroup("unhandled errors", [KeyboardInterrupt(), OSError("connection refused")])
 
         assert str(MCPStartupError.from_error(BaseExceptionGroup("outer", [group]), 10)) == "connection refused"
+
+
+class TestDescribe:
+    def test_uses_the_message(self) -> None:
+        assert describe(OSError("connection refused")) == "connection refused"
+
+    def test_falls_back_to_the_type_without_a_message(self) -> None:
+        assert describe(EOFError()) == "EOFError"
+
+    def test_describes_a_nested_group_by_its_first_failure(self) -> None:
+        inner = BaseExceptionGroup("inner", [KeyboardInterrupt(), OSError("connection refused")])
+
+        assert describe(ExceptionGroup("outer", [ValueError("first")])) == "first"
+        assert describe(BaseExceptionGroup("outer", [inner])) == "connection refused"

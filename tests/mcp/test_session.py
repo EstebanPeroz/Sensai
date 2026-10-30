@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import anyio
 import pytest
+from anyio.from_thread import BlockingPortal
 
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.errors import MCPCallError, MCPProtocolError, MCPStartupError
@@ -142,26 +143,79 @@ async def test_calls_tool_and_returns_one_text_result() -> None:
     assert result == "Echoed message"
 
 
+def text_result(text: str) -> object:
+    return type("CallResult", (), {"isError": False, "content": [type("Text", (), {"type": "text", "text": text})()]})()
+
+
 @pytest.mark.anyio
-async def test_calls_tool_sync_from_an_active_event_loop() -> None:
+async def test_serve_reports_tools_keeps_session_open_for_sync_calls_then_closes_it() -> None:
     client = FakeClientSession()
-    client.call_result = type(
-        "CallResult",
-        (),
-        {"isError": False, "content": [type("Text", (), {"type": "text", "text": "Echoed message"})()]},
-    )()
-    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
+    client.tools = [type("Tool", (), {"name": "echo", "description": "Echo", "input_schema": {"type": "object"}})()]
+    client.call_result = text_result("Echoed message")
     client_context = AsyncContext(client)
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
 
     with (
         patch("sensai.mcp.session.stdio_client", return_value=AsyncContext(("read", "write"))),
         patch("sensai.mcp.session.ClientSession", return_value=client_context),
     ):
-        result = session.call_tool_sync("echo", {"message": "hello"})
+        async with BlockingPortal() as portal, anyio.create_task_group() as task_group:
+            stop = anyio.Event()
+            tools = await task_group.start(session.serve, portal, stop)
+            first = await anyio.to_thread.run_sync(session.call_tool_sync, "echo", {"message": "hello"})
+            second = await anyio.to_thread.run_sync(session.call_tool_sync, "echo", {"message": "again"})
+            assert client_context.closed is False
+            stop.set()
 
-    assert result == "Echoed message"
-    assert client.initialized is True
+    assert [tool.name for tool in tools] == ["echo"]
+    assert first == second == "Echoed message"
     assert client_context.closed is True
+    with pytest.raises(MCPCallError, match="session is not started"):
+        session.call_tool_sync("echo", {})
+
+
+def test_rejects_sync_calls_before_serving() -> None:
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
+
+    with pytest.raises(MCPCallError, match="session is not started"):
+        session.call_tool_sync("echo", {})
+
+
+@pytest.mark.anyio
+async def test_serve_closes_session_when_tool_listing_fails() -> None:
+    client = FakeClientSession()
+    client.list_tools = AsyncMock(side_effect=RuntimeError("listing failed"))  # type: ignore[method-assign]
+    client_context = AsyncContext(client)
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server"))
+
+    with (
+        patch("sensai.mcp.session.stdio_client", return_value=AsyncContext(("read", "write"))),
+        patch("sensai.mcp.session.ClientSession", return_value=client_context),
+    ):
+        async with BlockingPortal() as portal, anyio.create_task_group() as task_group:
+            with pytest.raises(MCPStartupError, match="listing failed"):
+                await task_group.start(session.serve, portal, anyio.Event())
+
+    assert client_context.closed is True
+
+
+@pytest.mark.anyio
+async def test_converts_a_call_timeout_to_a_readable_mcp_call_error() -> None:
+    client = FakeClientSession()
+
+    async def never_answer(_name: str, _arguments: dict[str, object]) -> object:
+        await anyio.sleep_forever()
+
+    client.call_tool = never_answer  # type: ignore[method-assign]
+    session = MCPServerSession(MCPServerConfig(name="server", command="fake-server", call_timeout=0.01))
+
+    with (
+        patch("sensai.mcp.session.stdio_client", return_value=AsyncContext(("read", "write"))),
+        patch("sensai.mcp.session.ClientSession", return_value=AsyncContext(client)),
+    ):
+        await session.start()
+        with pytest.raises(MCPCallError, match=r"no answer within 0\.01s"):
+            await session.call_tool("echo", {})
 
 
 @pytest.mark.anyio

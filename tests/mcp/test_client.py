@@ -1,210 +1,146 @@
+import signal
 import socket
 import subprocess
 import sys
-from collections.abc import Iterator
+import time
+from collections.abc import Iterator, Sequence
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import anyio
 import pytest
+from anyio.abc import TaskStatus
 
-from sensai.mcp.client import MCPClient, start_clients
+import sensai.mcp.session
+from sensai.mcp.client import MCPHost
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.errors import MCPStartupError
+from sensai.tools.tool import Tool
 from sensai.tools.tool_manager import ToolManager
 
 FIXTURE_SERVER = Path(__file__).parent / "fixtures" / "tiny_server.py"
 
 
-@pytest.mark.anyio
-async def test_starts_server_discovers_tools_and_creates_mcp_tools() -> None:
-    session = AsyncMock(server_name="server")
-    session.list_tools.return_value = [MCPToolInfo("echo", "Echo text", {"type": "object"})]
-    config = MCPServerConfig(name="server", command="server")
-    client = MCPClient(config)
-
-    with patch("sensai.mcp.client.MCPServerSession", return_value=session) as session_type:
-        tools = await client.start()
-
-    session_type.assert_called_once_with(config)
-    session.start.assert_awaited_once()
-    session.list_tools.assert_awaited_once()
-    assert len(tools) == 1
-    assert tools[0].name == "server__echo"
+def fixture_config(name: str = "local") -> MCPServerConfig:
+    return MCPServerConfig(name=name, command=sys.executable, args=[str(FIXTURE_SERVER)])
 
 
-@pytest.mark.anyio
-async def test_disabled_server_returns_no_tools_without_starting() -> None:
-    client = MCPClient(MCPServerConfig(name="server", command="server", enabled=False))
-
-    with patch("sensai.mcp.client.MCPServerSession") as session_type:
-        assert await client.start() == []
-
-    session_type.assert_not_called()
+def manager_of(tools: Sequence[Tool[str]]) -> ToolManager:
+    return ToolManager(list(tools))
 
 
-@pytest.mark.anyio
-async def test_start_closes_discovery_session() -> None:
-    session = AsyncMock()
-    session.list_tools.return_value = []
-    client = MCPClient(MCPServerConfig(name="server", command="server"))
-
-    with patch("sensai.mcp.client.MCPServerSession", return_value=session):
-        await client.start()
-
-    session.close.assert_awaited_once()
+def echo(manager: ToolManager, name: str, message: str) -> str:
+    return manager.call({"function": {"name": name, "arguments": {"message": message}}})["content"]
 
 
-@pytest.mark.anyio
-async def test_start_closes_server_when_tool_discovery_fails() -> None:
-    session = AsyncMock()
-    session.list_tools.side_effect = RuntimeError("discovery failed")
-    client = MCPClient(MCPServerConfig(name="server", command="server"))
+class TestRealServers:
+    def test_discovers_and_calls_the_fixture_tool(self) -> None:
+        host = MCPHost([fixture_config()])
+        tools, failures = host.start()
+        try:
+            assert failures == {}
+            assert [tool.name for tool in tools] == ["local__echo"]
+            assert tools[0].tool_rule == {
+                "type": "function",
+                "function": {
+                    "name": "local__echo",
+                    "description": "Echo a message",
+                    "parameters": {
+                        "properties": {"message": {"title": "Message", "type": "string"}},
+                        "required": ["message"],
+                        "title": "echoArguments",
+                        "type": "object",
+                    },
+                },
+            }
+            assert echo(manager_of(tools), "local__echo", "hello") == "hello"
+        finally:
+            host.close()
 
-    with (
-        patch("sensai.mcp.client.MCPServerSession", return_value=session),
-        pytest.raises(
-            MCPStartupError,
-            match="discovery failed",
-        ),
-    ):
-        await client.start()
+    def test_keeps_one_session_open_across_calls(self) -> None:
+        host = MCPHost([fixture_config()])
+        with patch("sensai.mcp.session.stdio_client", wraps=sensai.mcp.session.stdio_client) as stdio_client:
+            tools, _ = host.start()
+            try:
+                manager = manager_of(tools)
+                results = [echo(manager, "local__echo", str(index)) for index in range(3)]
+            finally:
+                host.close()
 
-    session.close.assert_awaited_once()
+        assert results == ["0", "1", "2"]
+        stdio_client.assert_called_once()
 
+    def test_skips_a_missing_server_next_to_a_working_one(self) -> None:
+        host = MCPHost([MCPServerConfig(name="missing", command="sensai-missing-mcp-server"), fixture_config()])
+        tools, failures = host.start()
+        try:
+            assert [tool.name for tool in tools] == ["local__echo"]
+            assert list(failures) == ["missing"]
+            assert isinstance(failures["missing"], MCPStartupError)
+            assert echo(manager_of(tools), "local__echo", "still here") == "still here"
+        finally:
+            host.close()
 
-@pytest.mark.anyio
-async def test_start_gives_up_when_tool_discovery_exceeds_startup_timeout() -> None:
-    session = AsyncMock()
-    session.list_tools.side_effect = anyio.sleep_forever
-    client = MCPClient(MCPServerConfig(name="server", command="server", startup_timeout=0.01))
+    def test_close_ends_the_sessions(self) -> None:
+        host = MCPHost([fixture_config()])
+        tools, _ = host.start()
+        host.close()
 
-    with (
-        patch("sensai.mcp.client.MCPServerSession", return_value=session),
-        anyio.fail_after(1),
-        pytest.raises(MCPStartupError, match=r"no answer within 0\.01s"),
-    ):
-        await client.start()
-
-    session.close.assert_awaited_once()
-
-
-@pytest.mark.anyio
-async def test_starts_fixture_discovers_tool_and_creates_adapter() -> None:
-    client = MCPClient(
-        MCPServerConfig(
-            name="server",
-            command=sys.executable,
-            args=[str(FIXTURE_SERVER)],
-        ),
-    )
-
-    tools = await client.start()
-
-    assert len(tools) == 1
-    assert tools[0].name == "server__echo"
-    assert tools[0].tool_rule == {
-        "type": "function",
-        "function": {
-            "name": "server__echo",
-            "description": "Echo a message",
-            "parameters": {
-                "properties": {"message": {"title": "Message", "type": "string"}},
-                "required": ["message"],
-                "title": "echoArguments",
-                "type": "object",
-            },
-        },
-    }
+        assert echo(manager_of(tools), "local__echo", "too late") == "error: MCP session is not started"
 
 
-def make_client(start: AsyncMock, name: str = "server") -> MagicMock:
-    client = MagicMock(spec=MCPClient)
-    client.name = name
-    client.start = start
-    return client
+class TestHttpServer:
+    @pytest.fixture
+    def http_server(self) -> Iterator[tuple[str, subprocess.Popen[bytes]]]:
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        server = subprocess.Popen(  # noqa: S603
+            [sys.executable, str(FIXTURE_SERVER), "--http", str(port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        try:
+            anyio.run(_wait_for_port, port)
+            yield f"http://127.0.0.1:{port}/mcp", server
+        finally:
+            server.terminate()
+            server.wait()
 
+    def test_discovers_and_calls_the_fixture_tool_over_http(
+        self,
+        http_server: tuple[str, subprocess.Popen[bytes]],
+    ) -> None:
+        url, _ = http_server
+        host = MCPHost([MCPServerConfig(name="remote", transport="http", url=url)])
+        tools, _ = host.start()
+        try:
+            assert [tool.name for tool in tools] == ["remote__echo"]
+            assert echo(manager_of(tools), "remote__echo", "hello over http") == "hello over http"
+        finally:
+            host.close()
 
-@pytest.mark.anyio
-async def test_start_clients_returns_tools_in_client_order() -> None:
-    first_tool, second_tool = MagicMock(), MagicMock()
+    def test_a_server_going_down_leaves_the_others_open(
+        self,
+        http_server: tuple[str, subprocess.Popen[bytes]],
+    ) -> None:
+        url, server = http_server
+        host = MCPHost([fixture_config(), MCPServerConfig(name="remote", transport="http", url=url)])
+        tools, _ = host.start()
+        try:
+            manager = manager_of(tools)
+            server.send_signal(signal.SIGTERM)
+            server.wait()
 
-    async def slow_start() -> list[MagicMock]:
-        await anyio.sleep(0.01)
-        return [first_tool]
-
-    clients = [make_client(AsyncMock(side_effect=slow_start)), make_client(AsyncMock(return_value=[second_tool]))]
-
-    assert await start_clients(clients) == ([first_tool, second_tool], {})
-
-
-@pytest.mark.anyio
-async def test_start_clients_starts_clients_concurrently() -> None:
-    both_started = anyio.Event()
-    started = 0
-
-    async def start() -> list[MagicMock]:
-        nonlocal started
-        started += 1
-        if started == 2:
-            both_started.set()
-        await both_started.wait()
-        return []
-
-    clients = [make_client(AsyncMock(side_effect=start)), make_client(AsyncMock(side_effect=start))]
-
-    with anyio.fail_after(1):
-        assert await start_clients(clients) == ([], {})
-
-
-@pytest.mark.anyio
-async def test_start_clients_skips_failed_clients_and_reports_them_by_name() -> None:
-    tool = MagicMock()
-    error = MCPStartupError("server failed")
-    clients = [
-        make_client(AsyncMock(side_effect=error), name="broken"),
-        make_client(AsyncMock(return_value=[tool]), name="working"),
-    ]
-
-    assert await start_clients(clients) == ([tool], {"broken": error})
-
-
-@pytest.mark.anyio
-async def test_start_clients_starts_fixture_next_to_a_missing_server() -> None:
-    clients = [
-        MCPClient(MCPServerConfig(name="missing", command="sensai-missing-mcp-server")),
-        MCPClient(MCPServerConfig(name="fixture", command=sys.executable, args=[str(FIXTURE_SERVER)])),
-    ]
-
-    tools, failures = await start_clients(clients)
-
-    assert [tool.name for tool in tools] == ["fixture__echo"]
-    assert list(failures) == ["missing"]
-    assert isinstance(failures["missing"], MCPStartupError)
-
-
-@pytest.mark.anyio
-async def test_start_clients_without_clients_returns_no_tools() -> None:
-    assert await start_clients([]) == ([], {})
-
-
-@pytest.fixture
-def http_fixture_url() -> Iterator[str]:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    server = subprocess.Popen(  # noqa: S603
-        [sys.executable, str(FIXTURE_SERVER), "--http", str(port)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    try:
-        anyio.run(_wait_for_port, port)
-        yield f"http://127.0.0.1:{port}/mcp"
-    finally:
-        server.terminate()
-        server.wait()
+            # The first call finds the connection gone, the next ones are refused right away.
+            assert echo(manager, "remote__echo", "gone").startswith("error: ")
+            assert echo(manager, "remote__echo", "gone").startswith(
+                "error: MCP server 'remote' disconnected, restart Sensai to reconnect: ",
+            )
+            assert echo(manager, "local__echo", "still here") == "still here"
+        finally:
+            host.close()
 
 
 async def _wait_for_port(port: int) -> None:
@@ -219,15 +155,91 @@ async def _wait_for_port(port: int) -> None:
                 return
 
 
-@pytest.mark.anyio
-async def test_discovers_and_calls_fixture_tool_over_http(http_fixture_url: str) -> None:
-    client = MCPClient(MCPServerConfig(name="remote", transport="http", url=http_fixture_url))
+class FakeSession:
+    """Session whose `serve` reports one tool after a delay, or fails, then stays open until `stop` is set."""
 
-    tools = await client.start()
-    result = await anyio.to_thread.run_sync(
-        ToolManager(tools).call,
-        {"function": {"name": "remote__echo", "arguments": {"message": "hello over http"}}},
-    )
+    behaviours: dict[str, tuple[float, Exception | None]]
+    started_names: list[str]
 
-    assert [tool.name for tool in tools] == ["remote__echo"]
-    assert result == {"role": "tool", "tool_name": "remote__echo", "content": "hello over http"}
+    def __init__(self, config: MCPServerConfig) -> None:
+        self.server_name = config.name
+
+    async def serve(
+        self,
+        _: object,
+        stop: anyio.Event,
+        *,
+        task_status: TaskStatus[list[MCPToolInfo]],
+    ) -> None:
+        delay, error = self.behaviours.get(self.server_name, (0, None))
+        self.started_names.append(self.server_name)
+        await anyio.sleep(delay)
+        if error is not None:
+            raise error
+        task_status.started([MCPToolInfo("echo", None, {"type": "object"})])
+        await stop.wait()
+
+
+@pytest.fixture
+def fake_sessions() -> Iterator[dict[str, tuple[float, Exception | None]]]:
+    FakeSession.behaviours = {}
+    FakeSession.started_names = []
+    with patch("sensai.mcp.client.MCPServerSession", FakeSession):
+        yield FakeSession.behaviours
+
+
+class TestStartup:
+    def test_returns_tools_in_configuration_order(self, fake_sessions: dict[str, tuple[float, None]]) -> None:
+        fake_sessions["slow"] = (0.05, None)
+        host = MCPHost([fixture_config("slow"), fixture_config("fast")])
+
+        tools, failures = host.start()
+        host.close()
+
+        assert [tool.name for tool in tools] == ["slow__echo", "fast__echo"]
+        assert failures == {}
+
+    def test_starts_servers_concurrently(self, fake_sessions: dict[str, tuple[float, None]]) -> None:
+        fake_sessions.update({"first": (0.5, None), "second": (0.5, None)})
+        host = MCPHost([fixture_config("first"), fixture_config("second")])
+
+        started_at = time.perf_counter()
+        host.start()
+        elapsed = time.perf_counter() - started_at
+        host.close()
+
+        assert elapsed < 0.9
+
+    def test_reports_failed_servers_by_name(self, fake_sessions: dict[str, tuple[float, Exception | None]]) -> None:
+        error = MCPStartupError("server failed")
+        fake_sessions["broken"] = (0, error)
+        host = MCPHost([fixture_config("broken"), fixture_config("working")])
+
+        tools, failures = host.start()
+        host.close()
+
+        assert [tool.name for tool in tools] == ["working__echo"]
+        assert failures == {"broken": error}
+
+    @pytest.mark.usefixtures("fake_sessions")
+    def test_skips_disabled_servers(self) -> None:
+        disabled = MCPServerConfig(name="disabled", command="server", enabled=False)
+        host = MCPHost([disabled, fixture_config("enabled")])
+
+        tools, _ = host.start()
+        host.close()
+
+        assert FakeSession.started_names == ["enabled"]
+        assert [tool.name for tool in tools] == ["enabled__echo"]
+
+    def test_starts_no_event_loop_without_enabled_server(self) -> None:
+        host = MCPHost([MCPServerConfig(name="disabled", command="server", enabled=False)])
+
+        with patch("sensai.mcp.client.start_blocking_portal") as start_blocking_portal:
+            assert host.start() == ([], {})
+            host.close()
+
+        start_blocking_portal.assert_not_called()
+
+    def test_close_before_start_does_nothing(self) -> None:
+        MCPHost([fixture_config()]).close()
