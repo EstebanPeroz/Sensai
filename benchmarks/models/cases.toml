@@ -1,0 +1,267 @@
+# Cases of the model benchmark. Every pattern is a case-insensitive regular expression: an answer passes when one of
+# its `expected` patterns matches.
+
+# Latency: the same question, alone, then after a long context, to see what reading the context costs.
+[latency]
+question = "Explain in about 100 words what a hash table is."
+filler = """A distributed system is a group of computers working together so that they appear to the user as a \
+single machine. Each node keeps part of the state, and the nodes exchange messages over the network to agree on it. \
+Networks lose, delay and reorder messages, and nodes crash and restart, so the protocols must tolerate partial \
+failures. Replication keeps copies of the data on several nodes, which helps availability but raises the question \
+of consistency: whether every reader sees the latest write. """
+# Repetitions of the filler making the long context, about 4,000 tokens.
+filler_repeat = 45
+runs = 3
+
+# Answers: questions with a single verifiable answer, asked through the ReAct loop without tools.
+[[quality]]
+id = "capital"
+prompt = "What is the capital of Australia?"
+expected = ["canberra"]
+
+[[quality]]
+id = "multiplication"
+prompt = "What is 17 multiplied by 23?"
+expected = ["\\b391\\b"]
+
+[[quality]]
+id = "apples"
+prompt = "J'ai 3 pommes, j'en mange une, puis j'en achète 5. Combien de pommes ai-je maintenant ?"
+expected = ["\\b7\\b", "\\bsept\\b"]
+
+[[quality]]
+id = "author"
+prompt = "Qui a écrit Les Misérables ?"
+expected = ["hugo"]
+
+[[quality]]
+id = "gold"
+prompt = "What is the chemical symbol of gold?"
+expected = ["\\bAu\\b"]
+
+[[quality]]
+id = "leap-year"
+prompt = "Combien de jours compte une année bissextile ?"
+expected = ["\\b366\\b"]
+
+[[quality]]
+id = "boiling"
+prompt = "At what temperature, in degrees Fahrenheit, does water boil at sea level?"
+expected = ["\\b212\\b"]
+
+[[quality]]
+id = "youngest"
+prompt = "Alice is older than Bob, and Bob is older than Carol. Who is the youngest?"
+expected = ["carol"]
+
+[[quality]]
+id = "sequence"
+prompt = "What is the next number of the sequence 2, 6, 12, 20, 30?"
+expected = ["\\b42\\b"]
+
+[[quality]]
+id = "train"
+prompt = "Un train part à 14h10 et arrive à 16h45. Combien de temps dure le trajet ?"
+expected = ["2\\s*h\\s*(?:et\\s*)?35", "\\b155\\s*min", "2 heures et 35"]
+
+[[quality]]
+id = "planet"
+prompt = "Which is the largest planet of the solar system?"
+expected = ["jupiter"]
+
+[[quality]]
+id = "fraction"
+prompt = "Write 0.75 as a fraction in lowest terms."
+expected = ["\\b3\\s*/\\s*4\\b", "\\\\frac\\{3\\}\\{4\\}"]
+
+[[quality]]
+id = "spiders"
+prompt = "How many legs do 3 spiders have in total?"
+expected = ["\\b24\\b"]
+
+[[quality]]
+id = "python-len"
+prompt = "In Python, what does len([1, [2, 3], 4]) return?"
+expected = ["\\b3\\b"]
+
+[[quality]]
+id = "square-root"
+prompt = "Quelle est la racine carrée de 144 ?"
+expected = ["\\b12\\b"]
+
+# Tools: the model is offered web_search, web_fetch and ask_user, which return the scripted `result`. The facts they
+# return are made up, so that a right answer shows that the model read the tool instead of its own knowledge.
+# `tool` is the tool the model should call first, none when it should answer alone.
+[[tools]]
+id = "sports-result"
+prompt = "Who won the 2026 Tour de France?"
+tool = "web_search"
+result = "Tour de France 2026 - final standings: 1. Lukas Brenner (GER) 2. Tadej Pogacar (SLO) 3. Remco Evenepoel (BEL)."
+expected = ["brenner"]
+
+[[tools]]
+id = "software-version"
+prompt = "What is the latest stable version of Python?"
+tool = "web_search"
+result = "Python 3.15.2 is the latest stable release, published on 2026-10-01 (python.org/downloads)."
+expected = ["3\\.15"]
+
+[[tools]]
+id = "weather"
+prompt = "Quel temps fait-il à Lyon aujourd'hui ?"
+tool = "web_search"
+result = "Météo Lyon, aujourd'hui : pluie faible, 14 °C, vent de sud 20 km/h."
+expected = ["\\b14\\b"]
+
+[[tools]]
+id = "price"
+prompt = "What is the current price of one bitcoin in US dollars?"
+tool = "web_search"
+result = "Bitcoin (BTC) price today: 71,240 USD, +1.8% over 24 hours."
+expected = ["71[,. ]?240"]
+
+[[tools]]
+id = "fetch-page"
+prompt = "Read https://example.com/sensai-release and tell me when Sensai 1.0 was released."
+tool = "web_fetch"
+result = "Sensai release notes - Sensai 1.0 was released on 12 November 2026, with the RAG and the web tools."
+expected = ["12 nov", "november 12", "12/11"]
+
+[[tools]]
+id = "ambiguous-booking"
+prompt = "Book me a train ticket."
+tool = "ask_user"
+result = "From Paris to Lyon, on Friday morning."
+expected = ["lyon"]
+
+[[tools]]
+id = "ambiguous-file"
+prompt = "Résume-moi le fichier."
+tool = "ask_user"
+result = "Le fichier rapport_ventes.txt."
+expected = []
+
+[[tools]]
+id = "greeting"
+prompt = "Hello, how are you?"
+tool = ""
+expected = []
+
+[[tools]]
+id = "arithmetic"
+prompt = "What is 12 times 12?"
+tool = ""
+expected = ["\\b144\\b"]
+
+[[tools]]
+id = "general-knowledge"
+prompt = "In one sentence, what is a list in Python?"
+tool = ""
+expected = ["list|liste|collection|sequence"]
+
+[[tools]]
+id = "translation"
+prompt = "Translate 'good morning' into French."
+tool = ""
+expected = ["bonjour"]
+
+# Instructions: every check of a case must pass. Checks: `language` (fr or en), `bullets` (exact number of list
+# items), `json_keys` (a JSON object holding these keys), `max_words`.
+[[instructions]]
+id = "answer-in-french"
+prompt = "Quels sont les avantages du vélo en ville ?"
+checks = [{ kind = "language", value = "fr" }]
+
+[[instructions]]
+id = "answer-in-english"
+prompt = "What are the benefits of cycling in a city?"
+checks = [{ kind = "language", value = "en" }]
+
+[[instructions]]
+id = "three-bullets"
+prompt = "Give three tips to sleep better, as a bulleted list of exactly 3 items, and nothing else."
+checks = [{ kind = "bullets", value = 3 }]
+
+[[instructions]]
+id = "json-only"
+prompt = "Give the city and the country of the Eiffel Tower as a JSON object with the keys 'city' and 'country'. Output only the JSON."
+checks = [{ kind = "json_keys", value = ["city", "country"] }]
+
+[[instructions]]
+id = "one-word"
+prompt = "Answer with a single word: what colour is the sky on a clear day?"
+checks = [{ kind = "max_words", value = 2 }]
+
+[[instructions]]
+id = "short-french"
+prompt = "Réponds en moins de 25 mots : qu'est-ce que Docker ?"
+checks = [{ kind = "language", value = "fr" }, { kind = "max_words", value = 25 }]
+
+# Memory: facts given in the first messages, buried under filler exchanges, then asked back one at a time, with the
+# whole conversation, then with its oldest messages summarised by the compression.
+[memory]
+keep_recent = 4
+facts = [
+    "Je m'appelle Camille et j'habite à Nantes.",
+    "Pour ce voyage, mon budget total est de 1 200 euros.",
+    "Mon vol pour Lisbonne part le 14 mars.",
+    "Attention, je suis allergique aux arachides.",
+    "Mon chat s'appelle Moka, c'est ma voisine qui le gardera.",
+]
+fact_reply = "C'est noté."
+
+[[memory.filler]]
+question = "Quels quartiers visiter à Lisbonne ?"
+answer = """L'Alfama, le plus ancien quartier, avec ses ruelles en pente et ses points de vue sur le Tage ; le Bairro \
+Alto, animé le soir ; la Baixa, reconstruite après le tremblement de terre de 1755, avec ses places et ses rues \
+commerçantes ; et Belém, pour la tour, le monastère des Hiéronymites et les pastéis de nata."""
+
+[[memory.filler]]
+question = "Comment se déplacer dans la ville ?"
+answer = """Le métro couvre bien le centre et va jusqu'à l'aéroport. Les tramways, dont le célèbre 28, montent dans \
+les quartiers anciens, mais ils sont souvent bondés. La carte Viva Viagem, rechargeable, sert pour le métro, le tram, \
+les bus et les ferries. Pour les collines, les funiculaires évitent de longues montées à pied."""
+
+[[memory.filler]]
+question = "Quelle est la meilleure période pour y aller ?"
+answer = """Le printemps et le début de l'automne sont les plus agréables : il fait entre 18 et 25 °C, avec moins de \
+touristes qu'en été. En juillet et en août, il peut faire plus de 35 °C et les prix montent. L'hiver est doux mais \
+pluvieux, ce qui convient si l'on vient surtout pour les musées et la cuisine."""
+
+[[memory.filler]]
+question = "Que faut-il goûter là-bas ?"
+answer = """Les pastéis de nata, bien sûr, la morue sous toutes ses formes, comme le bacalhau à brás, les sardines \
+grillées en été, la bifana, un sandwich au porc mariné, et le ginjinha, une liqueur de griotte servie dans de petits \
+bars du centre. Les marchés, comme le Time Out Market, permettent de tout goûter au même endroit."""
+
+[[memory.filler]]
+question = "Des excursions à faire autour de Lisbonne ?"
+answer = """Sintra, à quarante minutes en train, pour ses palais et ses jardins dans la forêt ; Cascais, une station \
+balnéaire au bord de l'océan ; le cap da Roca, le point le plus à l'ouest du continent ; et, plus loin, la péninsule \
+de Setúbal, pour ses plages et ses dauphins."""
+
+[[memory.filler]]
+question = "Et pour le logement, quel quartier choisir ?"
+answer = """Pour un premier séjour, la Baixa ou le Chiado sont centraux et bien desservis. L'Alfama a plus de charme \
+mais ses rues sont raides et bruyantes le soir. Príncipe Real est plus calme et élégant. Réservez tôt pour le \
+printemps, et vérifiez qu'il y a un ascenseur, car beaucoup d'immeubles anciens n'en ont pas."""
+
+[[memory.questions]]
+prompt = "Comment s'appelle mon chat ?"
+expected = ["moka"]
+
+[[memory.questions]]
+prompt = "Quel est mon budget pour ce voyage ?"
+expected = ["1[\\s.,]?200"]
+
+[[memory.questions]]
+prompt = "Dans quelle ville est-ce que j'habite ?"
+expected = ["nantes"]
+
+[[memory.questions]]
+prompt = "Quel jour part mon vol ?"
+expected = ["14 mars"]
+
+[[memory.questions]]
+prompt = "À quoi suis-je allergique ?"
+expected = ["arachide|cacahu"]
