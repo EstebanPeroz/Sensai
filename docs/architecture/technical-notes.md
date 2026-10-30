@@ -228,8 +228,9 @@ when free-tier quotas run out, or when the API is down.
 ## Model benchmark
 
 A script, kept on the `feat/benchmarks` branch, asks a fixed set of cases to one
-model at a time, through Sensai's own ReAct loop and compressor. The raw results
-of each model and every table are in `benchmarks/models/results/`.
+model at a time, through Sensai's own ReAct loop and compressor. Every table is
+in `benchmarks/models/results/`, and the raw results of each model, with every
+answer, next to the script.
 Tools are offered with their real name, description and parameters, but return
 a scripted result, so the run needs no network and scores only the model.
 
@@ -300,7 +301,8 @@ cosine similarity reaches `cache.similarity_threshold` (0.95). A second script,
 on the `feat/benchmarks` branch too, measures each model through Sensai's
 `Embedder` and cosine similarity, on texts sent as Sensai sends them, without
 the task prefixes some models are trained with (`search_query:` for nomic).
-Results are in `benchmarks/embeddings/results/`.
+Every table is in `benchmarks/embeddings/results/`, the raw results next to the
+script.
 
 - **Retrieval:** 20 questions, each searched among 24 passages on 4 topics
   (composting and renting in French, sourdough and Wi-Fi in English), so the
