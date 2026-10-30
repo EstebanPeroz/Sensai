@@ -26,6 +26,9 @@ from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
+from sensai_server.pipeline import ChatPipeline
+from sensai_server.pipeline.modules import ModelStage, PersonaStage
+from sensai_server.pipeline.modules.guardrails import BadWordsGuard
 from sensai_server.session import SessionRegistry
 
 if TYPE_CHECKING:
@@ -43,9 +46,11 @@ def create_app(
     """Build a new app serving the `/ws` route, logging clients in on the models of the configured providers.
 
     `settings` are the loaded settings, kept in the app state (see `app_state`). The persistent database is opened,
-    and the default persona is stored in it if it is not there yet. `chat` runs a chat prompt as a session's task.
+    and the default persona is stored in it if it is not there yet. The chat pipeline is built once
+    (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task.
     """
     pm: ProviderManager = ProviderManager(settings.llm)
+    pipeline = _build_pipeline(pm)
     set_db(settings.db.persistent)
     db = get_db()
     if db is None:
@@ -69,10 +74,16 @@ def create_app(
             persona_manager=persona_manager,
             registry=sessions,
             commands=commands,
+            pipeline=pipeline,
         ),
     )
     app.include_router(router)
     return app
+
+
+def _build_pipeline(pm: ProviderManager) -> ChatPipeline:
+    """Build the chain every chat goes through: the guard first, then the persona, then the model."""
+    return ChatPipeline(ModelStage(pm)).use(BadWordsGuard()).use(PersonaStage())
 
 
 @router.websocket("/ws")
@@ -119,7 +130,7 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message)
+            await handlers.handle_chat(session, message, state.pipeline, state.db)
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():

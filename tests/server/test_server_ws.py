@@ -1,7 +1,9 @@
+import threading
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 from sensai_protocol import (
@@ -31,15 +33,19 @@ from sensai_protocol import (
     parse_server_message,
 )
 from sensai_server.app import _handlers as handlers
+from sensai_server.app._state import app_state
 from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
 from sensai_server.commands._effort import Effort as EffortCommand
 from sensai_server.commands._help import Help
 from sensai_server.commands._model import Model
+from sensai_server.pipeline import ChatPipeline
+from sensai_server.pipeline.modules.guardrails import WARNING
 from sensai_server.session import SessionRegistry
 from starlette.testclient import WebSocketTestSession
 
 from tests.server.conftest import ASK, CONFIRM, FILE, MODEL, PERSONA_PATH, SLOW
+from tests.server.fakes import FakeAdapter, chunk
 
 
 def _receive(ws: WebSocketTestSession) -> ServerMessage:
@@ -459,6 +465,20 @@ class TestDispatch:
         assert received_session.client_id == session.client_id
         assert received_message == message
 
+    def test_chat_reaches_its_handler_with_the_pipeline_and_db(
+        self, app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        handler = AsyncMock()
+        monkeypatch.setattr(handlers, "handle_chat", handler)
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt="hi"))
+            _sync(ws)
+        assert handler.await_args is not None
+        _, _, pipeline, db = handler.await_args.args
+        assert pipeline is app_state(app).pipeline
+        assert db is app_state(app).db
+
     def test_logout_reaches_its_handler_with_the_registry(
         self, client: TestClient, registry: SessionRegistry, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -510,3 +530,54 @@ class TestCleanup:
             _send(second, Complete(text="/x"))
             assert _receive(second) == Completions(text="/x", values=[])
         assert len(registry) == 0
+
+
+class TestEndToEnd:
+    """The real chat, through the pipeline built by `create_app`, answered by `FakeAdapter`."""
+
+    @pytest.fixture(autouse=True)
+    def replies(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(FakeAdapter, "replies", [chunk("Hel"), chunk("lo", done=True)])
+
+    def test_app_state_has_a_pipeline(self, real_app: FastAPI) -> None:
+        assert isinstance(app_state(real_app).pipeline, ChatPipeline)
+
+    def test_chat_streams_the_model_answer(self, real_client: TestClient) -> None:
+        with real_client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt="hello"))
+            assert _receive(ws) == Input(role=Role.USER, content="hello")
+            assert _receive(ws) == AiChunk(content="Hel", done=False)
+            assert _receive(ws) == AiChunk(content="lo", done=True)
+            _sync(ws)  # the prompt is echoed only once, and nothing follows the last chunk
+        assert FakeAdapter.last_payload is not None
+        assert FakeAdapter.last_payload["model"] == MODEL
+        assert FakeAdapter.last_payload["messages"][-1] == {"role": "user", "content": "hello"}
+
+    def test_bad_word_is_answered_without_the_model(self, real_client: TestClient) -> None:
+        with real_client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt="fuck"))
+            assert _receive(ws) == Input(role=Role.USER, content="fuck")
+            assert _receive(ws) == AiChunk(content=WARNING, done=True)
+            _sync(ws)
+        assert FakeAdapter.last_payload is None
+
+    def test_cancel_mid_stream_then_chat(self, real_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        block = threading.Event()
+        monkeypatch.setattr(FakeAdapter, "block", block)
+        try:
+            with real_client.websocket_connect("/ws") as ws:
+                _login(ws)
+                _send(ws, Chat(prompt="hello"))
+                _receive(ws)
+                assert _receive(ws) == AiChunk(content="Hel", done=False)
+                _send(ws, Cancel())
+                _send(ws, Chat(prompt="again"))
+                assert _receive(ws) == Input(role=Role.USER, content="again")
+                block.set()
+                assert FakeAdapter.closed.wait(timeout=5)
+                assert _receive(ws) == AiChunk(content="Hel", done=False)
+                assert _receive(ws) == AiChunk(content="lo", done=True)
+        finally:
+            block.set()

@@ -13,8 +13,9 @@ from sensai_server.commands._persona import read_persona_file
 from sensai_server.config.settings import DBSettings, LLMSettings, OllamaSettings, PersistentDBSettings, Settings
 from sensai_server.llm.persona import PersonaError, PersonaManager
 from sensai_server.llm.provider import provider_manager
-from sensai_server.memory.persistent_db import base
+from sensai_server.memory.persistent_db import PersistentDatabase, base
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
+from sensai_server.pipeline import ChatPipeline
 from sensai_server.session import Session, SessionRegistry
 
 from tests.server.fakes import FakeAdapter
@@ -27,7 +28,7 @@ FILE = "file"
 PERSONA_PATH = "x.toml"
 
 
-async def fake_chat(session: Session, prompt: str) -> None:
+async def fake_chat(session: Session, prompt: str, _pipeline: ChatPipeline, _db: PersistentDatabase) -> None:
     """Answer with the prompt in one chunk. A `slow` prompt then streams forever, until cancelled.
 
     A `confirm` prompt first asks to run a tool, an `ask` prompt asks the user a question, and the answer is the
@@ -110,4 +111,16 @@ def registry(app: FastAPI) -> SessionRegistry:
 @pytest.fixture
 def client(app: FastAPI) -> Iterator[TestClient]:
     with TestClient(app) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def real_app(tmp_path: Path) -> FastAPI:
+    """The app, answering chats with the real chat through its pipeline, on the models of `FakeAdapter`."""
+    return create_app(settings_with_db(tmp_path))
+
+
+@pytest.fixture
+def real_client(real_app: FastAPI) -> Iterator[TestClient]:
+    with TestClient(real_app) as test_client:
         yield test_client

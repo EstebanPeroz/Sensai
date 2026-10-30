@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
+    from sensai_server.pipeline import ChatPipeline
     from sensai_server.session import SessionRegistry
 
 # The attribute of `app.state` holding the `AppState`.
@@ -31,6 +32,7 @@ class AppState:
     persona_manager: PersonaManager
     registry: SessionRegistry
     commands: CommandRegistry
+    pipeline: ChatPipeline
 
 
 def set_app_state(app: Starlette, state: AppState) -> None:
