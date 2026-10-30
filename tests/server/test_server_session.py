@@ -1,5 +1,4 @@
 import asyncio
-from uuid import uuid4
 
 from sensai_protocol import Error
 from sensai_server.llm.persona import PersonaManager
@@ -13,7 +12,7 @@ from tests.server.fakes import RecordingOutbound
 
 def _session(persona_manager: PersonaManager) -> tuple[Session, RecordingOutbound]:
     out = RecordingOutbound()
-    return Session(uuid4(), out, ProviderManager(SETTINGS.llm), persona_manager, ToolManager()), out
+    return Session(out, ProviderManager(SETTINGS.llm), persona_manager, ToolManager()), out
 
 
 async def _forever(started: asyncio.Event) -> None:

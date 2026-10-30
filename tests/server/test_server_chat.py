@@ -2,7 +2,6 @@ import asyncio
 import threading
 from collections.abc import Iterator
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from sensai_protocol import AiChunk, Error, Input, Role, ServerMessage, System
@@ -37,7 +36,7 @@ def pm() -> ProviderManager:
 
 @pytest.fixture
 def session(pm: ProviderManager, persona_manager: PersonaManager) -> Session:
-    session = Session(uuid4(), RecordingOutbound(), pm, persona_manager, ToolManager())
+    session = Session(RecordingOutbound(), pm, persona_manager, ToolManager())
     session.conv.model = MODEL
     return session
 
@@ -200,6 +199,12 @@ class TestChat:
             {"role": "user", "content": "hello"},
         ]
         assert all(message["role"] != "system" for message in _history(session))
+
+    async def test_context_carries_the_tool_state_of_the_session(self, session: Session, db: SqlAlchemy) -> None:
+        model = RecordingNext(ChatResponse(chunk("a", done=True)))
+        await chat(session, "hello", ChatPipeline(model), db)
+        assert [context.tools for context in model.calls] == [session.tools]
+        assert model.calls[0].tools is session.tools
 
     async def test_cancel_saves_no_answer(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         block = threading.Event()
