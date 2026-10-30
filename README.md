@@ -94,6 +94,20 @@ in `pyproject.toml` under `[tool.ruff]`. The pre-commit hooks, defined in
 
 The CI rejects any code that does not pass these checks or the tests.
 
+## Model benchmark
+
+`benchmarks/models/` measures the chat models against a running Ollama, outside of the test suite: latency and
+throughput, answers to questions with a single right answer, tool use through the ReAct loop (with scripted tool
+results, so that no network is involved), instruction following, and recall of facts from a long conversation, whole
+and compressed. The cases are in `benchmarks/models/cases.toml`.
+
+```sh
+make bench MODEL=qwen3:4b   # benchmark one model, saved in benchmarks/models/results/<model>.json
+make bench-report           # render the tables of every saved model into benchmarks/models/results/README.md
+```
+
+`python -m benchmarks.models run <model> --only tools memory` runs only some of the categories.
+
 ## Make targets
 
 | Target    | Description                                                     |
@@ -105,6 +119,8 @@ The CI rejects any code that does not pass these checks or the tests.
 | `lint`    | Runs every pre-commit check on all files                        |
 | `format`  | Runs `ruff format` and `ruff check --fix`                       |
 | `lock`    | Regenerates `uv.lock` from `pyproject.toml`                     |
+| `bench`   | Benchmarks the model `MODEL` against Ollama                     |
+| `bench-report` | Renders the tables of every benchmarked model              |
 
 ## Dependencies
 
@@ -147,6 +163,7 @@ versions.
 │       ├── __main__.py       # `python -m sensai`, delegates to main()
 │       ├── main.py           # entry point and composition root: main()
 │       └── parsing.py        # command line arguments
+├── benchmarks/models/         # model benchmark, run against a real Ollama
 ├── tests/                    # pytest test suite
 └── docs/
 ```

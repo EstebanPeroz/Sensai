@@ -20,6 +20,12 @@ run-server:
 
 run-tui:
 	uv run --package sensai-tui sensai-tui --model ${MODEL}
+bench:
+	uv run python -m benchmarks.models run ${MODEL}
+
+bench-report:
+	uv run python -m benchmarks.models report
+
 qdrant:
 	docker compose up -d --wait
 
@@ -42,4 +48,4 @@ format:
 lock:
 	uv lock
 
-.PHONY: all install run run-server run-tui qdrant qdrant-stop tests lint format lock
+.PHONY: all install run run-server run-tui bench bench-report qdrant qdrant-stop tests lint format lock
