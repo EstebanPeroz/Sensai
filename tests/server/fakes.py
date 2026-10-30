@@ -1,4 +1,5 @@
-from collections.abc import Iterator
+import threading
+from collections.abc import AsyncIterator, Iterator
 from typing import ClassVar, Literal, cast, overload, override
 
 from fastapi import WebSocket
@@ -7,6 +8,7 @@ from sensai_server.app.outbound import Outbound
 from sensai_server.config.settings import OllamaSettings
 from sensai_server.llm.error import RequestCallError
 from sensai_server.llm.provider import ChatResponse, ProviderAdapter, ShowResponse
+from sensai_server.pipeline import ChatContext
 
 
 class RecordingOutbound(Outbound):
@@ -22,12 +24,20 @@ class RecordingOutbound(Outbound):
 
 
 class FakeAdapter(ProviderAdapter):
-    """A provider serving `models` without any network call; `load` can be made to refuse or fail."""
+    """A provider serving `models` without any network call; `load` can be made to refuse or fail.
+
+    A streamed `chat` records its payload in `last_payload` and yields `replies`, each an Ollama payload. When
+    `block` is set, it waits on it after the first reply. The `closed` event is set once the stream has been closed.
+    """
 
     models: ClassVar[list[str]] = ["a", "b"]
     refused: ClassVar[set[str]] = set()
     failing: ClassVar[set[str]] = set()
     unreachable: ClassVar[bool] = False
+    replies: ClassVar[list[dict]] = []
+    last_payload: ClassVar[dict | None] = None
+    block: ClassVar[threading.Event | None] = None
+    closed: ClassVar[threading.Event] = threading.Event()
 
     def __init__(self, settings: OllamaSettings) -> None:
         self.settings = settings
@@ -40,7 +50,19 @@ class FakeAdapter(ProviderAdapter):
 
     @override
     def chat(self, payload: dict, *, stream: bool) -> ChatResponse | Iterator[ChatResponse]:
-        raise NotImplementedError
+        if not stream:
+            raise NotImplementedError
+        type(self).last_payload = payload
+        return self._stream()
+
+    def _stream(self) -> Iterator[ChatResponse]:
+        try:
+            for index, reply in enumerate(self.replies):
+                if index == 1 and self.block is not None:
+                    self.block.wait()
+                yield ChatResponse(reply)
+        finally:
+            self.closed.set()
 
     @override
     def embedding(self, message: str, model: str) -> list:
@@ -74,3 +96,23 @@ class FakeAdapter(ProviderAdapter):
             msg = " Get -> connection refused"
             raise RequestCallError(msg)
         return self.models
+
+
+def chunk(content: str, *, done: bool = False) -> dict:
+    """An Ollama `/api/chat` payload streaming `content`."""
+    return {"done": done, "message": {"role": "assistant", "content": content}}
+
+
+class RecordingNext:
+    """A `Next` that streams `chunks` and records the context of every call."""
+
+    def __init__(self, *chunks: ChatResponse) -> None:
+        self.chunks = chunks
+        self.calls: list[ChatContext] = []
+        self.seen_messages: list[list[dict]] = []
+
+    async def __call__(self, context: ChatContext) -> AsyncIterator[ChatResponse]:
+        self.calls.append(context)
+        self.seen_messages.append(list(context.messages))
+        for item in self.chunks:
+            yield item

@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -88,6 +89,10 @@ def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(FakeAdapter, "refused", set())
     monkeypatch.setattr(FakeAdapter, "failing", set())
     monkeypatch.setattr(FakeAdapter, "unreachable", False)
+    monkeypatch.setattr(FakeAdapter, "replies", [])
+    monkeypatch.setattr(FakeAdapter, "last_payload", None)
+    monkeypatch.setattr(FakeAdapter, "block", None)
+    monkeypatch.setattr(FakeAdapter, "closed", threading.Event())
 
 
 @pytest.fixture
