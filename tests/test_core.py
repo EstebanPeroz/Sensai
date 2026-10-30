@@ -168,9 +168,40 @@ def test_core_creates_mcp_client_for_configured_server() -> None:
             return_value=[],
         ),
     ):
-        Core(MagicMock(), Settings(mcp=config), Namespace(model="model"))
+        Core(MagicMock(), Settings(mcp=[config]), Namespace(model="model"))
 
     mcp_client.assert_called_once_with(config)
+
+
+def test_core_creates_one_mcp_client_per_configured_server() -> None:
+    provider_manager = MagicMock()
+    provider_manager.set_model.return_value = True
+    first = MCPServerConfig(name="first", command="first")
+    second = MCPServerConfig(name="second", command="second")
+    first_tool = MCPTool(MCPToolInfo("echo", "Echo text", {"type": "object"}), MagicMock())
+    second_tool = MCPTool(MCPToolInfo("search", "Search text", {"type": "object"}), MagicMock())
+
+    with (
+        patch("sensai.core.core.get_db", return_value=MagicMock()),
+        patch(
+            "sensai.core.core.ProviderManager",
+            return_value=provider_manager,
+        ),
+        patch(
+            "sensai.core.core.MCPClient",
+        ) as mcp_client_type,
+        patch(
+            "sensai.core.core.anyio.run",
+            side_effect=[[first_tool], [second_tool]],
+        ),
+        patch(
+            "sensai.core.core.ToolManager",
+        ) as tool_manager_type,
+    ):
+        Core(MagicMock(), Settings(mcp=[first, second]), Namespace(model="model"))
+
+    assert [call.args for call in mcp_client_type.call_args_list] == [(first,), (second,)]
+    assert tool_manager_type.call_args.args[0][-2:] == [first_tool, second_tool]
 
 
 def test_core_registers_discovered_mcp_tools() -> None:
@@ -197,7 +228,7 @@ def test_core_registers_discovered_mcp_tools() -> None:
             "sensai.core.core.ToolManager",
         ) as tool_manager_type,
     ):
-        Core(MagicMock(), Settings(mcp=config), Namespace(model="model"))
+        Core(MagicMock(), Settings(mcp=[config]), Namespace(model="model"))
 
     run.assert_called_once_with(mcp_client_type.return_value.start)
     tool_manager_type.assert_called_once()
@@ -227,7 +258,7 @@ def test_core_runs_with_mcp_client() -> None:
             return_value=[],
         ) as run,
     ):
-        core = Core(ui, Settings(mcp=MCPServerConfig(name="server", command="server")), Namespace(model="model"))
+        core = Core(ui, Settings(mcp=[MCPServerConfig(name="server", command="server")]), Namespace(model="model"))
         core.run()
 
     run.assert_called_once()

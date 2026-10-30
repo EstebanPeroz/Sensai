@@ -50,3 +50,11 @@ log_content = true
 budget = 8192
 # Share of the budget past which the usage is flagged.
 warning_threshold = 0.8
+
+# MCP servers to start, one `[mcp.<name>]` table each; the name must only contain letters, digits, '_' or '-'.
+# [mcp.filesystem]
+# command = "npx"
+# args = ["--yes", "@modelcontextprotocol/server-filesystem", "/tmp/sensai-mcp-demo"]
+# enabled = true
+# startup_timeout = 30
+# call_timeout = 30

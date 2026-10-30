@@ -18,6 +18,7 @@ from sensai.config.settings import (
     default_settings_file,
     load_settings,
 )
+from sensai.mcp.config import MCPServerConfig
 
 
 def write_config(tmp_path: Path, content: str) -> Path:
@@ -71,7 +72,7 @@ class TestDefaults:
         assert load_settings(write_config(tmp_path, "")) == Settings()
 
     def test_missing_mcp_configuration_gives_no_mcp_server(self, tmp_path: Path) -> None:
-        assert load_settings(write_config(tmp_path, "")).mcp is None
+        assert load_settings(write_config(tmp_path, "")).mcp == []
 
 
 class TestMCP:
@@ -79,30 +80,38 @@ class TestMCP:
         settings = load_settings(
             write_config(
                 tmp_path,
-                '[mcp]\ncommand = "uv"\nargs = ["run", "server.py"]\nstartup_timeout = 5\ncall_timeout = 20\n',
+                '[mcp.echo]\ncommand = "uv"\nargs = ["run", "server.py"]\nstartup_timeout = 5\ncall_timeout = 20\n',
             ),
         )
 
-        assert settings.mcp is not None
-        assert settings.mcp.name == "mcp"
-        assert settings.mcp.command == "uv"
-        assert settings.mcp.args == ["run", "server.py"]
-        assert settings.mcp.enabled is True
-        assert settings.mcp.startup_timeout == 5
-        assert settings.mcp.call_timeout == 20
+        assert settings.mcp == [
+            MCPServerConfig(name="echo", command="uv", args=["run", "server.py"], startup_timeout=5, call_timeout=20),
+        ]
+
+    def test_loads_several_servers_named_after_their_table(self, tmp_path: Path) -> None:
+        settings = load_settings(
+            write_config(tmp_path, '[mcp.echo]\ncommand = "uv"\n\n[mcp.filesystem]\ncommand = "npx"\n'),
+        )
+
+        assert settings.mcp == [
+            MCPServerConfig(name="echo", command="uv"),
+            MCPServerConfig(name="filesystem", command="npx"),
+        ]
 
     def test_loads_disabled_server(self, tmp_path: Path) -> None:
-        settings = load_settings(write_config(tmp_path, '[mcp]\ncommand = "server"\nenabled = false\n'))
+        settings = load_settings(write_config(tmp_path, '[mcp.server]\ncommand = "server"\nenabled = false\n'))
 
-        assert settings.mcp is not None
-        assert settings.mcp.enabled is False
+        assert settings.mcp[0].enabled is False
 
     @pytest.mark.parametrize(
         ("content", "reason"),
         [
-            ('[mcp]\ncommand = ""\n', "command must be a non-empty string"),
-            ('[mcp]\ncommand = "server"\nstartup_timeout = 0\n', "startup timeout must be greater than zero"),
-            ('[mcp]\ncommand = "server"\ncall_timeout = -1\n', "call timeout must be greater than zero"),
+            ('[mcp]\ncommand = "server"\n', "command must be a table"),
+            ('[mcp."my server"]\ncommand = "server"\n', "server name must be non-empty"),
+            ('[mcp.server]\nname = "other"\ncommand = "server"\n', "multiple values for keyword argument 'name'"),
+            ('[mcp.server]\ncommand = ""\n', "command must be a non-empty string"),
+            ('[mcp.server]\ncommand = "server"\nstartup_timeout = 0\n', "startup timeout must be greater than zero"),
+            ('[mcp.server]\ncommand = "server"\ncall_timeout = -1\n', "call timeout must be greater than zero"),
         ],
     )
     def test_invalid_mcp_values_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:

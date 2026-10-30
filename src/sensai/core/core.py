@@ -53,7 +53,7 @@ class Core:
     _command_registry: CommandRegistry
     _settings: Settings
     _events: EventBus
-    _mcp_client: MCPClient | None
+    _mcp_clients: list[MCPClient]
     _tool_manager: ToolManager
     _context_budget: ContextBudget
 
@@ -61,7 +61,7 @@ class Core:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
         self._ui = ui
         self._settings = settings
-        self._mcp_client = MCPClient(settings.mcp) if settings.mcp is not None else None
+        self._mcp_clients = [MCPClient(config) for config in settings.mcp]
 
         db = get_db()
         if db is None:
@@ -83,8 +83,8 @@ class Core:
         InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder, self._ui.ask_user)
-        if self._mcp_client is not None:
-            tools.extend(anyio.run(self._mcp_client.start))
+        for mcp_client in self._mcp_clients:
+            tools.extend(anyio.run(mcp_client.start))
         self._tool_manager = ToolManager(
             tools,
             disabled=settings.features.disabled_in("tools"),

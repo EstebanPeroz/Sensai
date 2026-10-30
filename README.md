@@ -46,13 +46,14 @@ uv run sensai             # run the program
 
 ## MCP server configuration
 
-Sensai currently starts one MCP server over stdio. Configure it in the settings file with
-`command`, `args`, `enabled`, `startup_timeout`, and `call_timeout`.
+Sensai starts every MCP server configured in the settings file, over stdio. Each server has its own
+`[mcp.<name>]` table, whose name must only contain letters, digits, `_` or `-`, with `command`, `args`,
+`enabled`, `startup_timeout`, and `call_timeout`.
 
 The local deterministic test server exposes an `echo` tool:
 
 ```toml
-[mcp]
+[mcp.echo]
 command = "uv"
 args = ["run", "python", "tests/mcp/fixtures/tiny_server.py"]
 enabled = true
@@ -64,7 +65,7 @@ The tested pre-existing MCP server is the official filesystem server. It exposes
 `list_allowed_directories` and is started with `npx`:
 
 ```toml
-[mcp]
+[mcp.filesystem]
 command = "npx"
 args = ["--yes", "@modelcontextprotocol/server-filesystem", "/tmp/sensai-mcp-demo"]
 enabled = true
