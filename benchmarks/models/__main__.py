@@ -13,8 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import requests
-
+from benchmarks import ollama
 from benchmarks.models.report import render
 from benchmarks.models.runner import Benchmark
 from sensai.config.settings import load_settings
@@ -37,7 +36,6 @@ HERE = Path(__file__).parent
 CASES = HERE / "cases.toml"
 RESULTS = HERE / "results"
 CATEGORIES = ("latency", "quality", "tools", "instructions", "memory")
-OLLAMA_TIMEOUT = 5
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -80,14 +78,14 @@ def benchmark(model: str, categories: Sequence[str]) -> int:
     result: dict[str, Any] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     result |= {
         "model": model,
-        "size_gb": _size_gb(settings, model),
+        "size_gb": ollama.size_gb(settings, model),
         "date": datetime.now(tz=UTC).isoformat(timespec="seconds"),
         "context_window": settings.context.budget,
     }
     for category in categories:
         result[category] = getattr(bench, category)()
     # Read while the model is still loaded: a model too large for the GPU runs partly on the CPU, much slower.
-    result["gpu_share"] = _gpu_share(settings, model)
+    result["gpu_share"] = ollama.gpu_share(settings, model)
     RESULTS.mkdir(exist_ok=True)
     path.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"results saved to {path}", file=sys.stderr)
@@ -114,32 +112,6 @@ def _tools(settings: Settings, provider_manager: ProviderManager) -> list[Tool]:
     """
     embedder = Embedder(provider_manager.provider(), settings.llm.embedding_model or "")
     return [WebSearchTool(SearchChain([])), WebFetchTool(FetchChain([]), embedder), AskUserTool(lambda _question: None)]
-
-
-def _size_gb(settings: Settings, model: str) -> float | None:
-    """Size of `model` on disk, as Ollama lists it, None when it cannot tell."""
-    sizes = [entry["size"] for entry in _ollama_models(settings, "api/tags") if entry.get("name") == model]
-    return round(sizes[0] / 1e9, 2) if sizes else None
-
-
-def _gpu_share(settings: Settings, model: str) -> float | None:
-    """Share of the loaded `model` that sits in the memory of the GPU, None when it is not loaded."""
-    loaded = [entry for entry in _ollama_models(settings, "api/ps") if entry.get("name") == model]
-    if not loaded or not loaded[0].get("size"):
-        return None
-    return round(loaded[0].get("size_vram", 0) / loaded[0]["size"], 2)
-
-
-def _ollama_models(settings: Settings, endpoint: str) -> list[dict[str, Any]]:
-    """Models listed by the Ollama `endpoint`, `api/tags` for the installed ones or `api/ps` for the loaded ones."""
-    provider = settings.llm.providers.get("ollama")
-    if provider is None:
-        return []
-    try:
-        response = requests.get(f"{provider.base_url.rstrip('/')}/{endpoint}", timeout=OLLAMA_TIMEOUT)
-        return response.json().get("models", [])
-    except requests.RequestException, ValueError:
-        return []
 
 
 if __name__ == "__main__":
