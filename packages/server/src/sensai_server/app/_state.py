@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
     from sensai_server.commands import CommandRegistry
     from sensai_server.config.settings import Settings
+    from sensai_server.llm.embedder import Embedder
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
@@ -28,6 +29,7 @@ class AppState:
 
     settings: Settings
     provider_manager: ProviderManager
+    embedder: Embedder | None
     db: PersistentDatabase
     persona_manager: PersonaManager
     registry: SessionRegistry

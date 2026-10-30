@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
@@ -22,6 +23,7 @@ from sensai_server.app import _handlers as handlers
 from sensai_server.app._state import AppState, app_state, set_app_state
 from sensai_server.app.outbound import Outbound
 from sensai_server.commands import CommandRegistry, build_commands
+from sensai_server.llm.embedder import Embedder
 from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
@@ -37,6 +39,8 @@ if TYPE_CHECKING:
     from sensai_server.config.settings import Settings
     from sensai_server.session.session import Session
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
@@ -50,6 +54,7 @@ def create_app(
     (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task.
     """
     pm: ProviderManager = ProviderManager(settings.llm)
+    embedder = _build_embedder(settings, pm)
     pipeline = _build_pipeline(pm)
     set_db(settings.db.persistent)
     db = get_db()
@@ -70,6 +75,7 @@ def create_app(
         AppState(
             settings=settings,
             provider_manager=pm,
+            embedder=embedder,
             db=db,
             persona_manager=persona_manager,
             registry=sessions,
@@ -84,6 +90,21 @@ def create_app(
 def _build_pipeline(pm: ProviderManager) -> ChatPipeline:
     """Build the chain every chat goes through: the guard first, then the persona, then the model."""
     return ChatPipeline(ModelStage(pm)).use(BadWordsGuard()).use(PersonaStage())
+
+
+def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:
+    """Build the embedder of the web tools, or None without an embedding model or a provider serving it.
+
+    Without it, the web tools are left out: at startup there is no client to tell, so a missing provider is logged.
+    """
+    model = settings.llm.embedding_model
+    if model is None:
+        return None
+    provider = pm.get_provider(model)
+    if provider is None:
+        logger.warning("no provider serves the embedding model '%s': the web tools are left out", model)
+        return None
+    return Embedder(provider, model)
 
 
 @router.websocket("/ws")
