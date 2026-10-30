@@ -94,7 +94,7 @@ in `pyproject.toml` under `[tool.ruff]`. The pre-commit hooks, defined in
 
 The CI rejects any code that does not pass these checks or the tests.
 
-## Model benchmark
+## Model benchmarks
 
 `benchmarks/models/` measures the chat models against a running Ollama, outside of the test suite: latency and
 throughput, answers to questions with a single right answer, tool use through the ReAct loop (with scripted tool
@@ -107,6 +107,16 @@ make bench-report           # render the tables of every saved model into benchm
 ```
 
 `python -m benchmarks.models run <model> --only tools memory` runs only some of the categories.
+
+`benchmarks/embeddings/` measures the embedding models the same way, through Sensai's embedder and cosine
+similarity: how often a question finds the passage holding its answer among close ones, in the same language and
+across languages, as `web_fetch` ranks the chunks of a page; how far apart the semantic cache scores rephrased
+questions and different ones; and the speed of embedding. The cases are in `benchmarks/embeddings/cases.toml`.
+
+```sh
+make bench-embeddings EMBEDDING_MODEL=bge-m3   # saved in benchmarks/embeddings/results/<model>.json
+make bench-embeddings-report                   # tables in benchmarks/embeddings/results/README.md
+```
 
 ## Make targets
 
@@ -121,6 +131,8 @@ make bench-report           # render the tables of every saved model into benchm
 | `lock`    | Regenerates `uv.lock` from `pyproject.toml`                     |
 | `bench`   | Benchmarks the model `MODEL` against Ollama                     |
 | `bench-report` | Renders the tables of every benchmarked model              |
+| `bench-embeddings` | Benchmarks the embedding model `EMBEDDING_MODEL`       |
+| `bench-embeddings-report` | Renders the tables of every benchmarked embedding model |
 
 ## Dependencies
 
@@ -164,6 +176,7 @@ versions.
 │       ├── main.py           # entry point and composition root: main()
 │       └── parsing.py        # command line arguments
 ├── benchmarks/models/         # model benchmark, run against a real Ollama
+├── benchmarks/embeddings/     # embedding model benchmark, run against a real Ollama
 ├── tests/                    # pytest test suite
 └── docs/
 ```

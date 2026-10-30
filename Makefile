@@ -1,5 +1,6 @@
 NAME := sensai
 MODEL = qwen3:1.7b
+EMBEDDING_MODEL = nomic-embed-text:latest
 
 all: install
 
@@ -26,6 +27,12 @@ bench:
 bench-report:
 	uv run python -m benchmarks.models report
 
+bench-embeddings:
+	uv run python -m benchmarks.embeddings run ${EMBEDDING_MODEL}
+
+bench-embeddings-report:
+	uv run python -m benchmarks.embeddings report
+
 qdrant:
 	docker compose up -d --wait
 
@@ -48,4 +55,4 @@ format:
 lock:
 	uv lock
 
-.PHONY: all install run run-server run-tui bench bench-report qdrant qdrant-stop tests lint format lock
+.PHONY: all install run run-server run-tui bench bench-report bench-embeddings bench-embeddings-report qdrant qdrant-stop tests lint format lock
