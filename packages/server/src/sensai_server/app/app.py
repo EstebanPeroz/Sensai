@@ -59,7 +59,7 @@ def create_app(
     pm: ProviderManager = ProviderManager(settings.llm)
     embedder = _build_embedder(settings, pm)
     tool_manager = _build_tool_manager(settings, embedder)
-    pipeline = _build_pipeline(pm)
+    pipeline = _build_pipeline(pm, tool_manager)
     set_db(settings.db.persistent)
     db = get_db()
     if db is None:
@@ -92,9 +92,9 @@ def create_app(
     return app
 
 
-def _build_pipeline(pm: ProviderManager) -> ChatPipeline:
+def _build_pipeline(pm: ProviderManager, tool_manager: ToolManager) -> ChatPipeline:
     """Build the chain every chat goes through: the guard first, then the persona, then the model."""
-    return ChatPipeline(ModelStage(pm)).use(BadWordsGuard()).use(PersonaStage())
+    return ChatPipeline(ModelStage(pm, tool_manager)).use(BadWordsGuard()).use(PersonaStage())
 
 
 def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:

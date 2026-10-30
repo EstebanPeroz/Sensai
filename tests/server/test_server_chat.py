@@ -45,7 +45,7 @@ def session(pm: ProviderManager, persona_manager: PersonaManager) -> Session:
 @pytest.fixture
 def pipeline(pm: ProviderManager) -> ChatPipeline:
     """The pipeline `create_app` builds, on `FakeAdapter`."""
-    return ChatPipeline(ModelStage(pm)).use(BadWordsGuard()).use(PersonaStage())
+    return ChatPipeline(ModelStage(pm, ToolManager())).use(BadWordsGuard()).use(PersonaStage())
 
 
 class _SignallingOutbound(RecordingOutbound):

@@ -11,6 +11,7 @@ from sensai_server.llm.provider import ProviderManager
 from sensai_server.pipeline import ChatContext
 from sensai_server.pipeline.modules import ModelStage
 from sensai_server.pipeline.modules._threaded import iterate_in_thread
+from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import MODEL, SETTINGS
 from tests.server.fakes import FakeAdapter, RecordingOutbound, chunk
@@ -24,7 +25,7 @@ def _context(model: str = MODEL) -> ChatContext:
 
 
 async def _contents(context: ChatContext) -> list[str | None]:
-    async with aclosing(ModelStage(ProviderManager(SETTINGS.llm))(context)) as chunks:
+    async with aclosing(ModelStage(ProviderManager(SETTINGS.llm), ToolManager())(context)) as chunks:
         return [item.content async for item in chunks]
 
 
@@ -71,7 +72,7 @@ class TestModelStage:
         first = asyncio.Event()
 
         async def consume() -> None:
-            async with aclosing(ModelStage(ProviderManager(SETTINGS.llm))(_context())) as chunks:
+            async with aclosing(ModelStage(ProviderManager(SETTINGS.llm), ToolManager())(_context())) as chunks:
                 async for _ in chunks:
                     first.set()
 

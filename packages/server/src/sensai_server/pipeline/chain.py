@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
     from sensai_server.app.outbound import Outbound
     from sensai_server.llm.persona import Persona
+    from sensai_server.tools.state import ToolState
 
 
 @dataclass
@@ -45,6 +46,7 @@ class ChatContext:
     model: str
     persona: Persona | None = None
     messages: list[dict] = field(default_factory=list)
+    tools: ToolState | None = None
     # TODO(monitoring): add `on_interaction`  # noqa: TD003, FIX002
     # `on_interaction: Callable[[Interaction], None] = ignore_interaction`, called once for every call to the model
     # this exchange makes, whatever its outcome.

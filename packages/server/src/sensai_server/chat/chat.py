@@ -38,6 +38,7 @@ async def run_chat(session: Session, prompt: str, pipeline: ChatPipeline, db: Pe
         model=conv.model,
         persona=conv.persona,
         messages=conv.history.to_json(),
+        tools=session.tools,
     )
     content = await _stream(session.out, pipeline, context)
     if content.strip() == "":

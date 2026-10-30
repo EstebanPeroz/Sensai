@@ -14,14 +14,19 @@ if TYPE_CHECKING:
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.llm.responses import ChatResponse
     from sensai_server.pipeline.chain import ChatContext
+    from sensai_server.tools.tool_manager import ToolManager
 
 
 class ModelStage:
     """Send the payload the earlier stages built to the provider serving the model, and stream what it answers."""
 
-    def __init__(self, provider_manager: ProviderManager) -> None:
-        """Keep the manager this stage finds the provider of each exchange's model in."""
+    _tool_manager: ToolManager
+    _provider_manager: ProviderManager
+
+    def __init__(self, provider_manager: ProviderManager, tool_manager: ToolManager) -> None:
+        """Keep the manager this stage finds the provider of each exchange's model in, and the tools ReAct will call."""
         self._provider_manager = provider_manager
+        self._tool_manager = tool_manager
 
     async def __call__(self, context: ChatContext) -> AsyncGenerator[ChatResponse]:
         """Stream the answer to the payload in `context`.
@@ -35,7 +40,8 @@ class ModelStage:
             raise SensaiError(msg)
 
         # TODO(react): ReAct replaces this direct call  # noqa: TD003, FIX002
-        # It will build `think` and `tools` from `session.effort`.
+        # It will build `think` from `session.effort`, put `self._tool_manager.get_tool_call_rules(context.tools)` in
+        # the payload as `tools`, and run the model's tool calls with `self._tool_manager.calls`.
         payload = {"model": context.model, "messages": list(context.messages)}
         async with aclosing(iterate_in_thread(partial(provider.chat, payload, stream=True))) as chunks:
             async for chunk in chunks:
