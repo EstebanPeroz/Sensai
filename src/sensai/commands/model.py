@@ -3,6 +3,8 @@ from typing import TYPE_CHECKING, override
 from sensai.commands.base import Command
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sensai.llm.provider_manager import ProviderManager
 
 
@@ -13,11 +15,16 @@ class Model(Command):
     help = "List the available models, or set the model to use."
     usage = "/model [model_name]"
     _provider_manager: ProviderManager
+    _refresh_context_usage: Callable[[], object]
 
-    def __init__(self, provider_manager: ProviderManager) -> None:
-        """Initialize the Model command with the provider manager serving the models."""
+    def __init__(self, provider_manager: ProviderManager, refresh_context_usage: Callable[[], object]) -> None:
+        """Initialize the Model command with the provider manager serving the models.
+
+        `refresh_context_usage` is called once a model is set, since the budget depends on the model.
+        """
         super().__init__()
         self._provider_manager = provider_manager
+        self._refresh_context_usage = refresh_context_usage
 
     def _display_available_models(self) -> None:
         """Display the available models."""
@@ -36,6 +43,7 @@ class Model(Command):
         self._ui.send_system_message(f"Setting model to '{model_name}'...")
         if self._provider_manager.set_model(model_name):
             self._ui.send_system_message(f"Model set to '{model_name}'.", append_response=True)
+            self._refresh_context_usage()
         else:
             self._ui.send_system_message(f"Model '{model_name}' is not available.")
 
