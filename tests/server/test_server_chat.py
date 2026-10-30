@@ -1,12 +1,14 @@
 import asyncio
 import threading
+from collections.abc import Iterator
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sensai_protocol import AiChunk, Error, Input, Role, ServerMessage
+from sensai_protocol import AiChunk, Error, Input, Role, ServerMessage, System
 from sensai_server.chat import chat
 from sensai_server.chat.chat import BRANCH_NAME_LENGTH, _to_ai_chunk
+from sensai_server.llm.error import RequestCallError
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ChatResponse, ProviderManager
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
@@ -110,6 +112,61 @@ class TestChat:
         chunks = [message for message in _sent(session) if isinstance(message, AiChunk)]
         assert chunks == [AiChunk(error="boom", done=True)]
         assert _history(session) == [{"role": "user", "content": "hello"}]
+
+    async def test_error_inside_the_pipeline_sends_an_error(
+        self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy
+    ) -> None:
+        session.conv.model = "nope"
+        await chat(session, "hello", pipeline, db)
+        errors = [message for message in _sent(session) if isinstance(message, Error)]
+        assert [error.message for error in errors] == ["No provider serves model nope"]
+        assert not any(isinstance(message, AiChunk) for message in _sent(session))
+        assert _history(session) == [{"role": "user", "content": "hello"}]
+
+    async def test_provider_exception_sends_an_error(
+        self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def failing_chat(_self: FakeAdapter, _payload: dict, *, stream: bool) -> Iterator:  # noqa: ARG001
+            msg = "connection refused"
+            raise RequestCallError(msg)
+
+        monkeypatch.setattr(FakeAdapter, "chat", failing_chat)
+        await chat(session, "hello", pipeline, db)
+        assert any(isinstance(message, Error) for message in _sent(session))
+        assert _history(session) == [{"role": "user", "content": "hello"}]
+
+    async def test_blank_answer_is_not_saved(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
+        FakeAdapter.replies = [chunk("  ", done=True)]
+        await chat(session, "hello", pipeline, db)
+        assert [message for message in _sent(session) if isinstance(message, AiChunk)] == [
+            AiChunk(content="  ", done=True)
+        ]
+        assert _history(session) == [{"role": "user", "content": "hello"}]
+        assert session.conv.uuid is not None
+        assert len(db.get_messages(session.conv.uuid)) == 1
+
+    async def test_failed_user_save_stops_the_chat(
+        self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(db, "add_message_to_branch", lambda *_: None)
+        FakeAdapter.replies = [chunk("a", done=True)]
+        await chat(session, "hello", pipeline, db)
+        assert [type(message) for message in _sent(session)] == [System]
+        assert FakeAdapter.last_payload is None
+        assert _history(session) == []
+
+    async def test_second_chat_sends_the_whole_history(
+        self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy
+    ) -> None:
+        FakeAdapter.replies = [chunk("hi", done=True)]
+        await chat(session, "hello", pipeline, db)
+        await chat(session, "again", pipeline, db)
+        assert FakeAdapter.last_payload is not None
+        assert FakeAdapter.last_payload["messages"] == [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "hi"},
+            {"role": "user", "content": "again"},
+        ]
 
     async def test_no_model_sends_an_error(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         session.conv.model = None

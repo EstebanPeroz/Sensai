@@ -581,3 +581,7 @@ class TestEndToEnd:
                 assert _receive(ws) == AiChunk(content="lo", done=True)
         finally:
             block.set()
+        assert FakeAdapter.last_payload is not None
+        # The cancelled answer was never saved: the second payload holds both prompts and no answer.
+        assert [message["role"] for message in FakeAdapter.last_payload["messages"]][-2:] == ["user", "user"]
+        assert all(message["role"] != "assistant" for message in FakeAdapter.last_payload["messages"])

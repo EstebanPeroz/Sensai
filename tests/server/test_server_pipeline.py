@@ -70,6 +70,15 @@ class TestChatPipeline:
         pipeline = ChatPipeline(_model([]))
         assert pipeline.use(_stage("a", [])) is pipeline
 
+    async def test_use_after_execute_applies_next_time(self) -> None:
+        log: list[str] = []
+        pipeline = ChatPipeline(_model(log))
+        await _contents(pipeline.execute(_context()))
+        pipeline.use(_stage("a", log))
+        await _contents(pipeline.execute(_context()))
+        assert log.count("a in") == 1
+        assert log.index("a in") > log.index("model")
+
     async def test_execute_is_lazy(self) -> None:
         log: list[str] = []
         pipeline = ChatPipeline(_model(log)).use(_stage("a", log))
