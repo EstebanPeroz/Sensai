@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
     from sensai_server.pipeline import ChatPipeline
     from sensai_server.session import SessionRegistry
+    from sensai_server.tools.tool_manager import ToolManager
 
 # The attribute of `app.state` holding the `AppState`.
 STATE_KEY = "sensai"
@@ -30,6 +31,7 @@ class AppState:
     settings: Settings
     provider_manager: ProviderManager
     embedder: Embedder | None
+    tool_manager: ToolManager
     db: PersistentDatabase
     persona_manager: PersonaManager
     registry: SessionRegistry

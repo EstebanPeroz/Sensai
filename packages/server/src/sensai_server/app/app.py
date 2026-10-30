@@ -32,6 +32,7 @@ from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import ModelStage, PersonaStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
 from sensai_server.session import SessionRegistry
+from sensai_server.tools import build_tools
 from sensai_server.tools.tool_manager import ToolManager
 
 if TYPE_CHECKING:
@@ -52,10 +53,12 @@ def create_app(
 
     `settings` are the loaded settings, kept in the app state (see `app_state`). The persistent database is opened,
     and the default persona is stored in it if it is not there yet. The chat pipeline is built once
-    (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task.
+    (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task. So
+    is the tool manager (see `_build_tool_manager`): each session keeps only its own tool state.
     """
     pm: ProviderManager = ProviderManager(settings.llm)
     embedder = _build_embedder(settings, pm)
+    tool_manager = _build_tool_manager(settings, embedder)
     pipeline = _build_pipeline(pm)
     set_db(settings.db.persistent)
     db = get_db()
@@ -66,8 +69,6 @@ def create_app(
     with contextlib.suppress(DuplicatePersonaError):
         persona_manager.create_default_persona()
 
-    # No tools yet: step 7 of Milestone.md registers the built tools and the disabled and confirm settings.
-    tool_manager = ToolManager()
     sessions = SessionRegistry(pm, persona_manager, tool_manager)
     commands = CommandRegistry()
     commands.set_commands(build_commands(sessions, commands, db, pm))
@@ -79,6 +80,7 @@ def create_app(
             settings=settings,
             provider_manager=pm,
             embedder=embedder,
+            tool_manager=tool_manager,
             db=db,
             persona_manager=persona_manager,
             registry=sessions,
@@ -108,6 +110,23 @@ def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:
         logger.warning("no provider serves the embedding model '%s': the web tools are left out", model)
         return None
     return Embedder(provider, model)
+
+
+def _build_tool_manager(settings: Settings, embedder: Embedder | None) -> ToolManager:
+    """Build the manager of every built-in tool, shared by every session.
+
+    Names in the disabled or confirm settings matching no tool are logged: at startup there is no client to tell.
+    """
+    manager = ToolManager(
+        build_tools(settings, embedder),
+        disabled=settings.features.disabled_in("tools"),
+        confirm=settings.features.confirm_in("tools"),
+    )
+    for name in manager.unknown_disabled():
+        logger.warning("unknown tool '%s' in the disabled features", name)
+    for name in manager.unknown_confirm():
+        logger.warning("unknown tool '%s' in the confirm features", name)
+    return manager
 
 
 @router.websocket("/ws")
