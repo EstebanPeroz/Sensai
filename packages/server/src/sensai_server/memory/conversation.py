@@ -46,9 +46,7 @@ class Conversation:
         """
         if self.model is None:
             raise SensaiError(self._model_error)
-        self.uuid = db.create_branch(uuid, name)
-        if self.uuid:
-            db.set_branch_model(self.uuid, self.model)
+        self.uuid = db.create_branch(model=self.model, current_branch=uuid, name=name)
 
     async def save_message(self, role: Role, content: str, out: Outbound, db: PersistentDatabase) -> bool:
         """Add message to History and db."""

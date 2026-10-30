@@ -63,7 +63,7 @@ class SqlAlchemy(PersistentDatabase):
         dbapi_conn.execute("PRAGMA foreign_keys=ON")
 
     @override
-    def create_branch(self, current_branch: UUID | None = None, name: str = "Branch") -> UUID | None:
+    def create_branch(self, *, model: str, current_branch: UUID | None = None, name: str = "Branch") -> UUID | None:
         """Create a new branch and return its id if success or None if fail.
 
         If `current_branch` is given, the new branch is a deep copy of it
@@ -71,7 +71,7 @@ class SqlAlchemy(PersistentDatabase):
         """
         with Session(self._engine) as session:
             if current_branch is None:
-                branch = BranchTable(name=self._free_name(session, name), model_name="")
+                branch = BranchTable(name=self._free_name(session, name), model_name=model)
             else:
                 source = session.get(BranchTable, current_branch)
                 if source is None:
