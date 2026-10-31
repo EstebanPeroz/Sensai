@@ -1588,6 +1588,7 @@ version = "0.1.0"
 source = { editable = "packages/server" }
 dependencies = [
     { name = "fastapi" },
+    { name = "requests" },
     { name = "sensai-protocol" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1595,6 +1596,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi" },
+    { name = "requests" },
     { name = "sensai-protocol", editable = "packages/protocol" },
     { name = "uvicorn", extras = ["standard"] },
 ]

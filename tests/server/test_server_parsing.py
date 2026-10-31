@@ -1,14 +1,20 @@
 from pathlib import Path
 
+import pytest
 from sensai_server.parsing import DEFAULT_HOST, DEFAULT_PORT, Parsing
 
 
 class TestParsing:
     def test_defaults(self) -> None:
-        args = Parsing().parse_args([])
+        args = Parsing().parse_args(["--config", "settings.toml"])
         assert args.host == DEFAULT_HOST == "127.0.0.1"
         assert args.port == DEFAULT_PORT == 8000
-        assert args.config is None
+        assert args.config == Path("settings.toml")
+
+    def test_config_is_required(self, capsys: pytest.CaptureFixture[str]) -> None:
+        with pytest.raises(SystemExit):
+            Parsing().parse_args([])
+        assert "--config" in capsys.readouterr().err
 
     def test_overrides(self) -> None:
         args = Parsing().parse_args(["--host", "0.0.0.0", "--port", "9000", "--config", "x.toml"])  # noqa: S104
