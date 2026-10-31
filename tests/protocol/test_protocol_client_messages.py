@@ -11,8 +11,10 @@ from sensai_protocol import (
     AiChunk,
     Cancel,
     Chat,
+    ClientCommand,
     ClientMessage,
     Command,
+    CommandContext,
     Complete,
     Completions,
     ConfirmAnswer,
@@ -25,6 +27,7 @@ from sensai_protocol import (
     Login,
     Logout,
     ProtocolError,
+    RequestCommand,
     Role,
     ServerMessage,
     Session,
@@ -44,6 +47,8 @@ CLIENT_MESSAGES: list[ClientMessage] = [
     ConfirmAnswer(request_id=uuid4(), answer=Confirmation.DENY),
     UserAnswer(request_id=uuid4(), answer="Paris"),
     UserAnswer(request_id=uuid4(), answer=None),
+    CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, ctx={"content": "name = 'x'"}),
+    CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, error="file not found"),
 ]
 
 SERVER_MESSAGES: list[ServerMessage] = [
@@ -56,7 +61,13 @@ SERVER_MESSAGES: list[ServerMessage] = [
     Effort(level="high"),
     Completions(text="/model ", values=["qwen3:1.7b"]),
     ConfirmTool(request_id=uuid4(), tool_name="now", arguments={}),
+    RequestCommand(request_id=uuid4(), command=ClientCommand.READ_FILE, params={"path": "x"}),
 ]
+
+
+def _command_context(**fields: object) -> str:
+    """A raw `command_context` frame for `read_file` with `fields`."""
+    return json.dumps({"type": "command_context", "request_id": str(uuid4()), "command": "read_file"} | fields)
 
 
 class TestClientMessages:
@@ -78,6 +89,10 @@ class TestClientMessages:
             ({"type": "complete", "text": "/mo"}, Complete),
             ({"type": "confirm_answer", "request_id": str(uuid4()), "answer": "always"}, ConfirmAnswer),
             ({"type": "user_answer", "request_id": str(uuid4()), "answer": None}, UserAnswer),
+            (
+                {"type": "command_context", "request_id": str(uuid4()), "command": "read_file", "error": "x"},
+                CommandContext,
+            ),
         ],
     )
     def test_type_parses_into_its_class(self, raw: dict, expected: type) -> None:
@@ -96,6 +111,9 @@ class TestClientMessages:
             '{"type": "cancel", "modle": "typo"}',
             '{"type": "chat", "prompt": 1}',
             '{"type": "confirm_answer", "request_id": "6f1c1e2a-4b0e-4d8e-9a3c-2f9b1d7e5a10", "answer": "maybe"}',
+            _command_context(command="rm_rf", error="x"),
+            _command_context(ctx={"content": "x"}, error="x"),
+            _command_context(),
             "not json",
             "",
             "[]",
@@ -108,6 +126,9 @@ class TestClientMessages:
             "typo",
             "wrong-type",
             "invalid-confirmation",
+            "unknown-client-command",
+            "ctx-and-error",
+            "neither-ctx-nor-error",
             "invalid-json",
             "empty",
             "not-an-object",

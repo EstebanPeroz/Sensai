@@ -37,6 +37,7 @@ _SPACES = re.compile(r"[ \t]+")
 _BLANK_LINES = re.compile(r"\n\s*\n+")
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ])")
 _SENTENCE_MAX_NB = 2
+_FORBIDDEN_PATHS = ("../", "~/")
 
 
 class EmbeddingProvider(Protocol):
@@ -84,6 +85,9 @@ class Indexation:
         """
         if source.startswith(("http://", "https://")):
             return self._collect_url(source)
+        if source.startswith(_FORBIDDEN_PATHS):
+            msg = "forbidden path, you can't go anywhere, stay on this folder."
+            raise SourceFetchError(msg)
         path = Path(source)
         if not path.exists():
             msg = f"no such file: {source}"

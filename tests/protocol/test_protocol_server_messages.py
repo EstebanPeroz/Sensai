@@ -8,8 +8,10 @@ from sensai_protocol import (
     AskUser,
     Cancel,
     Chat,
+    ClientCommand,
     ClientMessage,
     Command,
+    CommandContext,
     Complete,
     Completions,
     ConfirmAnswer,
@@ -30,6 +32,7 @@ from sensai_protocol import (
     Logout,
     Period,
     ProtocolError,
+    RequestCommand,
     Role,
     ServerMessage,
     Session,
@@ -89,6 +92,7 @@ SERVER_MESSAGES: list[ServerMessage] = [
     ConfirmTool(request_id=uuid4(), tool_name="now", arguments={}),
     AskUser(request_id=uuid4(), question="Which city?"),
     Dashboard(report=REPORT),
+    RequestCommand(request_id=uuid4(), command=ClientCommand.READ_FILE, params={"path": "./me.toml"}),
 ]
 
 CLIENT_MESSAGES: list[ClientMessage] = [
@@ -100,6 +104,7 @@ CLIENT_MESSAGES: list[ClientMessage] = [
     Complete(text="/mo"),
     ConfirmAnswer(request_id=uuid4(), answer=Confirmation.ALWAYS),
     UserAnswer(request_id=uuid4(), answer=None),
+    CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, ctx={"content": "x"}),
 ]
 
 CLIENT_ID = "6f1c1e2a-4b0e-4d8e-9a3c-2f9b1d7e5a10"
@@ -126,6 +131,10 @@ class TestServerMessages:
             ({"type": "completions", "text": "/mo", "values": ["/model"]}, Completions),
             ({"type": "confirm_tool", "request_id": CLIENT_ID, "tool_name": "t", "arguments": {}}, ConfirmTool),
             ({"type": "ask_user", "request_id": CLIENT_ID, "question": "why?"}, AskUser),
+            (
+                {"type": "request_command", "request_id": CLIENT_ID, "command": "read_file", "params": {"path": "x"}},
+                RequestCommand,
+            ),
         ],
     )
     def test_type_parses_into_its_class(self, raw: dict, expected: type) -> None:
@@ -170,6 +179,7 @@ class TestServerMessages:
             '{"type": "history", "messages": [{"uuid": null, "role": "user", "content": "hi", "extra": 1}]}',
             '{"type": "input", "role": "robot", "content": "hi"}',
             '{"type": "session", "client_id": "not-a-uuid", "model": "m", "commands": [], "effort": "low"}',
+            '{"type": "request_command", "request_id": "' + CLIENT_ID + '", "command": "rm_rf", "params": {}}',
             "not json",
         ],
         ids=[
@@ -180,6 +190,7 @@ class TestServerMessages:
             "nested-extra-field",
             "invalid-role",
             "invalid-uuid",
+            "unknown-client-command",
             "invalid-json",
         ],
     )
