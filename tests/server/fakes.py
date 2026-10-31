@@ -3,10 +3,10 @@ from typing import ClassVar, Literal, cast, overload, override
 
 from fastapi import WebSocket
 from sensai_protocol import ServerMessage, parse_server_message
+from sensai_server.app.outbound import Outbound
 from sensai_server.config.settings import OllamaSettings
 from sensai_server.llm.error import RequestCallError
 from sensai_server.llm.provider import ChatResponse, ProviderAdapter, ShowResponse
-from sensai_server.outbound import Outbound
 
 
 class RecordingOutbound(Outbound):

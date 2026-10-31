@@ -26,6 +26,13 @@ class Confirmation(Enum):
     DENY = 3
 
 
+class CompressionChoice(Enum):
+    """Answer of the user whose conversation nears its budget: summarise its oldest messages, or start anew."""
+
+    COMPRESS = 1
+    NEW_CONVERSATION = 2
+
+
 class Event:
     """Data sent by a UI when the user performs an action, such as submitting text or issuing a command."""
 
@@ -104,6 +111,13 @@ class UIAdapter(ABC):
         """Ask the user whether the tool `tool_name` may run with `arguments`, blocking until they answer.
 
         Called from the streaming thread. Returns `Confirmation.DENY` when the UI cannot ask.
+        """
+
+    @abstractmethod
+    def ask_compression(self, usage: ContextUsage) -> CompressionChoice:
+        """Ask the user, whose conversation takes `usage` of its budget, how to go on, blocking until they answer.
+
+        Returns `CompressionChoice.COMPRESS` when the UI cannot ask, so that the conversation goes on as it is.
         """
 
     @abstractmethod

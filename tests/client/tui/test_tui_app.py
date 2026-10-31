@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -7,7 +8,9 @@ from sensai_protocol import (
     AskUser,
     Cancel,
     Chat,
+    ClientCommand,
     Command,
+    CommandContext,
     Complete,
     Completions,
     ConfirmAnswer,
@@ -23,6 +26,7 @@ from sensai_protocol import (
     Login,
     Logout,
     Period,
+    RequestCommand,
     Role,
     Session,
     System,
@@ -363,3 +367,22 @@ class TestDashboard:
             assert not isinstance(app.screen, DashboardScreen)
             assert isinstance(app.focused, InputWidget)
             assert Cancel() not in conn.sent
+
+
+class TestClientCommands:
+    async def test_request_is_run_and_answered(self, tmp_path: Path) -> None:
+        path = tmp_path / "me.toml"
+        path.write_text("raw", encoding="utf-8")
+        conn = FakeConnection()
+        app = ChatApp(conn, MODEL)
+        async with app.run_test() as pilot:
+            request = RequestCommand(request_id=uuid4(), command=ClientCommand.READ_FILE, params={"path": str(path)})
+            conn.push(_session(), request)
+            for _ in range(50):  # the file is read in a thread: wait for the answer
+                if isinstance(conn.sent[-1], CommandContext):
+                    break
+                await pilot.pause(0.01)
+            assert conn.sent[-1] == CommandContext(
+                request_id=request.request_id, command=ClientCommand.READ_FILE, ctx={"content": "raw"}
+            )
+            assert _items(app) == []

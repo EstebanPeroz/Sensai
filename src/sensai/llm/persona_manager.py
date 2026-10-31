@@ -1,20 +1,23 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from importlib import resources
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from sensai.llm.persona import (
     DEFAULT_PERSONA_FILE,
     DuplicatePersonaError,
     Persona,
+    PersonaFileError,
     PersonaNotRegisteredError,
 )
 from sensai.memory.persistent_db.error import DatabaseError
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from collections.abc import Iterable, Iterator
     from uuid import UUID
 
     from sensai.memory.persistent_db.adapter import PersistentDatabase
@@ -25,13 +28,27 @@ class PersonaManager:
 
     _db: PersistentDatabase
     _active_persona: Persona | None
+    _security_personas: list[Persona]
     _store_error_message: str = "the persona could not be stored"
     _record_error_message: str = "the database returned a persona without an id"
 
-    def __init__(self, db: PersistentDatabase) -> None:
-        """Read the personas from `db`, and start with none applied."""
+    def __init__(self, db: PersistentDatabase, security_files: Iterable[str] = ()) -> None:
+        """Read the personas from `db`, seed the security ones listed in `security_files`, and apply none."""
         self._db = db
+        self._security_personas = [self._seed(file) for file in security_files]
         self._active_persona = None
+
+    def security_personas(self) -> list[Persona]:
+        """Return the stored security personas, in the order the settings list them."""
+        return list(self._security_personas)
+
+    def _seed(self, file: str) -> Persona:
+        """Store the persona described by `file`, or return the stored one that already goes by its name."""
+        with _resolve(file) as path:
+            existing = self._find(Persona.from_file(path).name)
+            if existing is not None:
+                return existing
+            return self.create_persona_from_file(path)
 
     def create_persona_from_file(self, path: str | Path) -> Persona:
         """Store the persona described by the file at `path` and return  it."""
@@ -110,3 +127,19 @@ class PersonaManager:
         if persona.uuid is None:
             raise DatabaseError(self._record_error_message)
         return persona.uuid
+
+
+@contextmanager
+def _resolve(file: str) -> Iterator[Path]:
+    """Yield the path of `file`, read from the filesystem or, failing that, from the `<package>/<filename>` it names."""
+    path = Path(file)
+    if path.exists() or "/" not in file:
+        yield path
+        return
+    package, _, filename = file.rpartition("/")
+    try:
+        source = resources.files(package).joinpath(filename)
+    except (ImportError, TypeError) as err:
+        raise PersonaFileError(path, f"no package '{package}' to read it from ({err})") from err
+    with resources.as_file(source) as resolved:
+        yield resolved
