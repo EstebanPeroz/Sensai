@@ -30,7 +30,7 @@ from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
 from sensai_server.pipeline import ChatPipeline
-from sensai_server.pipeline.modules import ModelStage, PersonaStage
+from sensai_server.pipeline.modules import ModelStage, PersonaStage, RagStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
 from sensai_server.rag import Rag
 from sensai_server.session import SessionRegistry
@@ -64,7 +64,6 @@ def create_app(
     embedder = _build_embedder(settings, pm)
     tool_manager = _build_tool_manager(settings, embedder)
     react = ReAct(pm, tool_manager)
-    pipeline = _build_pipeline(react)
     set_db(settings.db.persistent)
     db = get_db()
     if db is None:
@@ -74,6 +73,7 @@ def create_app(
     with contextlib.suppress(DuplicatePersonaError):
         persona_manager.create_default_persona()
     rag = _build_rag(settings, embedder, db)
+    pipeline = _build_pipeline(react, rag)
 
     sessions = SessionRegistry(pm, persona_manager, tool_manager)
     commands = CommandRegistry()
@@ -100,9 +100,15 @@ def create_app(
     return app
 
 
-def _build_pipeline(react: ReAct) -> ChatPipeline:
-    """Build the chain every chat goes through: the guard first, then the persona, then the model's ReAct loop."""
-    return ChatPipeline(ModelStage(react)).use(BadWordsGuard()).use(PersonaStage())
+def _build_pipeline(react: ReAct, rag: Rag | None) -> ChatPipeline:
+    """Build the chain every chat goes through: the guard, the persona, the RAG's extracts, then the ReAct loop.
+
+    The guard comes first, so that a rejected prompt is never embedded. Without `rag`, there are no extracts.
+    """
+    pipeline = ChatPipeline(ModelStage(react)).use(BadWordsGuard()).use(PersonaStage())
+    if rag is not None:
+        pipeline.use(RagStage(rag))
+    return pipeline
 
 
 def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:
