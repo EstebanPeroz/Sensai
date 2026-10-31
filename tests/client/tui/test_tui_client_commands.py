@@ -2,15 +2,23 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from sensai_protocol import ClientCommand, CommandContext, FileContent, ReadFileParams, RequestCommand
-from sensai_tui.client_commands import CLIENT_COMMAND_HANDLERS, ClientCommandFailedError, file, read_file
+from sensai_protocol import (
+    ClientCommand,
+    CommandContext,
+    FileContent,
+    FileWritten,
+    ReadFileParams,
+    RequestCommand,
+    WriteFileParams,
+)
+from sensai_tui.client_commands import CLIENT_COMMAND_HANDLERS, ClientCommandFailedError, file, read_file, write_file
 from sensai_tui.client_commands.dispatch import run_client_command
 
 PERSONA_TOML = 'name = "Pirate"\ndescription = "Talks like a pirate"\nprompt = "Arr."\n'
 
 
-def _request(params: dict) -> RequestCommand:
-    return RequestCommand(request_id=uuid4(), command=ClientCommand.READ_FILE, params=params)
+def _request(params: dict, command: ClientCommand = ClientCommand.READ_FILE) -> RequestCommand:
+    return RequestCommand(request_id=uuid4(), command=command, params=params)
 
 
 class TestReadFile:
@@ -53,6 +61,49 @@ class TestReadFile:
             await read_file(ReadFileParams(path=str(path)))
 
 
+class TestWriteFile:
+    async def test_writes_the_text_and_returns_the_absolute_path(self, tmp_path: Path) -> None:
+        path = tmp_path / "branch.json"
+        assert await write_file(WriteFileParams(path=str(path), content="{}\né")) == FileWritten(path=str(path))
+        assert path.read_text(encoding="utf-8") == "{}\né"
+        assert await read_file(ReadFileParams(path=str(path))) == FileContent(content="{}\né")
+
+    async def test_path_is_relative_to_the_current_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        written = await write_file(WriteFileParams(path="branch.json", content="x"))
+        assert written == FileWritten(path=str((tmp_path / "branch.json").resolve()))
+        assert (tmp_path / "branch.json").read_text(encoding="utf-8") == "x"
+
+    async def test_home_is_expanded(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        await write_file(WriteFileParams(path="~/branch.json", content="x"))
+        assert (tmp_path / "branch.json").read_text(encoding="utf-8") == "x"
+
+    async def test_directory(self, tmp_path: Path) -> None:
+        with pytest.raises(ClientCommandFailedError, match="path is a directory"):
+            await write_file(WriteFileParams(path=str(tmp_path), content="x"))
+
+    async def test_missing_directory(self, tmp_path: Path) -> None:
+        with pytest.raises(ClientCommandFailedError, match="directory not found"):
+            await write_file(WriteFileParams(path=str(tmp_path / "missing" / "branch.json"), content="x"))
+
+    async def test_existing_file_is_overwritten(self, tmp_path: Path) -> None:
+        path = tmp_path / "branch.json"
+        path.write_text("an older and longer content", encoding="utf-8")
+        assert await write_file(WriteFileParams(path=str(path), content="x")) == FileWritten(path=str(path))
+        assert path.read_text(encoding="utf-8") == "x"
+
+    async def test_os_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        def denied(*_: object, **__: object) -> None:
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(Path, "write_text", denied)
+        with pytest.raises(ClientCommandFailedError, match=r"cannot write file \(Permission denied\)"):
+            await write_file(WriteFileParams(path=str(tmp_path / "branch.json"), content="x"))
+
+
 class TestRunClientCommand:
     async def test_answers_with_the_context(self, tmp_path: Path) -> None:
         path = tmp_path / "me.toml"
@@ -66,6 +117,20 @@ class TestRunClientCommand:
         request = _request({"path": str(tmp_path / "missing.toml")})
         assert await run_client_command(request) == CommandContext(
             request_id=request.request_id, command=ClientCommand.READ_FILE, error="file not found"
+        )
+
+    async def test_write_file_answers_with_the_context(self, tmp_path: Path) -> None:
+        path = tmp_path / "branch.json"
+        request = _request({"path": str(path), "content": "{}"}, ClientCommand.WRITE_FILE)
+        assert await run_client_command(request) == CommandContext(
+            request_id=request.request_id, command=ClientCommand.WRITE_FILE, ctx={"path": str(path)}
+        )
+        assert path.read_text(encoding="utf-8") == "{}"
+
+    async def test_failing_write_file_answers_with_its_reason(self, tmp_path: Path) -> None:
+        request = _request({"path": str(tmp_path), "content": "{}"}, ClientCommand.WRITE_FILE)
+        assert await run_client_command(request) == CommandContext(
+            request_id=request.request_id, command=ClientCommand.WRITE_FILE, error="path is a directory"
         )
 
     @pytest.mark.parametrize("params", [{}, {"path": ""}, {"path": "x", "extra": 1}])
