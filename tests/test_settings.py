@@ -12,6 +12,7 @@ from sensai.config.settings import (
     LLMSettings,
     LoggingSettings,
     OllamaSettings,
+    PersonaSettings,
     RagDBSettings,
     Settings,
     WebSettings,
@@ -182,6 +183,26 @@ class TestFeatures:
         assert features.confirm_in("tools") == {"b"}
 
 
+class TestPersonas:
+    def test_security_is_read_from_personas_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[personas]\nsecurity = ["a.toml", "b.toml"]\n'))
+
+        assert settings.personas.security == ["a.toml", "b.toml"]
+
+    def test_security_defaults_to_the_packaged_persona(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, ""))
+
+        assert settings.personas.security == ["sensai.config.personas/security.toml"]
+
+    def test_security_can_be_emptied(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "[personas]\nsecurity = []\n")).personas.security == []
+
+    def test_the_packaged_default_is_a_persona_file(self) -> None:
+        package, _, filename = PersonaSettings().security[0].rpartition("/")
+
+        assert resources.files(package).joinpath(filename).is_file()
+
+
 class TestLogging:
     def test_is_read_from_logging_table(self, tmp_path: Path) -> None:
         settings = load_settings(write_config(tmp_path, "[logging]\nenabled = false\nlog_content = false\n"))
@@ -242,6 +263,10 @@ class TestValidation:
             ('[features]\nconfirm = "tools.x"\n', "features.confirm must be a list"),
             ('[features]\nconfirm = [""]\n', "features.confirm entry must be a non-empty string"),
             ("[features]\nconfirm = [1]\n", "features.confirm entry must be a non-empty string"),
+            ('personas = "x"\n', "personas must be a table"),
+            ('[personas]\nsecurity = "a.toml"\n', "personas.security must be a list"),
+            ('[personas]\nsecurity = [""]\n', "personas.security entry must be a non-empty string"),
+            ("[personas]\nsecurity = [1]\n", "personas.security entry must be a non-empty string"),
             ('logging = "x"\n', "logging must be a table"),
             ('[logging]\nenabled = "yes"\n', "logging.enabled must be a boolean"),
             ("[logging]\nlog_content = 1\n", "logging.log_content must be a boolean"),
