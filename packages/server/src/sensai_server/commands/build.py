@@ -4,7 +4,9 @@ from typing import TYPE_CHECKING
 
 from sensai_server.commands._branch import Branch
 from sensai_server.commands._effort import Effort
+from sensai_server.commands._export import Export
 from sensai_server.commands._help import Help
+from sensai_server.commands._import import Import
 from sensai_server.commands._model import Model
 from sensai_server.commands._persona import PersonaCommand
 from sensai_server.commands._tools import ToolsCommand
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
 
 def build_commands(
     sessions: SessionRegistry,
-    commands: CommandRegistry,
+    commands_registry: CommandRegistry,
     db: PersistentDatabase,
     pm: ProviderManager,
     tool_manager: ToolManager,
@@ -30,4 +32,13 @@ def build_commands(
     `sessions` are the live sessions, for the commands that act on other sessions than the caller's. `tool_manager`
     is shared by every session, each one toggling its tools in its own state.
     """
-    return [Model(), PersonaCommand(sessions), Branch(db, pm), ToolsCommand(tool_manager), Effort(), Help(commands)]
+    return [
+        Model(),
+        PersonaCommand(sessions),
+        Branch(db, pm),
+        ToolsCommand(tool_manager),
+        Effort(),
+        Export(db),
+        Import(db),
+        Help(commands_registry),
+    ]

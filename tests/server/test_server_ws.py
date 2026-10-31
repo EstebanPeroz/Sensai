@@ -38,7 +38,9 @@ from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
 from sensai_server.commands._effort import Effort as EffortCommand
+from sensai_server.commands._export import Export
 from sensai_server.commands._help import Help
+from sensai_server.commands._import import Import
 from sensai_server.commands._model import Model
 from sensai_server.commands._tools import ToolsCommand
 from sensai_server.pipeline import ChatPipeline
@@ -116,7 +118,16 @@ class TestLogin:
         with client.websocket_connect("/ws") as ws:
             session = _login(ws)
             assert session.model == MODEL
-            assert session.commands == ["/model", "/persona", "/branch", "/tools", "/effort", "/help"]
+            assert session.commands == [
+                "/model",
+                "/persona",
+                "/branch",
+                "/tools",
+                "/effort",
+                "/export",
+                "/import",
+                "/help",
+            ]
             assert registry.get(session.client_id) is not None
 
     def test_login_twice_keeps_session(self, client: TestClient, registry: SessionRegistry) -> None:
@@ -436,7 +447,8 @@ class TestCommandAndComplete:
             assert _receive(ws) == System(
                 message=(
                     f"Available commands:\n- branch: {Branch.help}\n- effort: {EffortCommand.help}\n"
-                    f"- help: {Help.help}\n- model: {Model.help}\n- persona: {PersonaCommand.help}\n"
+                    f"- export: {Export.help}\n- help: {Help.help}\n- import: {Import.help}\n"
+                    f"- model: {Model.help}\n- persona: {PersonaCommand.help}\n"
                     f"- tools: {ToolsCommand.help}"
                 )
             )
