@@ -6,7 +6,8 @@ from fastapi import WebSocket
 from sensai_protocol import ClientCommand, CommandContext, RequestCommand, ServerMessage, parse_server_message
 from sensai_server.app.outbound import Outbound
 from sensai_server.config.settings import OllamaSettings
-from sensai_server.llm.error import RequestCallError
+from sensai_server.llm.embedder import Embedder
+from sensai_server.llm.error import EmbeddingError, RequestCallError
 from sensai_server.llm.provider import ChatResponse, ProviderAdapter, ShowResponse
 from sensai_server.pipeline import ChatContext
 
@@ -131,6 +132,30 @@ class FakeAdapter(ProviderAdapter):
             msg = " Get -> connection refused"
             raise RequestCallError(msg)
         return self.models
+
+
+class FakeEmbedder(Embedder):
+    """An `Embedder` whose vectors are deterministic and need no provider; it records every batch in `batches`.
+
+    Texts mentioning "engine" land on one axis, the others on the opposite one, with a small drift per position so
+    that consecutive scores are never exactly equal: an adaptive threshold sitting right on a score would find no
+    breakpoint at all. When `failing` is set, `embed` raises `EmbeddingError`, as the real one does.
+    """
+
+    def __init__(self, *, failing: bool = False) -> None:
+        super().__init__(FakeAdapter(OllamaSettings()), "fake-embed")
+        self.batches: list[list[str]] = []
+        self.failing = failing
+
+    @override
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.batches.append(list(texts))
+        if self.failing:
+            msg = f"embedding model '{self.model}' is not available"
+            raise EmbeddingError(msg)
+        return [
+            [0.1 + i * 0.01, 1.0] if "engine" in text.lower() else [1.0, 0.1 + i * 0.01] for i, text in enumerate(texts)
+        ]
 
 
 def chunk(content: str, *, done: bool = False) -> dict:
