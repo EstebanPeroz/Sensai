@@ -7,10 +7,12 @@ from sensai.config.settings import (
     PROVIDERS,
     CacheSettings,
     ConfigError,
+    ContextSettings,
     FeatureSettings,
     LLMSettings,
     LoggingSettings,
     OllamaSettings,
+    PersonaSettings,
     RagDBSettings,
     Settings,
     WebSettings,
@@ -39,6 +41,7 @@ class TestPackagedSettings:
         assert settings.db.rag.location == "http://localhost:6333"
         assert settings.web == WebSettings()
         assert settings.logging == LoggingSettings(enabled=True, log_content=True)
+        assert settings.context == ContextSettings(budget=8192, warning_threshold=0.8)
 
     def test_default_file_is_the_template_without_local_settings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -180,11 +183,41 @@ class TestFeatures:
         assert features.confirm_in("tools") == {"b"}
 
 
+class TestPersonas:
+    def test_security_is_read_from_personas_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[personas]\nsecurity = ["a.toml", "b.toml"]\n'))
+
+        assert settings.personas.security == ["a.toml", "b.toml"]
+
+    def test_security_defaults_to_the_packaged_persona(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, ""))
+
+        assert settings.personas.security == ["sensai.config.personas/security.toml"]
+
+    def test_security_can_be_emptied(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "[personas]\nsecurity = []\n")).personas.security == []
+
+    def test_the_packaged_default_is_a_persona_file(self) -> None:
+        package, _, filename = PersonaSettings().security[0].rpartition("/")
+
+        assert resources.files(package).joinpath(filename).is_file()
+
+
 class TestLogging:
     def test_is_read_from_logging_table(self, tmp_path: Path) -> None:
         settings = load_settings(write_config(tmp_path, "[logging]\nenabled = false\nlog_content = false\n"))
 
         assert settings.logging == LoggingSettings(enabled=False, log_content=False)
+
+
+class TestContext:
+    def test_is_read_from_context_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, "[context]\nbudget = 4096\nwarning_threshold = 0.5\n"))
+
+        assert settings.context == ContextSettings(budget=4096, warning_threshold=0.5)
+
+    def test_missing_table_leaves_the_budget_to_the_model(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "")).context.budget is None
 
 
 class TestValidation:
@@ -230,9 +263,20 @@ class TestValidation:
             ('[features]\nconfirm = "tools.x"\n', "features.confirm must be a list"),
             ('[features]\nconfirm = [""]\n', "features.confirm entry must be a non-empty string"),
             ("[features]\nconfirm = [1]\n", "features.confirm entry must be a non-empty string"),
+            ('personas = "x"\n', "personas must be a table"),
+            ('[personas]\nsecurity = "a.toml"\n', "personas.security must be a list"),
+            ('[personas]\nsecurity = [""]\n', "personas.security entry must be a non-empty string"),
+            ("[personas]\nsecurity = [1]\n", "personas.security entry must be a non-empty string"),
             ('logging = "x"\n', "logging must be a table"),
             ('[logging]\nenabled = "yes"\n', "logging.enabled must be a boolean"),
             ("[logging]\nlog_content = 1\n", "logging.log_content must be a boolean"),
+            ('context = "x"\n', "context must be a table"),
+            ("[context]\nbudget = 0\n", "context.budget must be a positive number of tokens"),
+            ("[context]\nbudget = 1.5\n", "context.budget must be a positive number of tokens"),
+            ("[context]\nbudget = true\n", "context.budget must be a positive number of tokens"),
+            ('[context]\nwarning_threshold = "x"\n', "context.warning_threshold must be a number"),
+            ("[context]\nwarning_threshold = 0\n", "context.warning_threshold must be in"),
+            ("[context]\nwarning_threshold = 1.5\n", "context.warning_threshold must be in"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:

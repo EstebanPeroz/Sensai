@@ -3,11 +3,15 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Any
 
+from sensai_server.memory import Conversation
+
 if TYPE_CHECKING:
     from collections.abc import Coroutine
     from uuid import UUID
 
-    from sensai_server.outbound import Outbound
+    from sensai_server.app import Outbound
+    from sensai_server.llm.persona import PersonaManager
+    from sensai_server.llm.provider.provider_manager import ProviderManager
 
 DEFAULT_EFFORT = "high"
 
@@ -16,26 +20,50 @@ class Session:
     """The state of one logged-in client, and the single task it may run at a time."""
 
     client_id: UUID
-    model: str
+    conv: Conversation
     effort: str
     out: Outbound
+    persona_manager: PersonaManager
+    provider_manager: ProviderManager
     task: asyncio.Task[None] | None
+    task_label: str | None
 
-    def __init__(self, client_id: UUID, model: str, out: Outbound, effort: str = DEFAULT_EFFORT) -> None:
-        """Build the session of `client_id`, chatting with `model` and sending on `out`."""
+    def __init__(
+        self,
+        client_id: UUID,
+        out: Outbound,
+        pm: ProviderManager,
+        persona_manager: PersonaManager,
+        *,
+        effort: str = DEFAULT_EFFORT,
+    ) -> None:
+        """Build the session of `client_id`, chatting with `model`, sending on `out`, using the shared managers."""
         self.client_id = client_id
-        self.model = model
         self.effort = effort
         self.out = out
+        self.persona_manager = persona_manager
         self.task = None
+        self.task_label = None
+        self.provider_manager = pm
+        self.conv = Conversation()
+
+    async def set_model(self, model: str) -> bool:
+        """Set the model the Session will use from now on."""
+        provider = self.provider_manager.get_provider(model)
+        if provider is None:
+            return False
+        self.conv.model = model
+        return True
 
     @property
     def busy(self) -> bool:
         """Whether a task is running."""
         return self.task is not None and not self.task.done()
 
-    def start(self, coro: Coroutine[Any, Any, None]) -> bool:
+    def start(self, coro: Coroutine[Any, Any, None], label: str | None = None) -> bool:
         """Run `coro` as the session's task. Returns False, without running it, if a task is already running.
+
+        `label` names the task in messages, such as the typed command; it is kept in `task_label` while it runs.
 
         An exception raised by `coro` is sent to the client as an `error`; a cancellation sends nothing.
         """
@@ -43,6 +71,7 @@ class Session:
             coro.close()
             return False
         self.task = asyncio.create_task(self._run(coro))
+        self.task_label = label
         return True
 
     async def _run(self, coro: Coroutine[Any, Any, None]) -> None:
@@ -55,6 +84,7 @@ class Session:
         finally:
             if self.task is asyncio.current_task():
                 self.task = None
+                self.task_label = None
 
     def cancel(self) -> None:
         """Cancel the running task, if any."""

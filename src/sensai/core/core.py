@@ -22,6 +22,7 @@ from sensai.llm.thinking.react import ReAct
 from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
+from sensai.monitoring.budget import ContextBudget
 from sensai.monitoring.logger import InteractionLogger
 from sensai.pipeline import ChatPipeline
 from sensai.pipeline.modules import ModelStage, PersonaStage, RagStage
@@ -54,6 +55,7 @@ class Core:
     _events: EventBus
     _mcp_client: MCPClient | None
     _tool_manager: ToolManager
+    _context_budget: ContextBudget
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
@@ -65,7 +67,7 @@ class Core:
         if db is None:
             msg = "no persistent database"
             raise DbConnectionError(msg)
-        self._persona_manager = PersonaManager(db)
+        self._persona_manager = PersonaManager(db, settings.personas.security)
         with contextlib.suppress(DuplicatePersonaError):
             self._persona_manager.create_default_persona()
         self._provider_manager = ProviderManager(settings.llm)
@@ -75,6 +77,9 @@ class Core:
             msg = "\n".join(lines)
             raise ModelError(msg)
         self._events = EventBus()
+        # Before the logger, whose database failure would stop the event from reaching the budget.
+        self._context_budget = ContextBudget(settings.context, self._context_length, ui.update_context_usage)
+        self._context_budget.attach(self._events)
         InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder, self._ui.ask_user)
@@ -86,7 +91,7 @@ class Core:
             confirm=settings.features.confirm_in("tools"),
             approver=self._ui.ask_confirmation,
         )
-        self._react = ReAct(self._provider_manager, self._tool_manager)
+        self._react = ReAct(self._provider_manager, self._tool_manager, context_window=settings.context.budget)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
         indexer, retrieval = self._build_rag()
         self.conversation = Conversation(
@@ -117,6 +122,7 @@ class Core:
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}
         )
         self._ui.update_thinking_effort(Effort.effort_level(self._react.max_iterations))
+        self._refresh_context_usage()
 
         event: ui.Event | None = None
         while not self._is_quit(event):
@@ -149,9 +155,9 @@ class Core:
         StateCommand.bind_db(db)
         registry = CommandRegistry(
             [
-                Model(self._provider_manager),
+                Model(self._provider_manager, self._refresh_context_usage),
                 PersonaCommand(self._persona_manager),
-                Branch(self.conversation, self._provider_manager),
+                Branch(self.conversation, self._provider_manager, self._refresh_context_usage),
                 ToolsCommand(self._tool_manager),
                 Effort(self._react),
                 Export(self.conversation),
@@ -191,6 +197,21 @@ class Core:
             self._events.emit(interaction)
         except SensaiError as err:
             self._ui.send_system_message(f"Failed to log interaction: {err}")
+
+    def _refresh_context_usage(self) -> None:
+        """Show the context usage of the current branch against the budget of the current model."""
+        model = self._provider_manager.provider().current_model()
+        self._ui.update_context_usage(self._context_budget.usage(model, self.conversation.uuid))
+
+    def _context_length(self, model: str) -> int | None:
+        """Return the context length of `model`, None when its provider cannot tell."""
+        provider = self._provider_manager.get_provider(model)
+        if provider is None:
+            return None
+        try:
+            return provider.show(model).context_length
+        except SensaiError:
+            return None
 
     def _build_embedder(self) -> Embedder | None:
         """Build the embedder shared by the web tools and the semantic cache, or None without an embedding model."""

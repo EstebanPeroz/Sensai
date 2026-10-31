@@ -25,9 +25,7 @@ class Parsing:
         self._parser.add_argument(
             "--port", type=int, default=DEFAULT_PORT, help=f"port to listen on (default: {DEFAULT_PORT})"
         )
-        self._parser.add_argument(
-            "--config", type=Path, metavar="PATH", help="settings file to use instead of settings.toml"
-        )
+        self._parser.add_argument("--config", type=Path, metavar="PATH", required=True, help="settings file to load")
 
     def parse_args(self, argv: Sequence[str] | None = None) -> argparse.Namespace:
         """Parse the command line arguments."""
