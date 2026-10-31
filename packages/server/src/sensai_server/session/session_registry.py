@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sensai_server.app import Outbound
+    from sensai_server.cache import SemanticCache
     from sensai_server.llm.persona import Persona, PersonaManager
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.tools.tool_manager import ToolManager
@@ -22,13 +23,24 @@ class SessionRegistry:
 
     _sessions: dict[UUID, Session]
     _lock: asyncio.Lock
+    _cache: SemanticCache | None
     _pm: ProviderManager
     _persona_manager: PersonaManager
     _tool_manager: ToolManager
 
-    def __init__(self, pm: ProviderManager, persona_manager: PersonaManager, tool_manager: ToolManager) -> None:
-        """Open sessions on the models served by `pm`, sharing `persona_manager` and `tool_manager`."""
+    def __init__(
+        self,
+        pm: ProviderManager,
+        persona_manager: PersonaManager,
+        tool_manager: ToolManager,
+        cache: SemanticCache | None = None,
+    ) -> None:
+        """Open sessions on the models served by `pm`, sharing `persona_manager`, `tool_manager` and `cache`.
+
+        Each session gets its own view of `cache`; without one, the sessions have no semantic cache.
+        """
         self._pm = pm
+        self._cache = cache
         self._persona_manager = persona_manager
         self._tool_manager = tool_manager
         self._sessions = {}
@@ -45,7 +57,7 @@ class SessionRegistry:
                 f"Unknown model '{model}'. Available models: {', '.join(self._pm.get_models()) or 'none'}"
             )
             return None
-        session = Session(out, self._pm, self._persona_manager, self._tool_manager)
+        session = Session(out, self._pm, self._persona_manager, self._tool_manager, cache=self._cache)
         await session.set_model(model)
         async with self._lock:
             self._sessions[session.client_id] = session
@@ -55,7 +67,7 @@ class SessionRegistry:
         return session
 
     async def close(self, client_id: UUID) -> None:
-        """Stop the task of the session of `client_id` and unregister it. An unknown id does nothing."""
+        """Stop the task of the session of `client_id`, clear its cache and unregister it. An unknown id is ignored."""
         async with self._lock:
             session = self._sessions.pop(client_id, None)
         if session is not None:

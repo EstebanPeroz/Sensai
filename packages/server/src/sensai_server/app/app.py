@@ -87,7 +87,7 @@ def create_app(
     cache = _build_cache(settings, embedder)
     pipeline = _build_pipeline(react, rag)
 
-    sessions = SessionRegistry(pm, persona_manager, tool_manager)
+    sessions = SessionRegistry(pm, persona_manager, tool_manager, cache)
     commands = CommandRegistry()
     commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager, rag=rag))
 

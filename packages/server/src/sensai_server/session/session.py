@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from sensai_server.cache import CacheError
 from sensai_server.memory import Conversation
 
 if TYPE_CHECKING:
@@ -11,10 +13,13 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sensai_server.app import Outbound
+    from sensai_server.cache import SemanticCache, SessionCache
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider.provider_manager import ProviderManager
     from sensai_server.tools.state import ToolState
     from sensai_server.tools.tool_manager import ToolManager
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_EFFORT = "high"
 
@@ -22,6 +27,7 @@ DEFAULT_EFFORT = "high"
 class Session:
     """The state of one logged-in client, and the single task it may run at a time."""
 
+    cache: SessionCache | None
     client_id: UUID
     conv: Conversation
     effort: str
@@ -32,18 +38,20 @@ class Session:
     task_label: str | None
     tools: ToolState
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - the shared managers, plus the keyword-only options
         self,
         out: Outbound,
         pm: ProviderManager,
         persona_manager: PersonaManager,
         tool_manager: ToolManager,
         *,
+        cache: SemanticCache | None = None,
         effort: str = DEFAULT_EFFORT,
     ) -> None:
         """Build the session, sending on `out`, using the shared managers.
 
-        The session gets its own tool state from `tool_manager`, so its tool choices never reach the other sessions.
+        The session gets its own tool state from `tool_manager`, so its tool choices never reach the other sessions,
+        and its own view of `cache`, if there is one, so it never sees another session's cached answers.
         """
         self.client_id = uuid4()
         self.effort = effort
@@ -54,6 +62,7 @@ class Session:
         self.provider_manager = pm
         self.conv = Conversation()
         self.tools = tool_manager.new_state()
+        self.cache = cache.for_session(self.client_id) if cache is not None else None
 
     async def set_model(self, model: str) -> bool:
         """Set the model the Session will use from now on."""
@@ -108,5 +117,14 @@ class Session:
         await asyncio.wait({task})
 
     async def close(self) -> None:
-        """Release the session: stop its running task."""
+        """Release the session: stop its running task, then clear its cached answers.
+
+        A failure to clear the cache is logged, never raised: closing always succeeds.
+        """
         await self.stop()
+        if self.cache is None:
+            return
+        try:
+            await self.cache.clear()
+        except CacheError as error:
+            logger.warning("the semantic cache of session %s could not be cleared: %s", self.client_id, error)
