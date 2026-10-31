@@ -39,6 +39,9 @@ confirm = []
 
 # confirm = ["tools.web_fetch"]
 
+[personas]
+security = ["sensai.config.personas/security.toml"]
+
 [logging]
 # Record every call to the model in the persistent database; log_content = false keeps only the metadata.
 enabled = true
@@ -48,5 +51,7 @@ log_content = true
 # Token budget of the conversation, also sent to the model as its context window. Without it, the budget is the
 # context length of the model, while Ollama keeps its own, often much smaller, window.
 budget = 8192
-# Share of the budget past which the usage is flagged.
+# Share of the budget past which the usage is flagged and the oldest messages are summarised.
 warning_threshold = 0.8
+# Number of the last messages always sent as they are, never summarised.
+keep_recent = 6

@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 import anyio
 
 from sensai import ui
-from sensai.commands import Ask, Branch, Command, Dashboard, Help, Index, Model, PersonaCommand, StateCommand
+from sensai.commands import Ask, Branch, Command, Compress, Dashboard, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
 from sensai.commands.effort import Effort
 from sensai.commands.registry import CommandRegistry, UnknownCommandError
@@ -22,10 +22,11 @@ from sensai.llm.thinking.react import ReAct
 from sensai.mcp.client import MCPClient
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
-from sensai.monitoring.budget import ContextBudget
+from sensai.monitoring.budget import ContextBudget, ContextUsage
 from sensai.monitoring.logger import InteractionLogger
 from sensai.pipeline import ChatPipeline
 from sensai.pipeline.modules import ModelStage, PersonaStage, RagStage
+from sensai.pipeline.modules.compression import CompressionStage, Compressor
 from sensai.pipeline.modules.guardrails import BadWordsGuard
 from sensai.rag.collection import Collection
 from sensai.rag.indexation_rag import DEFAULT_EMBEDDING_MODEL, Indexation
@@ -56,6 +57,7 @@ class Core:
     _mcp_client: MCPClient | None
     _tool_manager: ToolManager
     _context_budget: ContextBudget
+    _compressor: Compressor
 
     def __init__(self, ui: ui.UIAdapter, settings: Settings, args: argparse.Namespace) -> None:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
@@ -67,7 +69,7 @@ class Core:
         if db is None:
             msg = "no persistent database"
             raise DbConnectionError(msg)
-        self._persona_manager = PersonaManager(db)
+        self._persona_manager = PersonaManager(db, settings.personas.security)
         with contextlib.suppress(DuplicatePersonaError):
             self._persona_manager.create_default_persona()
         self._provider_manager = ProviderManager(settings.llm)
@@ -94,6 +96,13 @@ class Core:
         self._react = ReAct(self._provider_manager, self._tool_manager, context_window=settings.context.budget)
         cache = connect_cache(settings.cache, embedder) if embedder is not None else None
         indexer, retrieval = self._build_rag()
+        self._compressor = Compressor(
+            self._provider_manager,
+            db.summaries,
+            settings.context.keep_recent,
+            context_window=settings.context.budget,
+            on_interaction=self._emit_interaction,
+        )
         self.conversation = Conversation(
             self._provider_manager, self._persona_manager, self._build_pipeline(retrieval), self._events, cache
         )
@@ -143,6 +152,7 @@ class Core:
         """Build the chain every chat exchange goes through, from the first guard down to the model."""
         pipeline = ChatPipeline(ModelStage(self._react))
         pipeline.use(BadWordsGuard())
+        pipeline.use(CompressionStage(self._compressor, self._near_budget))
         pipeline.use(PersonaStage(self._persona_manager))
         pipeline.use(RagStage(retrieval))
         return pipeline
@@ -165,6 +175,7 @@ class Core:
                 Index(indexer),
                 Ask(retrieval),
                 Dashboard(db.interactions),
+                Compress(self.conversation, self._compressor),
             ]
         )
         registry.register_command(Help(registry))
@@ -198,10 +209,31 @@ class Core:
         except SensaiError as err:
             self._ui.send_system_message(f"Failed to log interaction: {err}")
 
+    def _context_usage(self) -> ContextUsage:
+        """Return the context usage of the current branch, as last measured, against the budget of the current model."""
+        model = self._provider_manager.provider().current_model()
+        return self._context_budget.usage(model, self.conversation.uuid)
+
     def _refresh_context_usage(self) -> None:
         """Show the context usage of the current branch against the budget of the current model."""
-        model = self._provider_manager.provider().current_model()
-        self._ui.update_context_usage(self._context_budget.usage(model, self.conversation.uuid))
+        self._ui.update_context_usage(self._context_usage())
+
+    def _near_budget(self) -> bool:
+        """Whether the conversation, as last measured, takes enough of its budget to be compressed."""
+        return self._context_usage().near_limit
+
+    def _ask_how_to_go_on(self) -> None:
+        """Near the budget, let the user choose between compressing the conversation and starting a new one.
+
+        Asked before the message is stored, so that a new conversation starts with it. Compressing is left to the
+        pipeline, which does it whenever the conversation is near its budget.
+        """
+        usage = self._context_usage()
+        if not usage.near_limit or self._ui.ask_compression(usage) is not ui.CompressionChoice.NEW_CONVERSATION:
+            return
+        self.conversation.reset()
+        self._ui.load_conversation(self.conversation.history)
+        self._refresh_context_usage()
 
     def _context_length(self, model: str) -> int | None:
         """Return the context length of `model`, None when its provider cannot tell."""
@@ -241,6 +273,8 @@ class Core:
 
     def _launch_conv_chat(self, content: str) -> None:
         """Send `content` through the conversation, reporting any provider error instead of raising."""
+        if self.conversation.uuid is not None:
+            self._ask_how_to_go_on()
         if self.conversation.uuid is None:
             self.conversation.add_conv_to_db(None, content)
         try:
