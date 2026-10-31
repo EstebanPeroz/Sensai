@@ -211,11 +211,13 @@ class ContextSettings:
     """Settings of the [context] table: the token budget of the conversation context.
 
     `budget` is also the context window asked of the model; without it, the budget is the context length of the
-    model and the window is left to the provider. Past `warning_threshold` of the budget, the usage is flagged.
+    model and the window is left to the provider. Past `warning_threshold` of the budget, the usage is flagged and
+    the oldest messages are summarised, all but the `keep_recent` last ones, sent as they are.
     """
 
     budget: int | None = None
     warning_threshold: float = 0.8
+    keep_recent: int = 6
 
     def __post_init__(self) -> None:
         """Check the values, which come unchecked from the settings file."""
@@ -230,6 +232,9 @@ class ContextSettings:
         if not 0 < self.warning_threshold <= 1:
             msg = f"context.warning_threshold must be in ]0, 1], got {self.warning_threshold}"
             raise ValueError(msg)
+        if isinstance(self.keep_recent, bool) or not isinstance(self.keep_recent, int) or self.keep_recent <= 0:
+            msg = f"context.keep_recent must be a positive number of messages, got {self.keep_recent!r}"
+            raise TypeError(msg)
 
 
 @dataclass
