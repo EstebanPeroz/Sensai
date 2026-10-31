@@ -3,6 +3,7 @@ from __future__ import annotations
 from argparse import Namespace
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 import redis
@@ -10,9 +11,12 @@ import redis
 from sensai.config.settings import FeatureSettings, LLMSettings, OllamaSettings, Settings
 from sensai.core.core import Core
 from sensai.llm.error import ModelError
+from sensai.llm.responses import ChatMetrics
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
 from sensai.mcp.tool import MCPTool
+from sensai.memory.persistent_db.error import DatabaseError
+from sensai.monitoring.interaction import Interaction, InteractionStatus
 from sensai.semantic.cache import RedisSemanticCache
 from sensai.tools.tool_manager import ToolManager
 from sensai.ui.adapter import EventType
@@ -86,6 +90,24 @@ class TestSemanticCache:
         with pytest.raises(ModelError, match="mxbai-embed-large"):
             make_core(provider, embedding_model="mxbai-embed-large")
         redis_client.ping.assert_not_called()
+
+
+class TestContextBudget:
+    def test_is_updated_when_logging_the_interaction_fails(self, provider: MagicMock, db: MagicMock) -> None:
+        db.interactions.add.side_effect = DatabaseError("down")
+        core = make_core(provider, embedding_model=None)
+        interaction = Interaction(
+            model=MODEL,
+            status=InteractionStatus.OK,
+            latency_ms=1.0,
+            branch_id=uuid4(),
+            metrics=ChatMetrics(prompt_tokens=1000, completion_tokens=50),
+        )
+
+        with pytest.raises(DatabaseError):
+            core._events.emit(interaction)  # noqa: SLF001
+
+        assert core._ui.update_context_usage.call_args.args[0].used == 1050  # noqa: SLF001
 
 
 def test_core_does_not_create_mcp_client_without_configuration() -> None:

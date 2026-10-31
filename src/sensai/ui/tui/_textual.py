@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
     from sensai.llm.responses import ChatResponse
     from sensai.memory.history import History
+    from sensai.monitoring.budget import ContextUsage
     from sensai.monitoring.metrics import Report
 
 
@@ -32,6 +33,20 @@ USER_PROMPT_BACKGROUND: str = "grey"
 Applied as CSS on the `ListItem` (see `ChatApp.CSS`), not as inline markup,
 so it fills the full line width instead of just the text.
 """
+
+
+def _tokens(count: int) -> str:
+    """Write a token `count` short, in thousands from a thousand on (`12.3k`)."""
+    return str(count) if count < 1000 else f"{count / 1000:.1f}k"  # noqa: PLR2004
+
+
+def _format_usage(usage: ContextUsage) -> str:
+    """Render the context `usage` as `context: used / budget (share)`, in red once near the limit, `?` when unknown."""
+    used = "?" if usage.used is None else _tokens(usage.used)
+    if usage.budget is None or usage.ratio is None:
+        return f"context: {used}" if usage.budget is None else f"context: {used} / {_tokens(usage.budget)}"
+    text = f"context: {_tokens(usage.used)} / {_tokens(usage.budget)} ({usage.ratio:.0%})"
+    return fx.red(text) if usage.near_limit else text
 
 
 def _format(mode: str, text: str) -> str:
@@ -351,3 +366,7 @@ class ChatApp(App):
     def update_thinking_effort(self, level: str) -> None:
         """Show the thinking effort `level` at the bottom right of the input box."""
         self.query_one("#input", Input).border_subtitle = f"effort: {level}"
+
+    def update_context_usage(self, usage: ContextUsage) -> None:
+        """Show the context `usage` at the top left of the input box."""
+        self.query_one("#input", Input).border_title = _format_usage(usage)

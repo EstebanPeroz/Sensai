@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 from sensai.commands.base import Command
 from sensai.llm.message import Role
 from sensai.memory.history import History
+from sensai.monitoring.budget import ContextUsage
 from sensai.monitoring.metrics import Report
 from sensai.ui.adapter import Confirmation, UIAdapter
 
@@ -13,6 +14,7 @@ class FakeUI(UIAdapter):
     def __init__(self) -> None:
         self.messages: list[str] = []
         self.thinking_efforts: list[str] = []
+        self.context_usages: list[ContextUsage] = []
         self.confirmations: list[Confirmation] = []
         self.confirmation_requests: list[tuple[str, dict]] = []
         self.answers: list[str | None] = []
@@ -77,6 +79,11 @@ class FakeUI(UIAdapter):
     @override
     def update_thinking_effort(self, level: str) -> bool:
         self.thinking_efforts.append(level)
+        return True
+
+    @override
+    def update_context_usage(self, usage: ContextUsage) -> bool:
+        self.context_usages.append(usage)
         return True
 
     @override
