@@ -12,10 +12,17 @@ from sensai_server.app import create_app
 from sensai_server.app._state import app_state
 from sensai_server.cache import SemanticCache
 from sensai_server.config.settings import CacheSettings, Settings
+from sensai_server.pipeline import ChatPipeline
+from sensai_server.pipeline.modules import CacheStage
+from sensai_server.pipeline.modules.guardrails import BadWordsGuard
 
 from tests.server.conftest import MODEL, settings_with_db
 from tests.server.fakes import FakeEmbedder
 from tests.server.test_server_semantic_cache import REDIS_URL, UNREACHABLE
+
+
+def _stage_types(pipeline: ChatPipeline) -> list[type]:
+    return [type(stage) for stage in pipeline._stages]  # noqa: SLF001
 
 
 def _settings(tmp_path: Path, redis_url: str) -> Settings:
@@ -37,6 +44,7 @@ class TestWithoutCache:
             app = create_app(settings_with_db(tmp_path))
 
         assert app_state(app).cache is None
+        assert CacheStage not in _stage_types(app_state(app).pipeline)
         assert "no embedder: the semantic cache is left out" in caplog.text
 
     @pytest.mark.usefixtures("embedder")
@@ -45,6 +53,7 @@ class TestWithoutCache:
             app = create_app(_settings(tmp_path, UNREACHABLE))
 
         assert app_state(app).cache is None
+        assert CacheStage not in _stage_types(app_state(app).pipeline)
         assert "the Redis server does not answer" in caplog.text
 
     def test_the_app_starts_and_stops(self, tmp_path: Path) -> None:
@@ -78,6 +87,7 @@ class TestWithCache:
         app = create_app(_settings(tmp_path, REDIS_URL))
 
         assert isinstance(app_state(app).cache, SemanticCache)
+        assert _stage_types(app_state(app).pipeline)[:2] == [BadWordsGuard, CacheStage]
 
     @pytest.mark.usefixtures("embedder")
     async def test_startup_clears_the_entries_of_a_previous_run(

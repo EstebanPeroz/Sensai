@@ -1,18 +1,19 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from typing import cast
 from uuid import uuid4
 
 import pytest
 from redis.asyncio import Redis
-from sensai_server.cache import SemanticCache
+from sensai_server.cache import SemanticCache, SessionCache
 from sensai_server.llm.persona import PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.session import Session, SessionRegistry
 from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import MODEL, SETTINGS
-from tests.server.fakes import FakeEmbedder, RecordingOutbound
+from tests.server.fakes import FakeEmbedder, FakeSessionCache, RecordingOutbound
 from tests.server.test_server_semantic_cache import ANSWER, QUESTION, REDIS_URL, THRESHOLD, TTL, UNREACHABLE
 
 # The Redis fixtures of the semantic cache tests: a client, skipping without Redis, and a namespace of the test alone.
@@ -146,3 +147,31 @@ class TestCloseClearsTheCache:
             assert "could not be cleared" in caplog.text
         finally:
             await unreachable.close()
+
+
+class TestCloseWithAFakeCache:
+    """The close rules, checked without Redis."""
+
+    async def test_close_clears_the_cache(self, persona_manager: PersonaManager) -> None:
+        registry = _registry(persona_manager, None)
+        session = await _open(registry)
+        fake = FakeSessionCache({QUESTION: ANSWER})
+        session.cache = cast("SessionCache", fake)
+
+        await registry.close(session.client_id)
+
+        assert fake.clears == 1
+        assert fake.answers == {}
+
+    async def test_a_failing_clear_does_not_stop_the_close(
+        self, persona_manager: PersonaManager, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        registry = _registry(persona_manager, None)
+        session = await _open(registry)
+        session.cache = cast("SessionCache", FakeSessionCache(failing_clear=True))
+
+        with caplog.at_level(logging.WARNING):
+            await registry.close(session.client_id)
+
+        assert len(registry) == 0
+        assert "could not be cleared" in caplog.text
