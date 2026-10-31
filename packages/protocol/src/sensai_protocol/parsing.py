@@ -1,14 +1,11 @@
 from pydantic import TypeAdapter, ValidationError
 
 from sensai_protocol.client_messages import ClientMessage
+from sensai_protocol.error import ProtocolError
 from sensai_protocol.server_messages import ServerMessage
 
 _client_adapter: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
 _server_adapter: TypeAdapter[ServerMessage] = TypeAdapter(ServerMessage)
-
-
-class ProtocolError(Exception):
-    """A received frame is not valid JSON or matches no message of the expected direction."""
 
 
 def parse_client_message(raw: str | bytes) -> ClientMessage:

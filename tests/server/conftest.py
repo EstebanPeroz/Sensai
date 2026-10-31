@@ -6,10 +6,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sensai_protocol import AiChunk
 from sensai_server.app import create_app
-from sensai_server.models import DEFAULT_MODELS
+from sensai_server.config.settings import LLMSettings, OllamaSettings, Settings
+from sensai_server.llm.provider import provider_manager
 from sensai_server.session import Session, SessionRegistry
 
-MODEL = DEFAULT_MODELS[0]
+from tests.server.fakes import FakeAdapter
+
+MODEL = "a"
 SLOW = "slow"
 CONFIRM = "confirm"
 ASK = "ask"
@@ -35,9 +38,25 @@ async def fake_command(session: Session, command: str) -> None:
     await session.out.send_system_message(f"ran {command}")
 
 
+SETTINGS = Settings(llm=LLMSettings(providers={"ollama": OllamaSettings()}))
+
+
+@pytest.fixture(autouse=True)
+def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve the providers from `FakeAdapter`, so that no server test calls a real provider.
+
+    The adapter serves the models `a` and `b`, and its class state is reset for every test.
+    """
+    monkeypatch.setitem(provider_manager.PROVIDER_ADAPTERS, "ollama", FakeAdapter)
+    monkeypatch.setattr(FakeAdapter, "models", [MODEL, "b"])
+    monkeypatch.setattr(FakeAdapter, "refused", set())
+    monkeypatch.setattr(FakeAdapter, "failing", set())
+    monkeypatch.setattr(FakeAdapter, "unreachable", False)
+
+
 @pytest.fixture
 def app() -> FastAPI:
-    return create_app(chat=fake_chat, command=fake_command)
+    return create_app(SETTINGS, chat=fake_chat, command=fake_command)
 
 
 @pytest.fixture
