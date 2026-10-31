@@ -37,10 +37,15 @@ def load_conversation(fake_ui: FakeUI) -> MagicMock:
 
 
 @pytest.fixture
-def branch(conv: MagicMock, provider_manager: MagicMock, db: MagicMock) -> Branch:
+def refresh_context_usage() -> MagicMock:
+    return MagicMock()
+
+
+@pytest.fixture
+def branch(conv: MagicMock, provider_manager: MagicMock, db: MagicMock, refresh_context_usage: MagicMock) -> Branch:
     StateCommand.bind_db(db)
     StateCommand._cache_id.clear()  # noqa: SLF001
-    return Branch(conv, provider_manager)
+    return Branch(conv, provider_manager, refresh_context_usage)
 
 
 class TestDispatch:
@@ -174,6 +179,24 @@ class TestSet:
 
         assert fake_ui.messages == ["given uuid is invalid"]
         load_conversation.assert_not_called()
+
+    def test_refreshes_the_context_usage_of_the_loaded_branch(
+        self, branch: Branch, load_conversation: MagicMock, refresh_context_usage: MagicMock
+    ) -> None:
+        branch.execute("set", str(OTHER))
+
+        load_conversation.assert_called_once()
+        refresh_context_usage.assert_called_once_with()
+
+    def test_keeps_the_context_usage_when_nothing_is_loaded(
+        self, branch: Branch, db: MagicMock, load_conversation: MagicMock, refresh_context_usage: MagicMock
+    ) -> None:
+        db.get_branch.side_effect = InvalidInstanceError("given uuid is invalid")
+
+        branch.execute("set", str(OTHER))
+
+        load_conversation.assert_not_called()
+        refresh_context_usage.assert_not_called()
 
 
 class TestRemove:
