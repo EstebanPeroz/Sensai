@@ -14,6 +14,7 @@ dependencies = [
     "sensai-protocol",
     "fastapi",
     "uvicorn[standard]",
+    "requests",
 ]
 
 [project.scripts]
