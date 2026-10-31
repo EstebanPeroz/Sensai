@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from starlette.applications import Starlette
 
+    from sensai_server.cache import SemanticCache
     from sensai_server.chat.react import ReAct
     from sensai_server.commands import CommandRegistry
     from sensai_server.config.settings import Settings
@@ -41,6 +42,7 @@ class AppState:
     commands: CommandRegistry
     pipeline: ChatPipeline
     rag: Rag | None
+    cache: SemanticCache | None
 
 
 def set_app_state(app: Starlette, state: AppState) -> None:

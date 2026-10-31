@@ -61,6 +61,14 @@ class SessionRegistry:
         if session is not None:
             await session.close()
 
+    async def close_all(self) -> None:
+        """Close and unregister every open session, as when the server stops."""
+        async with self._lock:
+            sessions = list(self._sessions.values())
+            self._sessions.clear()
+        for session in sessions:
+            await session.close()
+
     def refresh_persona(self, updated: Persona) -> None:
         """Give `updated` to every session whose conversation uses an older version of that persona."""
         for session in self._sessions.values():
