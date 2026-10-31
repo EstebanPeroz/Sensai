@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+from sensai_protocol.server_messages import Role  # noqa: TC002  # SQLAlchemy resolves Mapped[...] at runtime
 from sqlalchemy import JSON, DateTime, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from sensai_server.memory.message import Role  # noqa: TC001  # SQLAlchemy resolves Mapped[...] at runtime
 from sensai_server.monitoring.interaction import InteractionStatus  # noqa: TC001
 
 

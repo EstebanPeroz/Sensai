@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from sensai_protocol import Role
 
 from sensai_server.chat import chat
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Coroutine, Sequence
+    from collections.abc import Sequence
 
     from sensai_protocol import (
         Cancel,
@@ -23,9 +23,9 @@ if TYPE_CHECKING:
 
     from sensai_server.app.outbound import Outbound
     from sensai_server.commands import CommandRegistry
+    from sensai_server.memory.persistent_db import PersistentDatabase
+    from sensai_server.pipeline import ChatPipeline
     from sensai_server.session import Session, SessionRegistry
-
-type ChatRunner = Callable[[Session, str], Coroutine[Any, Any, None]]
 
 PLACEHOLDER_DELAY = 0.3
 
@@ -61,17 +61,18 @@ async def _stop_client_command(session: Session) -> None:
         await session.out.send_system_message(f"{stopped} stopped: a new message was sent.")
 
 
-async def handle_chat(session: Session, message: Chat) -> None:
+async def handle_chat(session: Session, message: Chat, pipeline: ChatPipeline, db: PersistentDatabase) -> None:
     """Echo the prompt as `input`, then start the answer as the session's task, streamed as `ai_chunk`.
 
-    A task waiting for a client command is stopped first. Refused with an `error` while another task is running.
+    The prompt goes through `pipeline`, and the prompt and its answer are saved in `db`. A task waiting for a client
+    command is stopped first. Refused with an `error` while another task is running.
     """
     await _stop_client_command(session)
     if session.busy:
         await session.out.send_error("An answer is already running: cancel it first.")
         return
     await session.out.send_input(Role.USER, message.prompt)
-    session.start(chat(session, message.prompt))
+    session.start(chat(session, message.prompt, pipeline, db))
 
 
 async def handle_command(session: Session, message: Command, command_registry: CommandRegistry) -> None:

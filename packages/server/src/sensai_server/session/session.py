@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from sensai_server.memory import Conversation
 
@@ -12,6 +13,8 @@ if TYPE_CHECKING:
     from sensai_server.app import Outbound
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider.provider_manager import ProviderManager
+    from sensai_server.tools.state import ToolState
+    from sensai_server.tools.tool_manager import ToolManager
 
 DEFAULT_EFFORT = "high"
 
@@ -27,18 +30,22 @@ class Session:
     provider_manager: ProviderManager
     task: asyncio.Task[None] | None
     task_label: str | None
+    tools: ToolState
 
     def __init__(
         self,
-        client_id: UUID,
         out: Outbound,
         pm: ProviderManager,
         persona_manager: PersonaManager,
+        tool_manager: ToolManager,
         *,
         effort: str = DEFAULT_EFFORT,
     ) -> None:
-        """Build the session of `client_id`, chatting with `model`, sending on `out`, using the shared managers."""
-        self.client_id = client_id
+        """Build the session, sending on `out`, using the shared managers.
+
+        The session gets its own tool state from `tool_manager`, so its tool choices never reach the other sessions.
+        """
+        self.client_id = uuid4()
         self.effort = effort
         self.out = out
         self.persona_manager = persona_manager
@@ -46,6 +53,7 @@ class Session:
         self.task_label = None
         self.provider_manager = pm
         self.conv = Conversation()
+        self.tools = tool_manager.new_state()
 
     async def set_model(self, model: str) -> bool:
         """Set the model the Session will use from now on."""

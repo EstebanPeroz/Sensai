@@ -105,10 +105,10 @@ class Branch(Command):
 
     async def _fork(self, session: Session) -> None:
         """Derive a new branch from the current one."""
-        if session.conv.uuid is None:
+        if session.conv.uuid is None or session.conv.model is None:
             await session.out.send_system_message("You cannot fork without a conversation started/setted")
             return
-        uuid: UUID | None = self._db.create_branch(session.conv.uuid)
+        uuid: UUID | None = self._db.create_branch(model=session.conv.model, current_branch=session.conv.uuid)
         if uuid is None:
             await session.out.send_system_message("Failed to make a new branch")
             return

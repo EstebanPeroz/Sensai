@@ -5,7 +5,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from sensai_tui.connection import Connection, ConnectionFailedError
-from sensai_tui.parsing import Parsing
+from sensai_tui.parsing import Parsing, server_url
 from sensai_tui.ui import ChatApp
 
 if TYPE_CHECKING:
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point: connect to the server and run the terminal client."""
     args = Parsing().parse_args(argv)
-    return asyncio.run(_run(Connection(args.url), args.model))
+    return asyncio.run(_run(Connection(server_url(args.port)), args.model))
 
 
 async def _run(connection: Connection, model: str) -> int:

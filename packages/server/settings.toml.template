@@ -31,6 +31,8 @@ timeout = 10.0
 [features]
 # Feature ids to switch off, as `<namespace>.<name>`.
 disabled = []
+# Feature ids asking the user before acting, as `<namespace>.<name>`, such as `tools.web_fetch`.
+confirm = []
 
 # disabled = ["tools.inexesistant.test"]
 

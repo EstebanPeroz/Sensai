@@ -1,7 +1,9 @@
+import threading
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastapi.websockets import WebSocketDisconnect
 from sensai_protocol import (
@@ -31,15 +33,23 @@ from sensai_protocol import (
     parse_server_message,
 )
 from sensai_server.app import _handlers as handlers
+from sensai_server.app._state import app_state
+from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
 from sensai_server.commands._effort import Effort as EffortCommand
 from sensai_server.commands._help import Help
 from sensai_server.commands._model import Model
+from sensai_server.commands._tools import ToolsCommand
+from sensai_server.pipeline import ChatPipeline
+from sensai_server.pipeline.modules import ModelStage
+from sensai_server.pipeline.modules.guardrails import WARNING
 from sensai_server.session import SessionRegistry
+from sensai_server.session.session import DEFAULT_EFFORT
 from starlette.testclient import WebSocketTestSession
 
 from tests.server.conftest import ASK, CONFIRM, FILE, MODEL, PERSONA_PATH, SLOW
+from tests.server.fakes import FakeAdapter, chunk
 
 
 def _receive(ws: WebSocketTestSession) -> ServerMessage:
@@ -67,6 +77,15 @@ def _login(ws: WebSocketTestSession) -> Session:
     message = _receive(ws)
     assert isinstance(message, Session)
     return message
+
+
+class TestAppState:
+    def test_model_stage_uses_the_shared_react(self, app: FastAPI) -> None:
+        state = app_state(app)
+        assert isinstance(state.react, ReAct)
+        model = state.pipeline._model  # noqa: SLF001
+        assert isinstance(model, ModelStage)
+        assert model._react is state.react  # noqa: SLF001
 
 
 class TestProtocolErrors:
@@ -97,7 +116,7 @@ class TestLogin:
         with client.websocket_connect("/ws") as ws:
             session = _login(ws)
             assert session.model == MODEL
-            assert session.commands == ["/persona", "/help", "/branch", "/effort", "/model"]
+            assert session.commands == ["/persona", "/help", "/branch", "/effort", "/model", "/tools"]
             assert registry.get(session.client_id) is not None
 
     def test_login_twice_keeps_session(self, client: TestClient, registry: SessionRegistry) -> None:
@@ -417,7 +436,8 @@ class TestCommandAndComplete:
             assert _receive(ws) == System(
                 message=(
                     f"Available commands:\n- branch: {Branch.help}\n- effort: {EffortCommand.help}\n"
-                    f"- help: {Help.help}\n- model: {Model.help}\n- persona: {PersonaCommand.help}"
+                    f"- help: {Help.help}\n- model: {Model.help}\n- persona: {PersonaCommand.help}\n"
+                    f"- tools: {ToolsCommand.help}"
                 )
             )
 
@@ -458,6 +478,20 @@ class TestDispatch:
         received_session, received_message = handler.await_args.args[:2]
         assert received_session.client_id == session.client_id
         assert received_message == message
+
+    def test_chat_reaches_its_handler_with_the_pipeline_and_db(
+        self, app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        handler = AsyncMock()
+        monkeypatch.setattr(handlers, "handle_chat", handler)
+        with client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt="hi"))
+            _sync(ws)
+        assert handler.await_args is not None
+        _, _, pipeline, db = handler.await_args.args
+        assert pipeline is app_state(app).pipeline
+        assert db is app_state(app).db
 
     def test_logout_reaches_its_handler_with_the_registry(
         self, client: TestClient, registry: SessionRegistry, monkeypatch: pytest.MonkeyPatch
@@ -510,3 +544,63 @@ class TestCleanup:
             _send(second, Complete(text="/x"))
             assert _receive(second) == Completions(text="/x", values=[])
         assert len(registry) == 0
+
+
+class TestEndToEnd:
+    """The real chat, through the pipeline built by `create_app`, answered by `FakeAdapter`."""
+
+    @pytest.fixture(autouse=True)
+    def replies(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(FakeAdapter, "replies", [chunk("Hel"), chunk("lo", done=True)])
+        # `FakeAdapter` answers every call with the same stream: the default effort makes a single answering call.
+        monkeypatch.setitem(EFFORTS, DEFAULT_EFFORT, 0)
+
+    def test_app_state_has_a_pipeline(self, real_app: FastAPI) -> None:
+        assert isinstance(app_state(real_app).pipeline, ChatPipeline)
+
+    def test_chat_streams_the_model_answer(self, real_client: TestClient) -> None:
+        with real_client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt="hello"))
+            assert _receive(ws) == Input(role=Role.USER, content="hello")
+            assert _receive(ws) == AiChunk(content="Hel", done=False)
+            assert _receive(ws) == AiChunk(content="lo", done=True)
+            _sync(ws)  # the prompt is echoed only once, and nothing follows the last chunk
+        assert FakeAdapter.last_payload is not None
+        assert FakeAdapter.last_payload["model"] == MODEL
+        assert FakeAdapter.last_payload["messages"][-2:] == [
+            {"role": "user", "content": "hello"},
+            {"role": "user", "content": ANSWER_INSTRUCTION},
+        ]
+
+    def test_bad_word_is_answered_without_the_model(self, real_client: TestClient) -> None:
+        with real_client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt="fuck"))
+            assert _receive(ws) == Input(role=Role.USER, content="fuck")
+            assert _receive(ws) == AiChunk(content=WARNING, done=True)
+            _sync(ws)
+        assert FakeAdapter.last_payload is None
+
+    def test_cancel_mid_stream_then_chat(self, real_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        block = threading.Event()
+        monkeypatch.setattr(FakeAdapter, "block", block)
+        try:
+            with real_client.websocket_connect("/ws") as ws:
+                _login(ws)
+                _send(ws, Chat(prompt="hello"))
+                _receive(ws)
+                assert _receive(ws) == AiChunk(content="Hel", done=False)
+                _send(ws, Cancel())
+                _send(ws, Chat(prompt="again"))
+                assert _receive(ws) == Input(role=Role.USER, content="again")
+                block.set()
+                assert FakeAdapter.closed.wait(timeout=5)
+                assert _receive(ws) == AiChunk(content="Hel", done=False)
+                assert _receive(ws) == AiChunk(content="lo", done=True)
+        finally:
+            block.set()
+        assert FakeAdapter.last_payload is not None
+        # The cancelled answer was never saved: the second payload holds both prompts and no answer.
+        assert [message["role"] for message in FakeAdapter.last_payload["messages"]][-2:] == ["user", "user"]
+        assert all(message["role"] != "assistant" for message in FakeAdapter.last_payload["messages"])

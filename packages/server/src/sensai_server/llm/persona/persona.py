@@ -4,8 +4,10 @@ import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from sensai_protocol.server_messages import Role
+
 from sensai_server.llm.persona.error import InvalidPersonaError, PersonaFileError
-from sensai_server.memory.message import Message, Role
+from sensai_server.memory.message import Message
 
 if TYPE_CHECKING:
     from datetime import datetime

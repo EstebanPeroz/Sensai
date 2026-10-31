@@ -1,11 +1,10 @@
 from typing import TYPE_CHECKING, override
 
+from sensai_server.chat.react import EFFORTS
 from sensai_server.commands._base import Command
 
 if TYPE_CHECKING:
     from sensai_server.session import Session
-
-EFFORTS = {"off": 0, "low": 1, "medium": 3, "high": 5}
 
 
 class Effort(Command):

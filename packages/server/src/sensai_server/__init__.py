@@ -8,7 +8,7 @@ from sensai_protocol.error import SensaiError
 
 from sensai_server.app import create_app
 from sensai_server.config.settings import load_settings
-from sensai_server.parsing import Parsing
+from sensai_server.parsing import HOST, Parsing
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -23,5 +23,5 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SensaiError as err:
         print(err.message, file=sys.stderr)
         return 1
-    uvicorn.run(app, host=args.host, port=args.port)
+    uvicorn.run(app, host=HOST, port=args.port)
     return 0
