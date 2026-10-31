@@ -15,6 +15,8 @@ import threading
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+from qdrant_client import QdrantClient
+
 from sensai_server.rag.chunking import Chunker
 from sensai_server.rag.collection import Collection, as_chunk, by_source, chunk_point
 from sensai_server.rag.error import RagError
@@ -22,7 +24,6 @@ from sensai_server.rag.error import RagError
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from qdrant_client import QdrantClient
     from qdrant_client.models import PointStruct
 
     from sensai_server.llm.embedder import Embedder
@@ -30,6 +31,8 @@ if TYPE_CHECKING:
 
 SEARCH_LIMIT = 5
 MIN_SCORE = 0.5
+_DIMENSION_PROBE = "dimension"
+"""The text embedded once to learn the size of the embedder's vectors."""
 
 
 class Rag:
@@ -42,26 +45,37 @@ class Rag:
     _chunker: Chunker
     _lock: threading.Lock
     _rag_ids: dict[UUID, UUID]
+    _dimension: int | None
 
     def __init__(
         self,
-        client: QdrantClient,
+        location: str,
         embedder: Embedder,
         db: PersistentDatabase,
-        *,
-        served: bool = False,
     ) -> None:
         """Keep the Qdrant `client` shared by every collection, the `embedder` and the `db` holding the links.
 
         `served` tells whether `client` reaches a Qdrant server, rather than an embedded one.
         """
-        self._client = client
+        self._served = location.startswith(("http://", "https://"))
+        self._client = self._open_client(location, served=self._served)
         self._embedder = embedder
         self._db = db
-        self._served = served
         self._chunker = Chunker(embedder)
         self._lock = threading.Lock()
         self._rag_ids = {}
+        self._dimension = None
+
+    @staticmethod
+    def _open_client(location: str, *, served: bool) -> QdrantClient:
+        """Open the client `location` names: a server URL, ":memory:", or a directory.
+
+        A bare directory has to go through `path=`: passed positionally, the client
+        would read it as a URL and fail on the first request instead of here.
+        """
+        if location == ":memory:" or served:
+            return QdrantClient(location)
+        return QdrantClient(path=location)
 
     async def index(self, rag_id: UUID, source: str, text: str) -> int:
         """Chunk, embed and store `text`, read from `source`, in the RAG `rag_id`, and return the chunk count.
@@ -102,7 +116,19 @@ class Rag:
         hits = await self._locked(collection.query, vector, SEARCH_LIMIT, MIN_SCORE)
         return [as_chunk(hit) for hit in hits]
 
-    # Lifecycle, by branch
+    async def create(self, branch: UUID, rag_id: UUID) -> None:
+        """Create the empty collection of the new `branch`, which the database already links to `rag_id`.
+
+        The collection is sized for the embedder's vectors, probed once with an embedding.
+
+        Raises:
+            EmbeddingError: If the probe could not be embedded.
+            VectorStoreError: If Qdrant fails to create the collection.
+
+        """
+        dimension = await self._embedding_dimension()
+        await self._locked(self._collection(rag_id).ensure, dimension)
+        self._rag_ids[branch] = rag_id
 
     async def rag_id_for(self, branch: UUID) -> UUID:
         """Return the RAG id of `branch`, linking it to a new one if it has none yet.
@@ -203,6 +229,13 @@ class Rag:
             if rag_id is not None:
                 self._rag_ids[branch] = rag_id
         return rag_id
+
+    async def _embedding_dimension(self) -> int:
+        """Return the size of the embedder's vectors, embedding a probe the first time."""
+        if self._dimension is None:
+            [vector] = await asyncio.to_thread(self._embedder.embed, [_DIMENSION_PROBE])
+            self._dimension = len(vector)
+        return self._dimension
 
     async def _locked[T](self, call: Callable[..., T], *args: object) -> T:
         """Run the Qdrant `call` in a thread, holding the lock serialising every Qdrant call."""

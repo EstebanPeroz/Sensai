@@ -1,13 +1,13 @@
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import UUID, uuid4
 
 import pytest
 from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ApiException
 from qdrant_client.models import Distance, PayloadSchemaType, PointStruct, VectorParams
-from sensai_server.rag.collection import Collection, as_chunk, by_source, chunk_point, is_served, open_client
+from sensai_server.rag.collection import Collection, as_chunk, by_source, chunk_point
 from sensai_server.rag.error import RagError, VectorStoreError
 
 ENGINES = [1.0, 0.0]
@@ -37,36 +37,6 @@ def collection(client: QdrantClient, rag_id: UUID) -> Collection:
     return Collection(client, rag_id)
 
 
-class TestOpenClient:
-    def test_a_memory_location_is_passed_through(self) -> None:
-        client = open_client(":memory:")
-
-        assert client.init_options["location"] == ":memory:"
-        client.close()
-
-    def test_a_directory_is_opened_as_an_embedded_database(self, tmp_path: Path) -> None:
-        location = str(tmp_path / "qdrant")
-
-        client = open_client(location)
-
-        assert client.init_options["path"] == location
-        client.close()
-
-    @pytest.mark.parametrize("location", ["http://localhost:6333", "https://qdrant.example:6333"])
-    def test_a_url_is_opened_as_a_server(self, location: str) -> None:
-        with patch("sensai_server.rag.collection.QdrantClient", return_value=MagicMock()) as client:
-            open_client(location)
-
-        assert client.call_args == ((location,), {})
-
-    @pytest.mark.parametrize(
-        ("location", "served"),
-        [("http://localhost:6333", True), ("https://qdrant.example", True), (":memory:", False), ("qdrant", False)],
-    )
-    def test_only_a_url_is_served(self, location: str, *, served: bool) -> None:
-        assert is_served(location) is served
-
-
 class TestOpenCollection:
     def test_it_is_named_after_its_rag_id(self, collection: Collection, rag_id: UUID) -> None:
         assert collection.name == str(rag_id)
@@ -79,11 +49,11 @@ class TestOpenCollection:
 
     def test_what_is_written_survives_a_new_client(self, tmp_path: Path, rag_id: UUID) -> None:
         location = str(tmp_path / "qdrant")
-        first = open_client(location)
+        first = QdrantClient(path=location)
         Collection(first, rag_id).upsert([point("a.md", 0, "x", ENGINES)])
         first.close()
 
-        reopened = open_client(location)
+        reopened = QdrantClient(path=location)
 
         assert Collection(reopened, rag_id).count() == 1
         reopened.close()

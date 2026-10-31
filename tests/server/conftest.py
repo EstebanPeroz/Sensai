@@ -16,6 +16,7 @@ from sensai_server.llm.provider import provider_manager
 from sensai_server.memory.persistent_db import PersistentDatabase, base
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai_server.pipeline import ChatPipeline
+from sensai_server.rag import Rag
 from sensai_server.session import Session, SessionRegistry
 
 from tests.server.fakes import FakeAdapter
@@ -28,7 +29,9 @@ FILE = "file"
 PERSONA_PATH = "x.toml"
 
 
-async def fake_chat(session: Session, prompt: str, _pipeline: ChatPipeline, _db: PersistentDatabase) -> None:
+async def fake_chat(
+    session: Session, prompt: str, _pipeline: ChatPipeline, _db: PersistentDatabase, _rag: Rag | None = None
+) -> None:
     """Answer with the prompt in one chunk. A `slow` prompt then streams forever, until cancelled.
 
     A `confirm` prompt first asks to run a tool, an `ask` prompt asks the user a question, and the answer is the

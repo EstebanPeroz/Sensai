@@ -32,6 +32,7 @@ from sensai_server.memory.persistent_db.error import DbConnectionError
 from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import ModelStage, PersonaStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
+from sensai_server.rag import Rag
 from sensai_server.session import SessionRegistry
 from sensai_server.tools import build_tools
 from sensai_server.tools.tool_manager import ToolManager
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from sensai_protocol import ClientMessage
 
     from sensai_server.config.settings import Settings
+    from sensai_server.memory.persistent_db.adapter import PersistentDatabase
     from sensai_server.session.session import Session
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,7 @@ def create_app(
     persona_manager = PersonaManager(db)
     with contextlib.suppress(DuplicatePersonaError):
         persona_manager.create_default_persona()
+    rag = _build_rag(settings, embedder, db)
 
     sessions = SessionRegistry(pm, persona_manager, tool_manager)
     commands = CommandRegistry()
@@ -90,6 +93,7 @@ def create_app(
             registry=sessions,
             commands=commands,
             pipeline=pipeline,
+            rag=rag,
         ),
     )
     app.include_router(router)
@@ -114,6 +118,18 @@ def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:
         logger.warning("no provider serves the embedding model '%s': the web tools are left out", model)
         return None
     return Embedder(provider, model)
+
+
+def _build_rag(settings: Settings, embedder: Embedder | None, db: PersistentDatabase) -> Rag | None:
+    """Build the RAG shared by every session, on the Qdrant of the settings, or None without an embedder.
+
+    Without it, the conversations have no RAG: at startup there is no client to tell, so it is logged.
+    """
+    if embedder is None:
+        logger.warning("no embedder: the RAG is left out")
+        return None
+    location = settings.db.rag.location
+    return Rag(location, embedder, db)
 
 
 def _build_tool_manager(settings: Settings, embedder: Embedder | None) -> ToolManager:
@@ -177,7 +193,7 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message, state.pipeline, state.db)
+            await handlers.handle_chat(session, message, state.pipeline, state.db, state.rag)
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():

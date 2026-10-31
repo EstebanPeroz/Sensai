@@ -9,7 +9,6 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import ApiException
 from qdrant_client.models import (
     Distance,
@@ -25,6 +24,7 @@ from qdrant_client.models import (
 from sensai_server.rag.error import VectorStoreError
 
 if TYPE_CHECKING:
+    from qdrant_client import QdrantClient
     from qdrant_client.models import Record, ScoredPoint
 
 DEFAULT_LIMIT = 5
@@ -33,22 +33,6 @@ _SCROLL_PAGE = 256
 # document always lands on the same point. Any fixed UUID would do; this one
 # just has to never change, or every stored chunk becomes unreachable by id.
 _CHUNK_NAMESPACE = uuid.UUID("6f0b6e1a-3e4e-4b7a-9c2f-8d1a5b4c7e90")
-
-
-def is_served(location: str) -> bool:
-    """Whether `location` names a Qdrant server, rather than ":memory:" or a directory."""
-    return location.startswith(("http://", "https://"))
-
-
-def open_client(location: str) -> QdrantClient:
-    """Open the client `location` names: a server URL, ":memory:", or a directory.
-
-    A bare directory has to go through `path=`: passed positionally, the client
-    would read it as a URL and fail on the first request instead of here.
-    """
-    if location == ":memory:" or is_served(location):
-        return QdrantClient(location)
-    return QdrantClient(path=location)
 
 
 def chunk_point(source: str, position: int, text: str, vector: list[float]) -> PointStruct:

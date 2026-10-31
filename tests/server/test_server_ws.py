@@ -491,7 +491,7 @@ class TestDispatch:
         assert received_session.client_id == session.client_id
         assert received_message == message
 
-    def test_chat_reaches_its_handler_with_the_pipeline_and_db(
+    def test_chat_reaches_its_handler_with_the_pipeline_db_and_rag(
         self, app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         handler = AsyncMock()
@@ -501,9 +501,10 @@ class TestDispatch:
             _send(ws, Chat(prompt="hi"))
             _sync(ws)
         assert handler.await_args is not None
-        _, _, pipeline, db = handler.await_args.args
+        _, _, pipeline, db, rag = handler.await_args.args
         assert pipeline is app_state(app).pipeline
         assert db is app_state(app).db
+        assert rag is app_state(app).rag
 
     def test_logout_reaches_its_handler_with_the_registry(
         self, client: TestClient, registry: SessionRegistry, monkeypatch: pytest.MonkeyPatch

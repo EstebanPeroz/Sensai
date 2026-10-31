@@ -29,6 +29,7 @@ from sensai_server.llm.responses import ChatResponse
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
+    from uuid import UUID
 
     from sensai_server.app.outbound import Outbound
     from sensai_server.llm.persona import Persona
@@ -49,6 +50,7 @@ class ChatContext:
     messages: list[dict] = field(default_factory=list)
     tools: ToolState | None = None
     max_iterations: int = EFFORTS["off"]
+    rag_id: UUID | None = None
     # TODO(monitoring): add `on_interaction`  # noqa: TD003, FIX002
     # `on_interaction: Callable[[Interaction], None] = ignore_interaction`, called once for every call to the model
     # this exchange makes, whatever its outcome.

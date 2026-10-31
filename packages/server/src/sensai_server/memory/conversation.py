@@ -27,8 +27,8 @@ class Conversation:
     system message before the history when it builds the payload, so changing persona leaves no old prompt behind.
 
     `rag_id` is the id of the RAG of this conversation, which names its Qdrant collection. A new conversation gets
-    one before its branch exists, so documents can be indexed before the first message. A branch loaded from the
-    DB brings its own, or None when it has no RAG yet.
+    one at once, stored with its branch when the first message creates it. A branch loaded from the DB brings its
+    own, or None when it has no RAG yet.
     """
 
     history: History
@@ -46,7 +46,7 @@ class Conversation:
         self.rag_id = uuid4()
 
     def add_conv_to_db(self, db: PersistentDatabase, uuid: UUID | None = None, name: str = "Branch") -> None:
-        """Init the conversation in the DB if first message.
+        """Init the conversation in the DB if first message, linking the new branch to `rag_id`.
 
         Raise SensaiError: If the current Conversation do not have model
 
@@ -54,6 +54,8 @@ class Conversation:
         if self.model is None:
             raise SensaiError(self._model_error)
         self.uuid = db.create_branch(model=self.model, current_branch=uuid, name=name)
+        if self.uuid is not None and self.rag_id is not None:
+            db.set_branch_rag_id(self.uuid, self.rag_id)
 
     async def save_message(self, role: Role, content: str, out: Outbound, db: PersistentDatabase) -> bool:
         """Add message to History and db."""

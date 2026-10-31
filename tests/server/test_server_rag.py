@@ -1,5 +1,7 @@
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -17,12 +19,19 @@ ENGINES = "# Engines\n\nThe engine burns fuel."
 CATS = "# Cats\n\nCats sleep all day."
 
 
-@pytest.fixture
-def client() -> Iterator[QdrantClient]:
-    """A fresh in-memory Qdrant."""
-    opened = QdrantClient(":memory:")
-    yield opened
-    opened.close()
+def client_of(rag: Rag) -> QdrantClient:
+    """The Qdrant client `rag` opened."""
+    return rag._client  # noqa: SLF001
+
+
+@contextmanager
+def opened(embedder: FakeEmbedder, db: SqlAlchemy) -> Iterator[Rag]:
+    """A `Rag` on a fresh in-memory Qdrant, closed on exit."""
+    rag = Rag(":memory:", embedder, db)
+    try:
+        yield rag
+    finally:
+        client_of(rag).close()
 
 
 @pytest.fixture
@@ -36,8 +45,15 @@ def db(tmp_path: Path) -> SqlAlchemy:
 
 
 @pytest.fixture
-def rag(client: QdrantClient, embedder: FakeEmbedder, db: SqlAlchemy) -> Rag:
-    return Rag(client, embedder, db)
+def rag(embedder: FakeEmbedder, db: SqlAlchemy) -> Iterator[Rag]:
+    with opened(embedder, db) as built:
+        yield built
+
+
+@pytest.fixture
+def client(rag: Rag) -> QdrantClient:
+    """The Qdrant of `rag`."""
+    return client_of(rag)
 
 
 def new_branch(db: SqlAlchemy) -> UUID:
@@ -88,13 +104,13 @@ class TestIndex:
             await rag.index(rag_id, "empty.md", "  \n<p></p>\n")
         assert not Collection(client, rag_id).exists()
 
-    async def test_a_failing_embedder_stores_nothing(self, client: QdrantClient, db: SqlAlchemy) -> None:
-        rag = Rag(client, FakeEmbedder(failing=True), db)
-        rag_id = uuid4()
+    async def test_a_failing_embedder_stores_nothing(self, db: SqlAlchemy) -> None:
+        with opened(FakeEmbedder(failing=True), db) as rag:
+            rag_id = uuid4()
 
-        with pytest.raises(EmbeddingError):
-            await rag.index(rag_id, "engines.md", ENGINES)
-        assert not Collection(client, rag_id).exists()
+            with pytest.raises(EmbeddingError):
+                await rag.index(rag_id, "engines.md", ENGINES)
+            assert not Collection(client_of(rag), rag_id).exists()
 
 
 class TestResearch:
@@ -116,11 +132,72 @@ class TestResearch:
 
         assert await rag.research(uuid4(), "engine?") == []
 
-    async def test_a_failing_embedder_raises(self, client: QdrantClient, db: SqlAlchemy) -> None:
-        rag = Rag(client, FakeEmbedder(failing=True), db)
-
-        with pytest.raises(EmbeddingError):
+    async def test_a_failing_embedder_raises(self, db: SqlAlchemy) -> None:
+        with opened(FakeEmbedder(failing=True), db) as rag, pytest.raises(EmbeddingError):
             await rag.research(uuid4(), "engine?")
+
+
+class TestOpenClient:
+    def test_a_memory_location_is_passed_through(self, embedder: FakeEmbedder, db: SqlAlchemy) -> None:
+        with opened(embedder, db) as rag:
+            assert client_of(rag).init_options["location"] == ":memory:"
+            assert not rag._served  # noqa: SLF001
+
+    def test_a_directory_is_opened_as_an_embedded_database(
+        self, embedder: FakeEmbedder, db: SqlAlchemy, tmp_path: Path
+    ) -> None:
+        location = str(tmp_path / "qdrant")
+        rag = Rag(location, embedder, db)
+
+        assert client_of(rag).init_options["path"] == location
+        assert not rag._served  # noqa: SLF001
+        client_of(rag).close()
+
+    @pytest.mark.parametrize("location", ["http://localhost:6333", "https://qdrant.example:6333"])
+    def test_a_url_is_opened_as_a_server(self, embedder: FakeEmbedder, db: SqlAlchemy, location: str) -> None:
+        with patch("sensai_server.rag.rag.QdrantClient", return_value=MagicMock()) as client:
+            rag = Rag(location, embedder, db)
+
+        assert client.call_args == ((location,), {})
+        assert rag._served  # noqa: SLF001
+
+
+class TestCreate:
+    async def test_it_creates_an_empty_collection_at_the_embedder_s_size(
+        self, rag: Rag, db: SqlAlchemy, client: QdrantClient
+    ) -> None:
+        branch, rag_id = new_branch(db), uuid4()
+        db.set_branch_rag_id(branch, rag_id)
+
+        await rag.create(branch, rag_id)
+
+        collection = Collection(client, rag_id)
+        assert collection.count() == 0
+        assert collection.dimension() == 2
+
+    async def test_the_branch_is_then_linked_to_it(self, rag: Rag, db: SqlAlchemy, client: QdrantClient) -> None:
+        branch, rag_id = new_branch(db), uuid4()
+        db.set_branch_rag_id(branch, rag_id)
+
+        await rag.create(branch, rag_id)
+        await rag.drop_branch(branch)
+
+        assert not Collection(client, rag_id).exists()
+
+    async def test_the_size_is_probed_once(self, rag: Rag, db: SqlAlchemy, embedder: FakeEmbedder) -> None:
+        for _ in range(2):
+            branch, rag_id = new_branch(db), uuid4()
+            db.set_branch_rag_id(branch, rag_id)
+            await rag.create(branch, rag_id)
+
+        assert len(embedder.batches) == 1
+
+    async def test_a_failing_embedder_creates_nothing(self, db: SqlAlchemy) -> None:
+        branch, rag_id = new_branch(db), uuid4()
+        with opened(FakeEmbedder(failing=True), db) as rag:
+            with pytest.raises(EmbeddingError):
+                await rag.create(branch, rag_id)
+            assert not Collection(client_of(rag), rag_id).exists()
 
 
 class TestRagIdFor:
@@ -136,14 +213,13 @@ class TestRagIdFor:
 
         assert await rag.rag_id_for(branch) == await rag.rag_id_for(branch)
 
-    async def test_it_reads_the_link_stored_in_the_database(
-        self, client: QdrantClient, embedder: FakeEmbedder, db: SqlAlchemy
-    ) -> None:
+    async def test_it_reads_the_link_stored_in_the_database(self, embedder: FakeEmbedder, db: SqlAlchemy) -> None:
         branch = new_branch(db)
         rag_id = uuid4()
         db.set_branch_rag_id(branch, rag_id)
 
-        assert await Rag(client, embedder, db).rag_id_for(branch) == rag_id
+        with opened(embedder, db) as rag:
+            assert await rag.rag_id_for(branch) == rag_id
 
     async def test_an_unknown_branch_raises(self, rag: Rag) -> None:
         with pytest.raises(InvalidInstanceError):
