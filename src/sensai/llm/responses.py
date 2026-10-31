@@ -37,12 +37,17 @@ class ShowResponse:
     model: str
     tools: bool
     think: bool
+    context_length: int | None
+    """Number of tokens the model was trained to attend to, None when the provider does not say."""
 
-    def __init__(self, model: str, *, tools: bool = False, think: bool = False) -> None:
+    def __init__(
+        self, model: str, *, tools: bool = False, think: bool = False, context_length: int | None = None
+    ) -> None:
         """Init the ShowResponse class."""
         self.model = model
         self.tools = tools
         self.think = think
+        self.context_length = context_length
 
 
 class ChatResponse:

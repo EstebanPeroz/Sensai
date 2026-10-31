@@ -185,6 +185,32 @@ class LoggingSettings:
 
 
 @dataclass
+class ContextSettings:
+    """Settings of the [context] table: the token budget of the conversation context.
+
+    `budget` is also the context window asked of the model; without it, the budget is the context length of the
+    model and the window is left to the provider. Past `warning_threshold` of the budget, the usage is flagged.
+    """
+
+    budget: int | None = None
+    warning_threshold: float = 0.8
+
+    def __post_init__(self) -> None:
+        """Check the values, which come unchecked from the settings file."""
+        if self.budget is not None and (
+            isinstance(self.budget, bool) or not isinstance(self.budget, int) or self.budget <= 0
+        ):
+            msg = f"context.budget must be a positive number of tokens, got {self.budget!r}"
+            raise TypeError(msg)
+        if isinstance(self.warning_threshold, bool) or not isinstance(self.warning_threshold, int | float):
+            msg = "context.warning_threshold must be a number"
+            raise TypeError(msg)
+        if not 0 < self.warning_threshold <= 1:
+            msg = f"context.warning_threshold must be in ]0, 1], got {self.warning_threshold}"
+            raise ValueError(msg)
+
+
+@dataclass
 class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
@@ -195,6 +221,7 @@ class Settings:
     db: DBSettings = field(default_factory=DBSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
+    context: ContextSettings = field(default_factory=ContextSettings)
 
 
 def default_settings_file() -> Traversable:
@@ -242,6 +269,7 @@ def load_settings(path: Path | None = None) -> Settings:
             rag = RagDBSettings(**_pop_table(db, "rag"))
             features = FeatureSettings(**_pop_table(data, "features"))
             logging = LoggingSettings(**_pop_table(data, "logging"))
+            context = ContextSettings(**_pop_table(data, "context"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
                 cache=cache,
@@ -250,6 +278,7 @@ def load_settings(path: Path | None = None) -> Settings:
                 db=DBSettings(**db, persistent=persistent, rag=rag),
                 features=features,
                 logging=logging,
+                context=context,
                 **data,
             )
         except (TypeError, ValueError) as err:

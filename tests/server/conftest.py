@@ -71,6 +71,9 @@ def fresh_db(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(base._State, "db", None)  # noqa: SLF001
 
 
+SETTINGS = Settings(llm=LLMSettings(providers={"ollama": OllamaSettings()}))
+
+
 @pytest.fixture
 def persona_manager(tmp_path: Path) -> PersonaManager:
     """A persona manager on a fresh sqlite file."""
