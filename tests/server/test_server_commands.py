@@ -102,7 +102,7 @@ class _Echo(Command):
 
 class TestCommandRegistry:
     async def test_names(self, commands: CommandRegistry) -> None:
-        assert commands.names() == ["/persona", "/help", "/branch", "/effort", "/model", "/tools"]
+        assert commands.names() == ["/model", "/persona", "/branch", "/tools", "/effort", "/help"]
 
     async def test_execute_splits_the_arguments(self, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)

@@ -116,7 +116,7 @@ class TestLogin:
         with client.websocket_connect("/ws") as ws:
             session = _login(ws)
             assert session.model == MODEL
-            assert session.commands == ["/persona", "/help", "/branch", "/effort", "/model", "/tools"]
+            assert session.commands == ["/model", "/persona", "/branch", "/tools", "/effort", "/help"]
             assert registry.get(session.client_id) is not None
 
     def test_login_twice_keeps_session(self, client: TestClient, registry: SessionRegistry) -> None:

@@ -3,7 +3,7 @@ from collections.abc import AsyncGenerator, Iterator
 from typing import ClassVar, Literal, cast, overload, override
 
 from fastapi import WebSocket
-from sensai_protocol import ServerMessage, parse_server_message
+from sensai_protocol import ClientCommand, CommandContext, RequestCommand, ServerMessage, parse_server_message
 from sensai_server.app.outbound import Outbound
 from sensai_server.config.settings import OllamaSettings
 from sensai_server.llm.error import RequestCallError
@@ -21,6 +21,32 @@ class RecordingOutbound(Outbound):
     async def send(self, message: ServerMessage) -> bool:
         self.sent.append(parse_server_message(message.model_dump_json()))
         return True
+
+
+class AnsweringOutbound(RecordingOutbound):
+    """A `RecordingOutbound` whose client runs client commands: each `request_command` gets the canned answer.
+
+    `answers` maps a command to the `ctx` the client answers with, or to a `str`, the `error` it fails with.
+    """
+
+    def __init__(self, answers: dict[ClientCommand, dict | str]) -> None:
+        super().__init__()
+        self.answers = answers
+
+    async def send(self, message: ServerMessage) -> bool:
+        await super().send(message)
+        if isinstance(message, RequestCommand):
+            answer = self.answers[message.command]
+            ctx, error = (None, answer) if isinstance(answer, str) else (answer, None)
+            self.resolve(
+                message.request_id,
+                CommandContext(request_id=message.request_id, command=message.command, ctx=ctx, error=error),
+            )
+        return True
+
+    def requests(self) -> list[RequestCommand]:
+        """The client commands asked so far."""
+        return [message for message in self.sent if isinstance(message, RequestCommand)]
 
 
 class FakeAdapter(ProviderAdapter):
