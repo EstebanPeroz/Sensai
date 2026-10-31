@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from pathlib import Path
 
-from sensai_protocol import MAX_FILE_SIZE, FileContent, FileWritten, ReadFileParams, WriteFileParams
+from sensai_protocol import (
+    MAX_BINARY_FILE_SIZE,
+    MAX_FILE_SIZE,
+    BinaryFileContent,
+    FileContent,
+    FileWritten,
+    ReadFileParams,
+    WriteFileParams,
+)
 
 
 class ClientCommandFailedError(Exception):
@@ -24,6 +33,15 @@ async def read_file(params: ReadFileParams) -> FileContent:
     return FileContent(content=content)
 
 
+async def read_binary_file(params: ReadFileParams) -> BinaryFileContent:
+    """Read the file at `params.path`, relative to the client's current directory, as bytes encoded in base64.
+
+    The content is not parsed: the server does it. Raises ClientCommandFailedError when the file cannot be read.
+    """
+    data = await asyncio.to_thread(_read_bytes, params.path)
+    return BinaryFileContent(content=base64.b64encode(data).decode("ascii"))
+
+
 async def write_file(params: WriteFileParams) -> FileWritten:
     """Write `params.content` to the file at `params.path`, relative to the client's current directory, as UTF-8.
 
@@ -37,7 +55,7 @@ def _read_text(raw_path: str) -> str:
     """Return the text of the file at `raw_path`, checking first that it is a file small enough to be sent."""
     path = Path(raw_path).expanduser()
     try:
-        reason = _unreadable_reason(path)
+        reason = _unreadable_reason(path, MAX_FILE_SIZE)
         if reason is not None:
             raise ClientCommandFailedError(reason)
         text = path.read_text(encoding="utf-8")
@@ -53,14 +71,34 @@ def _read_text(raw_path: str) -> str:
     return text
 
 
-def _unreadable_reason(path: Path) -> str | None:
-    """Return why the file at `path` cannot be sent, checked before reading it, or None if it can be read."""
+def _read_bytes(raw_path: str) -> bytes:
+    """Return the bytes of the file at `raw_path`, checking first that it is a file small enough to be sent."""
+    path = Path(raw_path).expanduser()
+    try:
+        reason = _unreadable_reason(path, MAX_BINARY_FILE_SIZE)
+        if reason is not None:
+            raise ClientCommandFailedError(reason)
+        data = path.read_bytes()
+    except OSError as err:
+        reason = f"cannot read file ({err.strerror or err})"
+        raise ClientCommandFailedError(reason) from err
+    if len(data) > MAX_BINARY_FILE_SIZE:
+        reason = f"file too large (more than {MAX_BINARY_FILE_SIZE} bytes)"
+        raise ClientCommandFailedError(reason)
+    return data
+
+
+def _unreadable_reason(path: Path, max_size: int) -> str | None:
+    """Return why the file at `path` cannot be sent, checked before reading it, or None if it can be read.
+
+    `max_size` is the most bytes the file may hold.
+    """
     if not path.exists():
         return "file not found"
     if path.is_dir():
         return "path is a directory"
-    if path.stat().st_size > MAX_FILE_SIZE:
-        return f"file too large (more than {MAX_FILE_SIZE} bytes)"
+    if path.stat().st_size > max_size:
+        return f"file too large (more than {max_size} bytes)"
     return None
 
 

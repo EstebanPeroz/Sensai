@@ -1,10 +1,14 @@
+import base64
+from math import ceil
 from uuid import uuid4
 
 import pydantic
 import pytest
 from sensai_protocol import (
     CLIENT_COMMANDS,
+    MAX_BINARY_FILE_SIZE,
     MAX_FILE_SIZE,
+    BinaryFileContent,
     ClientCommand,
     CommandContext,
     FileContent,
@@ -27,6 +31,9 @@ class TestClientCommandsMap:
     def test_write_file_models(self) -> None:
         assert CLIENT_COMMANDS[ClientCommand.WRITE_FILE] == (WriteFileParams, FileWritten)
 
+    def test_read_binary_file_models(self) -> None:
+        assert CLIENT_COMMANDS[ClientCommand.READ_BINARY_FILE] == (ReadFileParams, BinaryFileContent)
+
 
 class TestParseParams:
     def test_valid_params(self) -> None:
@@ -36,6 +43,9 @@ class TestParseParams:
     def test_invalid_params(self, params: dict) -> None:
         with pytest.raises(ProtocolError):
             parse_params(ClientCommand.READ_FILE, params)
+
+    def test_read_binary_file_takes_the_read_file_params(self) -> None:
+        assert parse_params(ClientCommand.READ_BINARY_FILE, {"path": "./doc.pdf"}) == ReadFileParams(path="./doc.pdf")
 
     def test_valid_write_file_params(self) -> None:
         params = {"path": "./branch.json", "content": "{}"}
@@ -87,6 +97,29 @@ class TestParseCtx:
     def test_invalid_write_file_ctx(self, ctx: dict | None) -> None:
         with pytest.raises(ProtocolError):
             parse_ctx(ClientCommand.WRITE_FILE, ctx)
+
+
+class TestBinaryFileContent:
+    def test_round_trips_the_bytes(self) -> None:
+        data = bytes(range(256))
+        ctx = parse_ctx(ClientCommand.READ_BINARY_FILE, {"content": base64.b64encode(data).decode("ascii")})
+        assert isinstance(ctx, BinaryFileContent)
+        assert parse_ctx(ClientCommand.READ_BINARY_FILE, ctx.model_dump()) == ctx
+        assert base64.b64decode(ctx.content) == data
+
+    def test_content_at_the_limit(self) -> None:
+        content = base64.b64encode(bytes(MAX_BINARY_FILE_SIZE)).decode("ascii")
+        assert len(content) == 4 * ceil(MAX_BINARY_FILE_SIZE / 3)
+        assert parse_ctx(ClientCommand.READ_BINARY_FILE, {"content": content})
+
+    @pytest.mark.parametrize(
+        "ctx",
+        [None, {}, {"content": 1}, {"content": "A" * (4 * ceil(MAX_BINARY_FILE_SIZE / 3) + 1)}],
+        ids=["none", "missing", "not-text", "too-large"],
+    )
+    def test_invalid_ctx(self, ctx: dict | None) -> None:
+        with pytest.raises(ProtocolError):
+            parse_ctx(ClientCommand.READ_BINARY_FILE, ctx)
 
 
 class TestCommandContext:
