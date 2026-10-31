@@ -17,7 +17,9 @@ if TYPE_CHECKING:
 class ConfigError(SensaiError):
     """Raised when the settings cannot be loaded or are invalid."""
 
+
 DEFAULT_SECURITY_PERSONA_FILE = "sensai.config.personas/security.toml"
+
 
 @dataclass
 class ProviderSettings:
