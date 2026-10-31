@@ -224,3 +224,127 @@ embeddings (first chunks of the page).
 download read by `trafilatura` as fallback. The fallback is about
 availability, not quality: it keeps the tools working without an API key,
 when free-tier quotas run out, or when the API is down.
+
+## Model benchmark
+
+A script, kept on the `feat/benchmarks` branch, asks a fixed set of cases to one
+model at a time, through Sensai's own ReAct loop and compressor. Every table is
+in `benchmarks/models/results/`, and the raw results of each model, with every
+answer, next to the script.
+Tools are offered with their real name, description and parameters, but return
+a scripted result, so the run needs no network and scores only the model.
+
+- **Latency:** cold load, then the median of 3 warm runs, alone and after a
+  ~4,300-token context.
+- **Answers:** 15 questions with a single right answer, without tools.
+- **Tool use:** 11 cases, scored on the first tool called, its arguments and
+  the final answer; 4 of them must not call any tool.
+- **Instructions:** 6 constraints on the answer (language, bullet count, JSON
+  only, one word, word limit).
+- **Memory:** 5 facts given early in a conversation, asked back after filler
+  exchanges, first from the whole history, then from its compressed form.
+
+**Run (2026-10-30):** RTX 4060 (8 GB), 15.3 GB of RAM, Ollama 0.32.3 with CUDA,
+`num_ctx` 8192 (the context budget). Every model fit in the GPU.
+
+| Model | Size | Generation | Cold load | Answers | Tool cases | Instructions | Memory (full / compressed) | Mean answer time |
+|---|---|---|---|---|---|---|---|---|
+| `qwen3:1.7b` | 1.4 GB | 161 tok/s | 2.3 s | 15/15 | 5/11 | 5/6 | 5/5 / 4/5 | 1.0 s |
+| `llama3.2:3b` | 2.0 GB | 93 tok/s | 3.4 s | 15/15 | 2/11 | 2/6 | 4/5 / 5/5 | 1.7 s |
+| `qwen3:4b` | 2.5 GB | 73 tok/s | 2.4 s | 15/15 | 10/11 | 1/6 | 5/5 / 5/5 | 19.4 s |
+| `mistral:7b` | 4.4 GB | 53 tok/s | 4.3 s | 14/15 | 4/11 | 4/6 | 5/5 / 0/5 | 3.1 s |
+| `qwen2.5:7b` | 4.7 GB | 49 tok/s | 6.1 s | 14/15 | 8/11 | 6/6 | 5/5 / 4/5 | 2.2 s |
+| `gemma4:e4b` | 6.6 GB | 69 tok/s | 12.2 s | 15/15 | 11/11 | 6/6 | 5/5 / 5/5 | 2.5 s |
+
+- **Answers do not tell models apart:** every model gets 14 or 15 of the 15
+  questions right. The cases are too easy, and harder ones (multi-step
+  reasoning, French phrasing) are needed to rank them on that axis.
+- **Tool use does:** small models either never call a tool (`qwen3:1.7b`
+  writes "call the web_search function" as text, `mistral:7b` answers from
+  memory) or call one for everything (`llama3.2:3b` searches the web for a
+  greeting or an addition).
+- **`qwen3:4b` ignores `think: false`:** it writes its reasoning, then
+  `</think>`, then the answer, all in `content`. The reasoning breaks every
+  format constraint, makes answers 10 to 50 s long, and turns the 640-token
+  history into a 7,054-token "summary" (114 s), larger than what it replaced.
+- **`mistral:7b` loses the thread after compression:** its summary holds all
+  5 facts, but the model answers the last filler question again instead of the
+  one asked.
+- **Context reading** goes from ~7,500 tok/s (`qwen3:1.7b`) to ~1,900 tok/s
+  (`mistral:7b`): 4,300 tokens of context cost 1 to 2.5 s before the first token.
+
+**Choice:** `gemma4:e4b` is the only model to pass every case, at a speed
+close to the 4B models. It is the largest one on disk, though, and its 12 s
+cold load runs past the adapter timeouts (below). `qwen2.5:7b` is the runner-up
+(all instructions, 8/11 tool cases) and `qwen3:1.7b` stays the light default
+for machines without a GPU.
+
+**Issues found along the way:**
+
+- `OllamaAdapter.load` waits 10 s: the first load of `gemma4:e4b` takes 12 to
+  14 s, so selecting it fails with a read timeout. Streaming a chat waits 30 s
+  between chunks, which a long context read on the CPU outlasts as well.
+- `load` sends no `num_ctx`, so Ollama loads the model with its default
+  context, then loads it again on the first chat, which asks for 8,192 tokens.
+  Running the benchmark needed `OLLAMA_CONTEXT_LENGTH=8192` on the server.
+- On NixOS, the `ollama` package is CPU-only: `ollama-cuda` is needed for the
+  GPU. Its `llama-server` keeps a prompt cache of up to 8 GiB of RAM by
+  default, which exhausted the memory of a 16 GB machine without swap;
+  `LLAMA_ARG_CACHE_RAM` caps it (0 disables it).
+
+## Embedding model benchmark
+
+The embedding model serves three features: `web_fetch` keeps the 4 chunks of a
+page closest to the query, the RAG ranks the chunks of the user's documents, and
+the semantic cache answers a query with the answer of a cached one when their
+cosine similarity reaches `cache.similarity_threshold` (0.95). A second script,
+on the `feat/benchmarks` branch too, measures each model through Sensai's
+`Embedder` and cosine similarity, on texts sent as Sensai sends them, without
+the task prefixes some models are trained with (`search_query:` for nomic).
+Every table is in `benchmarks/embeddings/results/`, the raw results next to the
+script.
+
+- **Retrieval:** 20 questions, each searched among 24 passages on 4 topics
+  (composting and renting in French, sourdough and Wi-Fi in English), so the
+  other passages of its topic are close decoys. 4 questions are asked in the
+  other language than their passage, as a French question answered by an
+  English page.
+- **Cache:** 10 pairs of rephrased questions, which the cache should match, and
+  10 pairs that look alike but ask for something else (Lyon or Paris, crêpes or
+  pizza, dollars to euros or euros to dollars).
+- **Cost:** cold load and passages embedded per second, in requests of 8 as the
+  RAG indexation sends them.
+
+**Run (2026-10-30):** same machine as the chat models, every model on the GPU.
+
+| Model | Size | Speed | Right passage first | Right passage kept (top 4) | Across languages first | Cache at 0.95 (hits / false hits) | Best threshold (pairs right) |
+|---|---|---|---|---|---|---|---|
+| `all-minilm` | 0.05 GB | 191/s | 6/20 | 13/20 | 0/4 | 2/10 / 1/10 | 0.91 (16/20) |
+| `nomic-embed-text` | 0.27 GB | 115/s | 10/20 | 16/20 | 0/4 | 5/10 / 1/10 | 0.89 (16/20) |
+| `embeddinggemma` | 0.62 GB | 44/s | 17/20 | 20/20 | 4/4 | 4/10 / 1/10 | 0.89 (17/20) |
+| `mxbai-embed-large` | 0.67 GB | 82/s | 11/20 | 15/20 | 2/4 | 2/10 / 1/10 | 0.91 (18/20) |
+| `bge-m3` | 1.16 GB | 31/s | 19/20 | 20/20 | 4/4 | 7/10 / 1/10 | 0.94 (17/20) |
+| `snowflake-arctic-embed2` | 1.16 GB | 27/s | 17/20 | 20/20 | 4/4 | 4/10 / 1/10 | 0.86 (18/20) |
+
+- **Retrieval tells the models apart:** `nomic-embed-text` puts the right
+  passage first for half the questions only, and drops it from the 4 kept
+  chunks for 4 of them. Across languages it fails outright: a French question
+  on an English passage ranks it 14th and 20th of 24. The multilingual models
+  (`embeddinggemma`, `bge-m3`, `snowflake-arctic-embed2`) keep the right passage
+  every time, across languages included.
+- **The cache cannot rely on the embedding alone:** with every model, rephrased
+  and different questions overlap. The one false hit at 0.95 is the same for all
+  of them: "convert 100 dollars to euros" against "100 euros to dollars" scores
+  0.98 or more, above most rephrasings. No threshold separates them, and 0.95
+  already misses from 3 to 8 rephrasings out of 10. A false hit gives a wrong
+  answer while a miss only costs a call to the model, so the threshold stays
+  high.
+- **Speed is not a concern:** even the slowest model embeds a request of 8
+  passages in about 0.3 s, a small cost next to the answer of the chat model.
+
+**Choice:** `embeddinggemma` finds the right passage almost as often as
+`bge-m3` (17/20 first, 20/20 kept, 4/4 across languages) at half its size
+(0.62 GB). The size matters: `bge-m3` was dropped for `nomic-embed-text` because
+an Ollama sharing its memory with the chat model kept evicting it.
+`embeddinggemma` should replace `nomic-embed-text` as the default, and `bge-m3`
+is the choice when memory allows.
