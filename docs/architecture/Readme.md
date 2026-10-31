@@ -31,7 +31,7 @@ sensai/
     │       ├── model.py                # module interface
     │       ├── precompute/             # inbound chain
     │       │   ├── pii_masking.py
-    │       │   ├── compression.py
+    │       │   ├── compression.py      # summarises the oldest messages near the token budget
     │       │   └── prompt_optimization.py
     │       └── guardrails/             # outbound chain
     │           ├── hallucination.py
@@ -61,7 +61,7 @@ sensai/
     │   ├── _model.py                # choose a model
     │   ├── _effort.py               # thinking effort of the reasoning loop
     │   ├── _branch.py               # branch off the current session
-    │   ├── _compress.py
+    │   ├── _compress.py             # summarise the oldest messages now
     │   ├── _export.py               # export a conversation
     │   ├── _dashboard.py            # monitoring dashboard of the logged calls
     │   └── _schedule.py             # schedule a task (time / action)
@@ -69,6 +69,7 @@ sensai/
     ├── memory/                    # Repository + Memento
     │   ├── history_repository.py   # conversation history interface
     │   ├── history.py              # DB-backed conversation history
+    │   ├── summary.py              # summary of the oldest messages of a branch, and its storage interface
     │   ├── profile.py
     │   ├── vector_index.py
     │   ├── ingest.py                # chunking + embeddings for RAG
@@ -85,6 +86,7 @@ sensai/
         ├── recorder.py             # builds that record from the chunks of a call
         ├── interaction_repository.py # storage interface of the logged calls
         ├── logger.py               # bus subscriber storing every call, with or without its content
+        ├── budget.py               # bus subscriber measuring the context the conversation takes
         └── metrics.py              # dashboard report: percentiles, time series, drift detection
 ```
 
@@ -167,6 +169,18 @@ sensai/
   per hour, 6 hours or day, the figures per model and persona, the latest
   errors, and the response time drifts against the 7 previous periods. The UI
   shows it with `show_dashboard` (a Textual screen over the chat).
+  `budget.py` is another subscriber: after each chat call, it takes the real
+  token count of the call (prompt and answer) as the context the conversation
+  takes, against the `[context]` budget, or the context length of the model
+  without one. The UI shows it on the input box, in red past the warning
+  threshold. Past it, the next message first asks the user, in a dialog
+  (`ask_compression`), whether to compress the conversation and go on, or to
+  start a new conversation with that message. To go on, the compression stage
+  of the pipeline asks the model to
+  summarise all but the last messages, keeping figures, names and decisions;
+  the summary is stored per branch with the number of messages it stands for,
+  sent in their place from then on, and extended by the next compression.
+  `/compress` runs it on demand. The messages themselves stay in the branch.
 
 ## Configuration surface
 

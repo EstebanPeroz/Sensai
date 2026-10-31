@@ -4,7 +4,7 @@ import threading
 from typing import TYPE_CHECKING, override
 
 from sensai import ui
-from sensai.ui.tui._dialogs import ConfirmScreen, QuestionScreen
+from sensai.ui.tui._dialogs import CompressionScreen, ConfirmScreen, QuestionScreen
 from sensai.ui.tui._textual import ChatApp
 
 if TYPE_CHECKING:
@@ -153,6 +153,12 @@ class UITextualAdapter(ui.UIAdapter):
         """Ask in a dialog whether `tool_name` may run, denying it when the dialog cannot be shown."""
         answer = self._wait_for_screen(ConfirmScreen(tool_name, arguments))
         return ui.Confirmation.DENY if answer is None else answer
+
+    @override
+    def ask_compression(self, usage: ContextUsage) -> ui.CompressionChoice:
+        """Ask in a dialog how to go on near the budget, compressing when the dialog cannot be shown."""
+        answer = self._wait_for_screen(CompressionScreen(usage))
+        return ui.CompressionChoice.COMPRESS if answer is None else answer
 
     @override
     def ask_user(self, question: str) -> str | None:

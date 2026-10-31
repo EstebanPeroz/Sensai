@@ -41,7 +41,7 @@ class TestPackagedSettings:
         assert settings.db.rag.location == "http://localhost:6333"
         assert settings.web == WebSettings()
         assert settings.logging == LoggingSettings(enabled=True, log_content=True)
-        assert settings.context == ContextSettings(budget=8192, warning_threshold=0.8)
+        assert settings.context == ContextSettings(budget=8192, warning_threshold=0.8, keep_recent=6)
 
     def test_default_file_is_the_template_without_local_settings(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -212,9 +212,11 @@ class TestLogging:
 
 class TestContext:
     def test_is_read_from_context_table(self, tmp_path: Path) -> None:
-        settings = load_settings(write_config(tmp_path, "[context]\nbudget = 4096\nwarning_threshold = 0.5\n"))
+        settings = load_settings(
+            write_config(tmp_path, "[context]\nbudget = 4096\nwarning_threshold = 0.5\nkeep_recent = 2\n")
+        )
 
-        assert settings.context == ContextSettings(budget=4096, warning_threshold=0.5)
+        assert settings.context == ContextSettings(budget=4096, warning_threshold=0.5, keep_recent=2)
 
     def test_missing_table_leaves_the_budget_to_the_model(self, tmp_path: Path) -> None:
         assert load_settings(write_config(tmp_path, "")).context.budget is None
@@ -277,6 +279,8 @@ class TestValidation:
             ('[context]\nwarning_threshold = "x"\n', "context.warning_threshold must be a number"),
             ("[context]\nwarning_threshold = 0\n", "context.warning_threshold must be in"),
             ("[context]\nwarning_threshold = 1.5\n", "context.warning_threshold must be in"),
+            ("[context]\nkeep_recent = 0\n", "context.keep_recent must be a positive number of messages"),
+            ('[context]\nkeep_recent = "6"\n', "context.keep_recent must be a positive number of messages"),
         ],
     )
     def test_invalid_settings_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:
