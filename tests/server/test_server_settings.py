@@ -235,6 +235,24 @@ class TestFeatures:
     def test_disabled_in_matches_whole_namespaces(self) -> None:
         assert FeatureSettings(disabled=["toolsx.a", "tools"]).disabled_in("tools") == set()
 
+    def test_confirm_is_read_from_features_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[features]\nconfirm = ["tools.web_fetch"]\n'))
+
+        assert settings.features.confirm == ["tools.web_fetch"]
+
+    def test_confirm_defaults_to_empty(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "")).features.confirm == []
+
+    def test_confirm_in_strips_the_namespace(self) -> None:
+        features = FeatureSettings(confirm=["tools.web_fetch", "commands.export", "tools.rag_retrieval"])
+
+        assert features.confirm_in("tools") == {"web_fetch", "rag_retrieval"}
+        assert features.confirm_in("commands") == {"export"}
+        assert features.confirm_in("personas") == set()
+
+    def test_confirm_in_matches_whole_namespaces(self) -> None:
+        assert FeatureSettings(confirm=["toolsx.a", "tools"]).confirm_in("tools") == set()
+
 
 class TestLogging:
     def test_is_read_from_logging_table(self, tmp_path: Path) -> None:
@@ -294,6 +312,9 @@ class TestValidation:
             ('[features]\ndisabled = "tools.x"\n', "features.disabled must be a list"),
             ('[features]\ndisabled = [""]\n', "features.disabled entry must be a non-empty string"),
             ("[features]\ndisabled = [1]\n", "features.disabled entry must be a non-empty string"),
+            ('[features]\nconfirm = "tools.x"\n', "features.confirm must be a list"),
+            ('[features]\nconfirm = [""]\n', "features.confirm entry must be a non-empty string"),
+            ("[features]\nconfirm = [1]\n", "features.confirm entry must be a non-empty string"),
             ('logging = "x"\n', "logging must be a table"),
             ('[logging]\nenabled = "yes"\n', "logging.enabled must be a boolean"),
             ("[logging]\nlog_content = 1\n", "logging.log_content must be a boolean"),

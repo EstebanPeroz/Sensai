@@ -5,13 +5,14 @@ from sensai_protocol import Error, Session
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.session import SessionRegistry
+from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import MODEL, SETTINGS
 from tests.server.fakes import FakeAdapter, RecordingOutbound
 
 
 def _registry(persona_manager: PersonaManager) -> SessionRegistry:
-    return SessionRegistry(ProviderManager(SETTINGS.llm), persona_manager)
+    return SessionRegistry(ProviderManager(SETTINGS.llm), persona_manager, ToolManager())
 
 
 class TestSessionRegistry:
@@ -89,6 +90,16 @@ class TestSessionRegistry:
         assert second is not None
         assert first.persona_manager is persona_manager
         assert second.persona_manager is persona_manager
+
+    async def test_two_sessions_get_distinct_tool_states(self, persona_manager: PersonaManager) -> None:
+        registry = _registry(persona_manager)
+        first = await registry.open(RecordingOutbound(), MODEL)
+        second = await registry.open(RecordingOutbound(), MODEL)
+        assert first is not None
+        assert second is not None
+        assert first.tools is not second.tools
+        assert first.tools.enabled is not second.tools.enabled
+        assert first.tools.always_allowed is not second.tools.always_allowed
 
 
 class TestRefreshPersona:

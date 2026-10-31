@@ -1587,17 +1587,21 @@ name = "sensai-server"
 version = "0.1.0"
 source = { editable = "packages/server" }
 dependencies = [
+    { name = "ddgs" },
     { name = "fastapi" },
     { name = "requests" },
     { name = "sensai-protocol" },
+    { name = "trafilatura" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "ddgs", specifier = ">=9.16.0" },
     { name = "fastapi" },
     { name = "requests" },
     { name = "sensai-protocol", editable = "packages/protocol" },
+    { name = "trafilatura", specifier = ">=2.3.1" },
     { name = "uvicorn", extras = ["standard"] },
 ]
 

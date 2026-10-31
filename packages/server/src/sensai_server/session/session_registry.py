@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
-from uuid import uuid4
 
 from sensai_protocol import Session as SessionMessage
 
@@ -15,6 +14,7 @@ if TYPE_CHECKING:
     from sensai_server.app import Outbound
     from sensai_server.llm.persona import Persona, PersonaManager
     from sensai_server.llm.provider import ProviderManager
+    from sensai_server.tools.tool_manager import ToolManager
 
 
 class SessionRegistry:
@@ -24,11 +24,13 @@ class SessionRegistry:
     _lock: asyncio.Lock
     _pm: ProviderManager
     _persona_manager: PersonaManager
+    _tool_manager: ToolManager
 
-    def __init__(self, pm: ProviderManager, persona_manager: PersonaManager) -> None:
-        """Open sessions on the models served by `pm`, sharing `persona_manager`."""
+    def __init__(self, pm: ProviderManager, persona_manager: PersonaManager, tool_manager: ToolManager) -> None:
+        """Open sessions on the models served by `pm`, sharing `persona_manager` and `tool_manager`."""
         self._pm = pm
         self._persona_manager = persona_manager
+        self._tool_manager = tool_manager
         self._sessions = {}
         self._lock = asyncio.Lock()
 
@@ -43,7 +45,7 @@ class SessionRegistry:
                 f"Unknown model '{model}'. Available models: {', '.join(self._pm.get_models()) or 'none'}"
             )
             return None
-        session = Session(uuid4(), out, self._pm, self._persona_manager)
+        session = Session(out, self._pm, self._persona_manager, self._tool_manager)
         await session.set_model(model)
         async with self._lock:
             self._sessions[session.client_id] = session

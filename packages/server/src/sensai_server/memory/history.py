@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from sensai_server.memory.message import Message
 
 if TYPE_CHECKING:
-    from sensai_server.memory.message import Role
+    from sensai_protocol.server_messages import Role
 
 
 class History:

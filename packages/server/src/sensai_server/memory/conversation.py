@@ -1,12 +1,17 @@
+import asyncio
 from typing import TYPE_CHECKING
 
 from sensai_protocol.error import SensaiError
 
 from sensai_server.memory.history import History
+from sensai_server.memory.message import Message
 
 if TYPE_CHECKING:
     from uuid import UUID
 
+    from sensai_protocol.server_messages import Role
+
+    from sensai_server.app.outbound import Outbound
     from sensai_server.llm.persona import Persona
     from sensai_server.memory.persistent_db import PersistentDatabase
 
@@ -41,6 +46,23 @@ class Conversation:
         """
         if self.model is None:
             raise SensaiError(self._model_error)
-        self.uuid = db.create_branch(uuid, name)
-        if self.uuid:
-            db.set_branch_model(self.uuid, self.model)
+        self.uuid = db.create_branch(model=self.model, current_branch=uuid, name=name)
+
+    async def save_message(self, role: Role, content: str, out: Outbound, db: PersistentDatabase) -> bool:
+        """Add message to History and db."""
+        if not self.uuid or not db:
+            await out.send_system_message("Failed to add message")
+            return False
+
+        try:
+            uuid = await asyncio.shield(asyncio.to_thread(db.add_message_to_branch, self.uuid, role, content))
+        except SensaiError as err:
+            await out.send_system_message(err.message)
+            return False
+
+        if not uuid:
+            await out.send_system_message("Failed to add message")
+            return False
+
+        self.history.insert(Message(uuid=uuid, role=role, content=content))
+        return True

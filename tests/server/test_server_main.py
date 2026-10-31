@@ -32,10 +32,10 @@ class TestMain:
         db = tmp_path / "test.db"
         path.write_text(f'[llm.ollama]\nbase_url = "http://ollama:1234"\n[db.persistent]\nurl = "sqlite:///{db}"\n')
 
-        assert main(["--config", str(path), "--host", "0.0.0.0", "--port", "9000"]) == 0  # noqa: S104
+        assert main(["--config", str(path), "--port", "9000"]) == 0
 
         [(app, address)] = uvicorn.calls
-        assert address == {"host": "0.0.0.0", "port": 9000}  # noqa: S104
+        assert address == {"host": "127.0.0.1", "port": 9000}
         settings: Settings = app_state(app).settings
         assert settings.llm.providers == {"ollama": OllamaSettings(base_url="http://ollama:1234")}
 

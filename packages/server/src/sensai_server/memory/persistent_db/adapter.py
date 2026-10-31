@@ -19,7 +19,7 @@ class PersistentDatabase(ABC):
     # Branch
 
     @abstractmethod
-    def create_branch(self, current_branch: UUID | None = None, name: str = "Branch") -> UUID | None:
+    def create_branch(self, *, model: str, current_branch: UUID | None = None, name: str = "Branch") -> UUID | None:
         """Create a new branch and return its id if success or None if fail.
 
         If `current_branch` is given, the new branch is a deep copy of it (messages included)
