@@ -139,7 +139,7 @@ class SqlAlchemy(PersistentDatabase):
 
     @override
     def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
-        """Replace the uuid, model, persona and history of `current` with those of the target branch.
+        """Replace the uuid, model, persona, RAG id and history of `current` with those of the target branch.
 
         Does nothing if no branch has this uuid.
 
@@ -157,6 +157,7 @@ class SqlAlchemy(PersistentDatabase):
                 raise DatabaseError(self._import_error_message)
             current.uuid = source.id
             current.model = source.model_name
+            current.rag_id = source.rag_id
             current.history.replace(self._messages_from_branch(source))
             current.persona = self._persona_from_row(source.persona) if source.persona else None
 
@@ -246,6 +247,40 @@ class SqlAlchemy(PersistentDatabase):
             except SQLAlchemyError:
                 return False
         return True
+
+    @override
+    def get_branch_rag_id(self, branch: UUID) -> UUID | None:
+        """Return the id of the RAG linked to the branch `branch`, or None if it has none yet.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            if source is None:
+                raise InvalidInstanceError(self._uuid_error_essage)
+            return source.rag_id
+
+    @override
+    def set_branch_rag_id(self, branch: UUID, rag_id: UUID) -> None:
+        """Link the branch `branch` to the RAG `rag_id`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+            DatabaseError: If the link could not be stored, which a `rag_id` another branch
+                already uses is enough to cause (RAG ids are unique).
+
+        """
+        with Session(self._engine) as session:
+            source = session.get(BranchTable, branch)
+            if source is None:
+                raise InvalidInstanceError(self._uuid_error_essage)
+            source.rag_id = rag_id
+            try:
+                session.commit()
+            except SQLAlchemyError:
+                raise DatabaseError(self._update_error_message) from None
 
     @override
     def export_branch(self, branch: UUID) -> dict | None:

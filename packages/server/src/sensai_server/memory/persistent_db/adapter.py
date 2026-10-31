@@ -7,9 +7,11 @@ if TYPE_CHECKING:
     from datetime import datetime
     from uuid import UUID
 
+    from sensai_protocol.server_messages import Role
+
     from sensai_server.llm.persona import Persona
     from sensai_server.llm.provider import ProviderManager
-    from sensai_server.memory import Conversation, Message, Role
+    from sensai_server.memory import Conversation, Message
     from sensai_server.monitoring.interaction_repository import InteractionRepository
 
 
@@ -38,7 +40,7 @@ class PersistentDatabase(ABC):
 
     @abstractmethod
     def get_branch(self, current: Conversation, target_branch: UUID, provider_manager: ProviderManager) -> None:
-        """Replace the uuid, model, persona and history of `current` with those of the target branch.
+        """Replace the uuid, model, persona, RAG id and history of `current` with those of the target branch.
 
         Does nothing if no branch has this uuid.
         """
@@ -87,6 +89,26 @@ class PersistentDatabase(ABC):
 
         Return True on success, False if the branch or the persona does not exist
         or the change could not be saved.
+
+        """
+
+    @abstractmethod
+    def get_branch_rag_id(self, branch: UUID) -> UUID | None:
+        """Return the id of the RAG linked to the branch `branch`, or None if it has none yet.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+
+        """
+
+    @abstractmethod
+    def set_branch_rag_id(self, branch: UUID, rag_id: UUID) -> None:
+        """Link the branch `branch` to the RAG `rag_id`.
+
+        Raises:
+            InvalidInstanceError: If no branch has this uuid.
+            DatabaseError: If the link could not be stored, which a `rag_id` another branch
+                already uses is enough to cause (RAG ids are unique).
 
         """
 
