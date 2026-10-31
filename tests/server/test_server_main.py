@@ -5,6 +5,7 @@ import pytest
 import sensai_server
 from fastapi import FastAPI
 from sensai_server import main
+from sensai_server.app._state import app_state
 from sensai_server.config.settings import OllamaSettings, Settings
 
 
@@ -28,13 +29,14 @@ def uvicorn(monkeypatch: pytest.MonkeyPatch) -> FakeUvicorn:
 class TestMain:
     def test_serves_an_app_holding_the_loaded_settings(self, tmp_path: Path, uvicorn: FakeUvicorn) -> None:
         path = tmp_path / "settings.toml"
-        path.write_text('[llm.ollama]\nbase_url = "http://ollama:1234"\n')
+        db = tmp_path / "test.db"
+        path.write_text(f'[llm.ollama]\nbase_url = "http://ollama:1234"\n[db.persistent]\nurl = "sqlite:///{db}"\n')
 
         assert main(["--config", str(path), "--host", "0.0.0.0", "--port", "9000"]) == 0  # noqa: S104
 
         [(app, address)] = uvicorn.calls
         assert address == {"host": "0.0.0.0", "port": 9000}  # noqa: S104
-        settings: Settings = app.state.settings
+        settings: Settings = app_state(app).settings
         assert settings.llm.providers == {"ollama": OllamaSettings(base_url="http://ollama:1234")}
 
     def test_missing_config_fails_without_serving(
