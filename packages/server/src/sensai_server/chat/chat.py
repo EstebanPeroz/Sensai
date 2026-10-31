@@ -20,7 +20,6 @@ if TYPE_CHECKING:
 async def run_chat(session: Session, prompt: str, pipeline: ChatPipeline, db: PersistentDatabase) -> None:
     """Run the chat pipeline."""
     conv = session.conv
-    # TODO(cache): answer from the semantic cache here, as an outer stage right after the guard.  # noqa: TD003, FIX002
     if not await conv.save_message(Role.USER, prompt, session.out, db):
         return
     context = ChatContext(
@@ -32,12 +31,12 @@ async def run_chat(session: Session, prompt: str, pipeline: ChatPipeline, db: Pe
         tools=session.tools,
         max_iterations=EFFORTS[session.effort],
         rag_id=conv.rag_id,
+        cache=session.cache,
     )
     content = await _stream(session.out, pipeline, context)
     if content.strip() == "":
         return
     await conv.save_message(Role.ASSISTANT, content, session.out, db)
-    # TODO(cache): store the complete answer in the semantic cache.  # noqa: TD003, FIX002
 
 
 async def _stream(out: Outbound, pipeline: ChatPipeline, context: ChatContext) -> str:

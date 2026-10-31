@@ -34,7 +34,7 @@ from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
 from sensai_server.pipeline import ChatPipeline
-from sensai_server.pipeline.modules import ModelStage, PersonaStage, RagStage
+from sensai_server.pipeline.modules import CacheStage, ModelStage, PersonaStage, RagStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
 from sensai_server.rag import Rag
 from sensai_server.session import SessionRegistry
@@ -85,7 +85,7 @@ def create_app(
         persona_manager.create_default_persona()
     rag = _build_rag(settings, embedder, db)
     cache = _build_cache(settings, embedder)
-    pipeline = _build_pipeline(react, rag)
+    pipeline = _build_pipeline(react, rag, cache)
 
     sessions = SessionRegistry(pm, persona_manager, tool_manager, cache)
     commands = CommandRegistry()
@@ -113,12 +113,17 @@ def create_app(
     return app
 
 
-def _build_pipeline(react: ReAct, rag: Rag | None) -> ChatPipeline:
-    """Build the chain every chat goes through: the guard, the persona, the RAG's extracts, then the ReAct loop.
+def _build_pipeline(react: ReAct, rag: Rag | None, cache: SemanticCache | None) -> ChatPipeline:
+    """Build the chain every chat goes through: guard, semantic cache, persona, RAG's extracts, then the ReAct loop.
 
-    The guard comes first, so that a rejected prompt is never embedded. Without `rag`, there are no extracts.
+    The guard comes first, so that a rejected prompt is never embedded. The cache comes before the persona and the
+    RAG, so that a hit skips the RAG search and the model, and a stored answer already names its sources. Without
+    `cache`, nothing is cached; without `rag`, there are no extracts.
     """
-    pipeline = ChatPipeline(ModelStage(react)).use(BadWordsGuard()).use(PersonaStage())
+    pipeline = ChatPipeline(ModelStage(react)).use(BadWordsGuard())
+    if cache is not None:
+        pipeline.use(CacheStage())
+    pipeline.use(PersonaStage())
     if rag is not None:
         pipeline.use(RagStage(rag))
     return pipeline
