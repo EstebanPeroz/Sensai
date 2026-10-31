@@ -65,7 +65,7 @@ class Core:
         if db is None:
             msg = "no persistent database"
             raise DbConnectionError(msg)
-        self._persona_manager = PersonaManager(db)
+        self._persona_manager = PersonaManager(db, settings.personas.security)
         with contextlib.suppress(DuplicatePersonaError):
             self._persona_manager.create_default_persona()
         self._provider_manager = ProviderManager(settings.llm)

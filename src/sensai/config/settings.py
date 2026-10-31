@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 class ConfigError(SensaiError):
     """Raised when the settings cannot be loaded or are invalid."""
 
+DEFAULT_SECURITY_PERSONA_FILE = "sensai.config.personas/security.toml"
 
 @dataclass
 class ProviderSettings:
@@ -172,6 +173,25 @@ class FeatureSettings:
 
 
 @dataclass
+class PersonaSettings:
+    """Settings of the [personas] table: the security personas seeded into a fresh database.
+
+    Each entry locates a persona file, either as a path or as `<package>/<filename>`
+    for one packaged with sensai, such as `sensai.config.personas/security.toml`.
+    """
+
+    security: list[str] = field(default_factory=lambda: [DEFAULT_SECURITY_PERSONA_FILE])
+
+    def __post_init__(self) -> None:
+        """Check the security list, which comes unchecked from the settings file."""
+        if not isinstance(self.security, list):
+            msg = "personas.security must be a list of persona files"
+            raise TypeError(msg)
+        for entry in self.security:
+            _check_name(entry, "personas.security entry")
+
+
+@dataclass
 class LoggingSettings:
     """Settings of the [logging] table: the structured log of every call to the model."""
 
@@ -195,6 +215,7 @@ class Settings:
     db: DBSettings = field(default_factory=DBSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
+    personas: PersonaSettings = field(default_factory=PersonaSettings)
 
 
 def default_settings_file() -> Traversable:
@@ -242,6 +263,7 @@ def load_settings(path: Path | None = None) -> Settings:
             rag = RagDBSettings(**_pop_table(db, "rag"))
             features = FeatureSettings(**_pop_table(data, "features"))
             logging = LoggingSettings(**_pop_table(data, "logging"))
+            personas = PersonaSettings(**_pop_table(data, "personas"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
                 cache=cache,
@@ -250,6 +272,7 @@ def load_settings(path: Path | None = None) -> Settings:
                 db=DBSettings(**db, persistent=persistent, rag=rag),
                 features=features,
                 logging=logging,
+                personas=personas,
                 **data,
             )
         except (TypeError, ValueError) as err:
