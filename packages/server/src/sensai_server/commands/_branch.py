@@ -5,6 +5,7 @@ from sensai_protocol.server_messages import HistoryMessage
 from sensai_protocol.server_messages import Role as HistoryRole
 
 import sensai_server.memory.persistent_db.error as db_err
+from sensai_server.cache import CacheError
 from sensai_server.commands._base import Command
 
 if TYPE_CHECKING:
@@ -54,11 +55,16 @@ class Branch(Command):
             )
 
     async def _set(self, session: Session, uuid: str) -> None:
-        """Load the branch identified by uuid."""
+        """Load the branch identified by uuid.
+
+        Switching to another branch clears the session's semantic cache, so no answer cached in the previous
+        conversation is reused. A failed switch, or one to the current branch, keeps it.
+        """
         target_id: UUID | None = self._try_parse_uuid(uuid)
         if target_id is None:
             await session.out.send_system_message("parameter is not a valid UUID.")
             return
+        previous_id: UUID | None = session.conv.uuid
         try:
             self._db.get_branch(
                 current=session.conv,
@@ -68,6 +74,8 @@ class Branch(Command):
         except db_err.InvalidInstanceError as err:
             await session.out.send_system_message(str(err))
             return
+        if session.conv.uuid != previous_id:
+            await self._clear_cache(session)
         messages: list[HistoryMessage] = [
             HistoryMessage(uuid=message.uuid, role=HistoryRole(message.role.value), content=message.content)
             for message in session.conv.history.messages()
@@ -113,6 +121,16 @@ class Branch(Command):
             await session.out.send_system_message("Failed to make a new branch")
             return
         await self._set(session, str(uuid))
+
+    @staticmethod
+    async def _clear_cache(session: Session) -> None:
+        """Clear the session's semantic cache, reporting a failure without raising it."""
+        if session.cache is None:
+            return
+        try:
+            await session.cache.clear()
+        except CacheError as error:
+            await session.out.send_system_message(f"The semantic cache could not be cleared: {error}")
 
     @override
     async def execute(self, session: Session, *args: str) -> None:
