@@ -30,4 +30,4 @@ def build_commands(
     `sessions` are the live sessions, for the commands that act on other sessions than the caller's. `tool_manager`
     is shared by every session, each one toggling its tools in its own state.
     """
-    return [PersonaCommand(sessions), Help(commands), Branch(db, pm), Effort(), Model(), ToolsCommand(tool_manager)]
+    return [Model(), PersonaCommand(sessions), Branch(db, pm), ToolsCommand(tool_manager), Effort(), Help(commands)]
