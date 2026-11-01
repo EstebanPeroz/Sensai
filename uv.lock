@@ -1597,6 +1597,7 @@ dependencies = [
     { name = "redis" },
     { name = "requests" },
     { name = "sensai-protocol" },
+    { name = "sqlalchemy" },
     { name = "trafilatura" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1613,6 +1614,7 @@ requires-dist = [
     { name = "redis", specifier = ">=8.1.0" },
     { name = "requests" },
     { name = "sensai-protocol", editable = "packages/protocol" },
+    { name = "sqlalchemy", specifier = ">=2.1.3" },
     { name = "trafilatura", specifier = ">=2.3.1" },
     { name = "uvicorn", extras = ["standard"] },
 ]

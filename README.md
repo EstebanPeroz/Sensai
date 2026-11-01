@@ -203,7 +203,7 @@ The local deterministic test server exposes an `echo` tool:
 ```toml
 [mcp.echo]
 command = "uv"
-args = ["run", "python", "tests/mcp/fixtures/tiny_server.py"]
+args = ["run", "python", "tests/server/tools/mcp/fixtures/tiny_server.py"]
 ```
 
 ### A pre-existing server
@@ -225,7 +225,7 @@ The configured directory must exist and is the only directory the filesystem ser
 The test server can also serve over HTTP, to try a remote server locally:
 
 ```bash
-uv run python tests/mcp/fixtures/tiny_server.py --http 8000   # serves http://127.0.0.1:8000/mcp
+uv run python tests/server/tools/mcp/fixtures/tiny_server.py --http 8000   # serves http://127.0.0.1:8000/mcp
 ```
 
 ```toml

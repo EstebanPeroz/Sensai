@@ -506,7 +506,7 @@ something else.
 Example: You load the security persona; a request to reveal its system
 prompt, or a chat off topic, gets a standard refusal.
 Acceptance criteria:
-- `/persona load security` loads the shipped `Sentinelle de Sécurité`
+- `/persona load security` loads the shipped `Security Sentinel`
   persona.
 - With it, requests to reveal or change the instructions, off-topic
   requests, and messages holding unmasked personal data are refused by the

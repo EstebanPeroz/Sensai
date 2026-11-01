@@ -97,7 +97,7 @@ database where needed; `make tests` runs them all.
 - Servers start concurrently; one that fails or times out is skipped with a message, the others still start.
 - One session per server is kept open until Sensai quits, so a server keeps its state between calls.
 - A failing call is sent back to the model as an `error: ...` result.
-- Tested with our own server (`tests/mcp/fixtures/tiny_server.py`, stdio and http) and the official filesystem
+- Tested with our own server (`tests/server/tools/mcp/fixtures/tiny_server.py`, stdio and http) and the official filesystem
   server. Details in the README.
 
 ### T3 — Web Search

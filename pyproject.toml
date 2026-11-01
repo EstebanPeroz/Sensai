@@ -85,9 +85,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/persistent_db/**"= ["SLF001"]
-"tests/rag/**" = ["SLF001"]
-"tests/server/test_server_rag_chunking.py" = ["SLF001"]
+"tests/server/rag/test_server_rag_chunking.py" = ["SLF001"]
 "tests/**" = [
     "S101",
     "INP001",
