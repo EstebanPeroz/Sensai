@@ -37,6 +37,7 @@ from sensai_server.app._state import app_state
 from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
+from sensai_server.commands._dashboard import Dashboard
 from sensai_server.commands._effort import Effort as EffortCommand
 from sensai_server.commands._help import Help
 from sensai_server.commands._model import Model
@@ -116,7 +117,7 @@ class TestLogin:
         with client.websocket_connect("/ws") as ws:
             session = _login(ws)
             assert session.model == MODEL
-            assert session.commands == ["/persona", "/help", "/branch", "/effort", "/model", "/tools"]
+            assert session.commands == ["/persona", "/help", "/branch", "/effort", "/model", "/tools", "/dashboard"]
             assert registry.get(session.client_id) is not None
 
     def test_login_twice_keeps_session(self, client: TestClient, registry: SessionRegistry) -> None:
@@ -435,7 +436,8 @@ class TestCommandAndComplete:
             assert _receive(ws) == Input(role=Role.USER, content="/help", command=True)
             assert _receive(ws) == System(
                 message=(
-                    f"Available commands:\n- branch: {Branch.help}\n- effort: {EffortCommand.help}\n"
+                    f"Available commands:\n- branch: {Branch.help}\n- dashboard: {Dashboard.help}\n"
+                    f"- effort: {EffortCommand.help}\n"
                     f"- help: {Help.help}\n- model: {Model.help}\n- persona: {PersonaCommand.help}\n"
                     f"- tools: {ToolsCommand.help}"
                 )
