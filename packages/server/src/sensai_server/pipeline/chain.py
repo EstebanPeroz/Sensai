@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     from uuid import UUID
 
     from sensai_server.app.outbound import Outbound
+    from sensai_server.cache import SessionCache
     from sensai_server.llm.persona import Persona
     from sensai_server.tools.state import ToolState
 
@@ -51,6 +52,7 @@ class ChatContext:
     tools: ToolState | None = None
     max_iterations: int = EFFORTS["off"]
     rag_id: UUID | None = None
+    cache: SessionCache | None = None
     # TODO(monitoring): add `on_interaction`  # noqa: TD003, FIX002
     # `on_interaction: Callable[[Interaction], None] = ignore_interaction`, called once for every call to the model
     # this exchange makes, whatever its outcome.

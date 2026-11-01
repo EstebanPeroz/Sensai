@@ -20,6 +20,7 @@ dependencies = [
     "qdrant-client==1.18.0",
     "beautifulsoup4>=4.15.0",
     "pypdf>=6.21.1",
+    "redis>=8.1.0",
 ]
 
 [project.scripts]
