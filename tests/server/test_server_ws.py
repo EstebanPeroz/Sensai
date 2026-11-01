@@ -437,7 +437,7 @@ class TestPersonaCommand:
         with client.websocket_connect("/ws") as ws:
             _login(ws)
             _send(ws, Complete(text="/persona load "))
-            assert _receive(ws) == Completions(text="/persona load ", values=["Analyst"])
+            assert _receive(ws) == Completions(text="/persona load ", values=["Analyst", "Sentinelle de Sécurité"])
 
 
 class TestCommandAndComplete:
@@ -589,6 +589,18 @@ class TestEndToEnd:
             {"role": "user", "content": "hello"},
             {"role": "user", "content": ANSWER_INSTRUCTION},
         ]
+
+    def test_chat_starts_with_the_security_persona(self, real_app: FastAPI, real_client: TestClient) -> None:
+        [security] = app_state(real_app).persona_manager.security_personas()
+        with real_client.websocket_connect("/ws") as ws:
+            _login(ws)
+            _send(ws, Chat(prompt="hello"))
+            _receive(ws)
+            _receive(ws)
+            _receive(ws)
+            _sync(ws)
+        assert FakeAdapter.last_payload is not None
+        assert FakeAdapter.last_payload["messages"][0] == {"role": "system", "content": security.prompt}
 
     def test_bad_word_is_answered_without_the_model(self, real_client: TestClient) -> None:
         with real_client.websocket_connect("/ws") as ws:

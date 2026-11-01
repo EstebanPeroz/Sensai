@@ -31,7 +31,7 @@ from sensai_server.chat.react import ReAct
 from sensai_server.commands import CommandRegistry, build_commands
 from sensai_server.events import EventBus
 from sensai_server.llm.embedder import Embedder
-from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
+from sensai_server.llm.persona import DuplicatePersonaError, Persona, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
@@ -98,12 +98,12 @@ def _create_app(
     if db is None:
         msg = "the persistent database is not open"
         raise DbConnectionError(msg)
-    persona_manager = PersonaManager(db)
+    persona_manager = PersonaManager(db, settings.personas.security)
     with contextlib.suppress(DuplicatePersonaError):
         persona_manager.create_default_persona()
     rag = _build_rag(settings, embedder, db)
     cache = _build_cache(settings, embedder)
-    pipeline = _build_pipeline(react, rag, cache)
+    pipeline = _build_pipeline(react, rag, cache, persona_manager.security_personas())
 
     sessions = SessionRegistry(pm, persona_manager, tool_manager, cache)
     commands = CommandRegistry()
@@ -137,17 +137,20 @@ def _create_app(
     return app
 
 
-def _build_pipeline(react: ReAct, rag: Rag | None, cache: SemanticCache | None) -> ChatPipeline:
+def _build_pipeline(
+    react: ReAct, rag: Rag | None, cache: SemanticCache | None, security: list[Persona]
+) -> ChatPipeline:
     """Build the chain every chat goes through: guard, semantic cache, persona, RAG's extracts, then the ReAct loop.
 
     The guard comes first, so that a rejected prompt is never embedded. The cache comes before the persona and the
     RAG, so that a hit skips the RAG search and the model, and a stored answer already names its sources. Without
-    `cache`, nothing is cached; without `rag`, there are no extracts.
+    `cache`, nothing is cached; without `rag`, there are no extracts. The `security` personas are sent with every
+    chat, before the conversation's own.
     """
     pipeline = ChatPipeline(ModelStage(react)).use(BadWordsGuard())
     if cache is not None:
         pipeline.use(CacheStage())
-    pipeline.use(PersonaStage())
+    pipeline.use(PersonaStage(security))
     if rag is not None:
         pipeline.use(RagStage(rag))
     return pipeline

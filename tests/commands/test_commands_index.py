@@ -253,7 +253,7 @@ class TestExecuteOffTheDispatchThread:
         # The worker reports a source once its chunks are all stored: waiting for the first stored chunk instead
         # could read the collection halfway through the upsert.
         deadline = time.monotonic() + 5
-        while not ui.messages and time.monotonic() < deadline:
+        while f"{source}: 2 chunks" not in ui.messages and time.monotonic() < deadline:
             time.sleep(0.01)
         assert sources(collection) == [source, source]
 
