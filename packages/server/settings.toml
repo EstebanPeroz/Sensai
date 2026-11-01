@@ -49,6 +49,10 @@ confirm = []
 
 # disabled = ["tools.inexesistant.test"]
 
+[personas]
+# Security personas seeded into the database at startup: a path on the server, or `<package>/<filename>`.
+security = ["sensai_server.config.personas/security.toml"]
+
 [logging]
 # Record every call to the model in the persistent database; log_content = false keeps only the metadata.
 enabled = true

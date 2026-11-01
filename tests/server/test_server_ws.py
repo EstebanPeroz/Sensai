@@ -437,7 +437,7 @@ class TestPersonaCommand:
         with client.websocket_connect("/ws") as ws:
             _login(ws)
             _send(ws, Complete(text="/persona load "))
-            assert _receive(ws) == Completions(text="/persona load ", values=["Analyst"])
+            assert _receive(ws) == Completions(text="/persona load ", values=["Analyst", "Sentinelle de Sécurité"])
 
 
 class TestCommandAndComplete:

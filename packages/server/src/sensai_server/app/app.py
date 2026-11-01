@@ -98,7 +98,7 @@ def _create_app(
     if db is None:
         msg = "the persistent database is not open"
         raise DbConnectionError(msg)
-    persona_manager = PersonaManager(db)
+    persona_manager = PersonaManager(db, settings.personas.security)
     with contextlib.suppress(DuplicatePersonaError):
         persona_manager.create_default_persona()
     rag = _build_rag(settings, embedder, db)

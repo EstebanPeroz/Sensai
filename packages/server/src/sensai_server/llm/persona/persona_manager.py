@@ -3,13 +3,15 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 from importlib import resources
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sensai_server.llm.persona.error import DuplicatePersonaError, PersonaNotRegisteredError
+from sensai_server.llm.persona.error import DuplicatePersonaError, PersonaFileError, PersonaNotRegisteredError
 from sensai_server.llm.persona.persona import DEFAULT_PERSONA_FILE, Persona
 from sensai_server.memory.persistent_db.error import DatabaseError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from uuid import UUID
 
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
@@ -26,12 +28,18 @@ class PersonaManager:
     """
 
     _db: PersistentDatabase
+    _security_personas: list[Persona]
     _store_error_message: str = "the persona could not be stored"
     _record_error_message: str = "the database returned a persona without an id"
 
-    def __init__(self, db: PersistentDatabase) -> None:
-        """Read and write the personas through `db`."""
+    def __init__(self, db: PersistentDatabase, security_files: Iterable[str] = ()) -> None:
+        """Read and write the personas through `db`, seeding the security ones listed in `security_files`."""
         self._db = db
+        self._security_personas = [self._seed(file) for file in security_files]
+
+    def security_personas(self) -> list[Persona]:
+        """Return the stored security personas, in the order the settings list them."""
+        return list(self._security_personas)
 
     def create_persona(self, draft: Persona) -> Persona:
         """Store the unsaved persona `draft` and return the stored one."""
@@ -90,6 +98,14 @@ class PersonaManager:
         """Save `persona` as the one the branch `branch` uses. Returns False if it could not be saved."""
         return self._db.set_branch_persona(branch, self._stored_uuid(persona))
 
+    def _seed(self, file: str) -> Persona:
+        """Store the persona described by `file`, or return the stored one that already goes by its name."""
+        draft = Persona.from_toml(_read(file), file)
+        existing = self._find(draft.name)
+        if existing is not None:
+            return existing
+        return self.create_persona(draft)
+
     def _find(self, name: str) -> Persona | None:
         """Return the stored persona named `name`, whatever its case, or None if there is none."""
         key = name.casefold()
@@ -100,3 +116,24 @@ class PersonaManager:
         if persona.uuid is None:
             raise DatabaseError(self._record_error_message)
         return persona.uuid
+
+
+def _read(file: str) -> str:
+    """Return the text of `file`, read from the server's disk or from the `<package>/<filename>` it names.
+
+    `file` is only looked up in a package when it is not on the disk and its part before the last `/` is a module name.
+    """
+    path = Path(file)
+    package, _, filename = file.rpartition("/")
+    try:
+        if path.exists() or not all(part.isidentifier() for part in package.split(".")):
+            return path.read_text(encoding="utf-8")
+        try:
+            source = resources.files(package).joinpath(filename)
+        except (ImportError, TypeError) as err:
+            raise PersonaFileError(file, f"no package '{package}' to read it from ({err})") from err
+        return source.read_text(encoding="utf-8")
+    except OSError as err:
+        raise PersonaFileError(file, f"cannot read it ({err.strerror or err})") from err
+    except UnicodeDecodeError as err:
+        raise PersonaFileError(file, "not valid UTF-8") from err

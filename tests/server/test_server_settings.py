@@ -1,3 +1,4 @@
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from sensai_server.config.settings import (
     LoggingSettings,
     MCPServerConfig,
     OllamaSettings,
+    PersonaSettings,
     RagDBSettings,
     Settings,
     WebSettings,
@@ -46,6 +48,7 @@ class TestTemplate:
         assert settings.web == WebSettings()
         assert settings.features == FeatureSettings()
         assert settings.logging == LoggingSettings(enabled=True, log_content=True)
+        assert settings.personas == PersonaSettings()
         assert settings.mcp == []
 
 
@@ -70,16 +73,32 @@ class TestApp:
         assert isinstance(app_state(app).persona_manager, PersonaManager)
         assert app_state(app).db is not None
 
-    def test_seeds_the_default_persona(self, tmp_path: Path) -> None:
+    def test_seeds_the_default_and_security_personas(self, tmp_path: Path) -> None:
         app = create_app(settings_with_db(tmp_path))
 
-        assert [persona.name for persona in app_state(app).persona_manager.get_personas()] == ["Analyst"]
+        names = {persona.name for persona in app_state(app).persona_manager.get_personas()}
+        assert names == {"Analyst", "Sentinelle de Sécurité"}
 
-    def test_seeds_the_default_persona_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_seeds_the_personas_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         create_app(settings_with_db(tmp_path))
         monkeypatch.setattr(base._State, "db", None)  # noqa: SLF001 - reopen the same file, as a restart does
         app = create_app(settings_with_db(tmp_path))
 
+        names = {persona.name for persona in app_state(app).persona_manager.get_personas()}
+        assert names == {"Analyst", "Sentinelle de Sécurité"}
+
+    def test_keeps_the_security_personas_in_the_persona_manager(self, tmp_path: Path) -> None:
+        app = create_app(settings_with_db(tmp_path))
+
+        security = app_state(app).persona_manager.security_personas()
+        assert [persona.name for persona in security] == ["Sentinelle de Sécurité"]
+
+    def test_seeds_no_security_persona_when_the_list_is_empty(self, tmp_path: Path) -> None:
+        settings = settings_with_db(tmp_path)
+        settings.personas = PersonaSettings(security=[])
+        app = create_app(settings)
+
+        assert app_state(app).persona_manager.security_personas() == []
         assert [persona.name for persona in app_state(app).persona_manager.get_personas()] == ["Analyst"]
 
     def test_fails_without_a_configured_provider(self) -> None:
@@ -253,6 +272,26 @@ class TestFeatures:
         assert FeatureSettings(confirm=["toolsx.a", "tools"]).confirm_in("tools") == set()
 
 
+class TestPersonas:
+    def test_security_is_read_from_personas_table(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, '[personas]\nsecurity = ["a.toml", "b.toml"]\n'))
+
+        assert settings.personas.security == ["a.toml", "b.toml"]
+
+    def test_security_defaults_to_the_packaged_persona(self, tmp_path: Path) -> None:
+        settings = load_settings(write_config(tmp_path, ""))
+
+        assert settings.personas.security == ["sensai_server.config.personas/security.toml"]
+
+    def test_security_can_be_emptied(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "[personas]\nsecurity = []\n")).personas.security == []
+
+    def test_the_packaged_default_is_a_persona_file(self) -> None:
+        package, _, filename = PersonaSettings().security[0].rpartition("/")
+
+        assert resources.files(package).joinpath(filename).is_file()
+
+
 class TestLogging:
     def test_is_read_from_logging_table(self, tmp_path: Path) -> None:
         settings = load_settings(write_config(tmp_path, "[logging]\nenabled = false\nlog_content = false\n"))
@@ -314,6 +353,10 @@ class TestValidation:
             ('[features]\nconfirm = "tools.x"\n', "features.confirm must be a list"),
             ('[features]\nconfirm = [""]\n', "features.confirm entry must be a non-empty string"),
             ("[features]\nconfirm = [1]\n", "features.confirm entry must be a non-empty string"),
+            ('personas = "x"\n', "personas must be a table"),
+            ('[personas]\nsecurity = "a.toml"\n', "personas.security must be a list"),
+            ('[personas]\nsecurity = [""]\n', "personas.security entry must be a non-empty string"),
+            ("[personas]\nsecurity = [1]\n", "personas.security entry must be a non-empty string"),
             ('logging = "x"\n', "logging must be a table"),
             ('[logging]\nenabled = "yes"\n', "logging.enabled must be a boolean"),
             ("[logging]\nlog_content = 1\n", "logging.log_content must be a boolean"),
