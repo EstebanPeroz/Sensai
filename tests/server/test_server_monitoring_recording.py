@@ -148,6 +148,19 @@ class TestReActRecording:
         assert interaction.status is InteractionStatus.INTERRUPTED
         assert interaction.response == "a"
 
+    async def test_closing_after_the_done_chunk_records_a_complete_call(self) -> None:
+        FakeAdapter.replies = [chunk("a"), chunk("b", done=True)]
+        recorded: list[Interaction] = []
+
+        async with aclosing(_react().generate_answer(_context(recorded))) as chunks:
+            async for item in chunks:
+                if item.done:
+                    break
+
+        [interaction] = recorded
+        assert interaction.status is InteractionStatus.OK
+        assert interaction.response == "ab"
+
     async def test_cancelling_records_an_interruption_and_still_cancels(self) -> None:
         block = threading.Event()
         FakeAdapter.block = block

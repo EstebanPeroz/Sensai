@@ -180,7 +180,8 @@ class ReAct:
 
         `think` stays off: the loop is the thinking. The call is recorded and passed to `context.on_interaction`
         once it ends: `OK` when done, `ERROR` on an error chunk or a `SensaiError`, `INTERRUPTED` when closed or
-        cancelled before its end. The error or the cancellation still propagates.
+        cancelled before its `done` chunk. Closed after it, the call is complete: the stream only had to report that
+        it ran out. The error or the cancellation still propagates.
         """
         messages = [*context.messages, {"role": "user", "content": instruction}]
         payload: dict[str, object] = {"model": context.model, "messages": messages, "think": False}
@@ -189,15 +190,17 @@ class ReAct:
 
         recorder = InteractionRecorder(model=context.model, request=messages)
         status, error = InteractionStatus.OK, None
+        done = False
         try:
             async with aclosing(iterate_in_thread(partial(provider.chat, payload, stream=True))) as chunks:
                 async for chunk in chunks:
                     recorder.add_chunk(chunk)
+                    done = done or chunk.done
                     if chunk.error is not None:
                         status, error = InteractionStatus.ERROR, chunk.error
                     yield chunk
         except GeneratorExit, asyncio.CancelledError:
-            if status is not InteractionStatus.ERROR:
+            if status is not InteractionStatus.ERROR and not done:
                 status = InteractionStatus.INTERRUPTED
             raise
         except SensaiError as err:
