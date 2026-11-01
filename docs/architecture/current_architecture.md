@@ -1,89 +1,190 @@
 # Architecture
 
+Sensai is a client/server application in one uv workspace of three packages:
+
+| Package | Path | Role |
+|---|---|---|
+| `sensai-protocol` | `packages/protocol` | The messages both sides exchange, as pydantic models, and their parsers |
+| `sensai-server` | `packages/server` | Everything that thinks: models, conversations, tools, RAG, cache, monitoring, served over a websocket |
+| `sensai-tui` | `packages/client/tui` | A Textual terminal client: shows the chat, sends the user's input, runs the client commands |
+
+The server owns every service and all the state; a client only draws what it receives and answers what it is asked.
+Another client (a web UI, say) only has to speak the protocol and implement the client commands.
+
+## Overview
+
 ```mermaid
 flowchart TB
-    MAIN["main.py"]
-    CONFIG["config<br/>Settings"]
-    CORE["Core"]
-
-    subgraph UI["ui"]
-        UIA{{"UIAdapter"}}
-        TUI["Textual TUI"]
+    subgraph TUI["sensai-tui"]
+        APP["ChatApp (Textual)<br/>chat, dialogs, dashboard"]
+        CONN["Connection<br/>(websockets)"]
+        CC["client_commands<br/>read_file, read_binary_file, write_file"]
+        APP <--> CONN
+        APP --> CC
     end
 
-    CMDS["commands<br/>/help, /model, /persona"]
-    CONV["Conversation<br/>+ History"]
-    REACT["ReAct<br/>think / act / observe"]
-    TOOLS["ToolManager<br/>web_search, web_fetch, MCP tools, ask_user"]
-
-    subgraph LLM["llm"]
-        PM["ProviderManager"]
-        OLLAMA["OllamaAdapter"]
-        PERSONA["PersonaManager"]
+    subgraph SERVER["sensai-server (FastAPI + uvicorn, 127.0.0.1)"]
+        WS["ws_endpoint /ws"]
+        HANDLERS["_handlers<br/>one per client message"]
+        REG["SessionRegistry"]
+        SESS["Session<br/>conversation, model, persona, effort, tool state, one task"]
+        OUT["Outbound<br/>sends server messages, awaits answers"]
+        CMDS["CommandRegistry<br/>/model, /branch, /index, ..."]
+        PIPE["ChatPipeline<br/>BadWordsGuard → CacheStage → CompressionStage<br/>→ PersonaStage → RagStage → ModelStage"]
+        REACT["ReAct<br/>think / act / observe"]
+        TOOLS["ToolManager<br/>web_search, web_fetch, ask_user, MCP tools"]
+        BUS["EventBus"]
+        BUDGET["ContextBudget"]
+        LOGGER["InteractionLogger"]
+        MCP["MCPHost"]
+        PM["ProviderManager / Ollama"]
+        DB{{"PersistentDatabase<br/>(SQLAlchemy)"}}
     end
 
-    DB{{"PersistentDatabase<br/>(SqlAlchemy)"}}
-    CACHE{{"SemanticCacheRepository<br/>(RedisSemanticCache)"}}
-    BUS["EventBus"]
-    LOGGER["InteractionLogger"]
-    INTERACTIONS{{"InteractionRepository<br/>(SqlInteractionRepository)"}}
-
-    OLLAMAAPI[("Ollama API")]
-    SQLITE[("SQLite")]
-    REDIS[("Redis")]
-
-    MAIN --> CONFIG
-    MAIN --> TUI
-    MAIN --> CORE
-
-    CORE <--> UIA
-    CORE --> CMDS
-    CORE --> CONV
-
-    TUI -.->|implements| UIA
-
-    CMDS <--> LLM
-
-    CONV --> REACT
-    REACT <--> LLM
+    CONN <-->|"JSON frames, sensai-protocol"| WS
+    WS --> HANDLERS
+    HANDLERS --> REG --> SESS
+    SESS --> OUT
+    OUT --> WS
+    HANDLERS --> CMDS
+    HANDLERS --> PIPE
+    PIPE --> REACT
     REACT --> TOOLS
-    TOOLS -.->|asks confirmation, ask_user| UIA
-    CONV <--> DB
-    CONV <-->|lookup / store| CACHE
-    CONV <-->|streams responses| UIA
-
-    PM <--> OLLAMA
-    LLM <--> OLLAMAAPI
-    PERSONA <--> DB
-    DB <--> SQLITE
-    CACHE <--> REDIS
-    CACHE -->|embeds queries| LLM
-
-    CORE --> BUS
-    CONV -->|emits each model call| BUS
+    REACT <--> PM
+    TOOLS --> MCP
+    TOOLS -.->|confirm_tool, ask_user| OUT
+    CMDS -.->|request_command| OUT
+    REACT -->|Interaction| BUS
+    BUS --> BUDGET
     BUS --> LOGGER
-    LOGGER --> INTERACTIONS
-    INTERACTIONS <--> SQLITE
+    LOGGER --> DB
+    SESS <--> DB
+
+    PM <--> OLLAMAAPI[("Ollama API")]
+    PIPE <-->|semantic cache| REDIS[("Redis")]
+    PIPE <-->|RAG| QDRANT[("Qdrant")]
+    DB <--> SQLITE[("SQLite")]
 ```
 
-Message flow: the TUI pushes the user input into an event queue, and `Core` reads it and hands it to `Conversation`.
-`Conversation` saves the message to the DB, then calls Ollama in streaming mode. The response chunks are sent back to
-the TUI as they arrive.
+### Server
 
-Before a gated tool runs, `ToolManager` asks the user through `UIAdapter.ask_confirmation`, which opens a modal
-dialog and blocks the streaming thread until it closes. `ask_user` asks its question the same way (see `technical-notes.md`, "Human in the loop").
+- **Composition root: `create_app`** (`sensai_server/app/app.py`). It is built once, before uvicorn starts, from the
+  settings file given with `--config`: the provider manager, the embedder, the tool manager and its `MCPHost`, the
+  persistent database, the persona manager, the RAG, the semantic cache, the event bus with the context budget and
+  the interaction logger, the compressor, the chat pipeline, the command registry and the session registry. All of
+  it is kept in one typed `AppState` and shared by every client. A service that cannot start (no embedding model, no
+  Redis) is logged and left out; the server still starts.
+- **Endpoint: `ws_endpoint`.** One websocket per client, on `/ws`. Each text frame is parsed with
+  `parse_client_message` and dispatched to its handler (`app/_handlers.py`). An invalid frame, or anything but
+  `login` before a session exists, is answered with an `error` and the connection stays open. However the connection
+  ends, the session is closed.
+- **Session** (`session/`). `login` opens one through the `SessionRegistry`, with a fresh `client_id`. A session holds
+  its conversation (branch, history, model, persona), its thinking effort, its tool state (tools disabled or allowed
+  "always" for this session) and its `Outbound`. It runs at most **one task** at a time, a chat or a command: a
+  second one is refused with an `error` until `cancel`, except that a task waiting for a client command is replaced
+  by the new message.
+- **Outbound** (`app/outbound.py`). Every server message of a connection goes through it. It also asks the client
+  questions: `_ask` sends a message carrying a new `request_id` and awaits the future the matching answer resolves
+  (`confirm_tool`, `ask_user`, `ask_compression`, `request_command`). Answers to those are handled even while the
+  session is busy, since the busy task is the one waiting.
+- **Chat** (`chat/chat.py`). The prompt is saved, then goes through the shared `ChatPipeline` (Chain of
+  Responsibility, `pipeline/`). The answer is streamed back chunk by chunk as `ai_chunk`. Each model call is emitted on
+  the `EventBus`, tagged with the branch and the persona.
+- **Commands** (`commands/`). One `Command` object per slash command, looked up by name in the `CommandRegistry`, which
+  also computes the completions. Commands run on the server; those touching the user's files go through the client
+  (see [Client commands](#client-commands)).
 
-Semantic cache: before calling the model, `Conversation` looks the query up in the cache, scoped by the model in use,
-the active persona and the embedding model, and compared with the previous user messages as context. On a hit, the
-cached answer is sent to the TUI and saved like any other; on a miss, the complete answer is stored with a TTL, unless
-it was built with tools, whose results (web pages, search results) may soon be outdated. Without an embedding model or
-a reachable Redis server, `Core` builds no cache and every query goes to the model.
+### Client
 
-Logging: every call to the model made by the ReAct loop of `Conversation` or by the RAG answer of `/ask` is recorded as
-an `Interaction` (request, response, tool calls, latency, token counts, status) and published on the `EventBus`.
-`InteractionLogger` subscribes to it and stores each one through `InteractionRepository`, in the `interaction` table of
-the persistent database. The `[logging]` settings disable it, or drop the content and keep only the metrics. A storage
-failure is reported to the UI without breaking the answer.
+- **`sensai-tui`** (`sensai_tui/`). `main` parses `--model` and `--port`, opens the `Connection` to
+  `ws://127.0.0.1:<port>/ws` (a one-line error and exit code 1 if the server cannot be reached), then runs the
+  Textual `ChatApp`, which sends `login` and reads the server messages until the socket closes.
+- It keeps no state of its own beyond what the server sent: the transcript, the context gauge, the effort, the
+  command names for completion. Every dialog (`ui/_dialogs.py`) answers a server question; the dashboard
+  (`ui/_dashboard.py`) draws a `DashboardReport`.
+- **Client commands** (`client_commands/`) run on the user's machine when the server asks (see below). A failure is
+  never raised: it is sent back as the `error` of the `command_context`.
+
+The server listens on the loopback only (`127.0.0.1`): the client must run on the same machine.
+
+## Protocol
+
+Every frame is one JSON object with a `type` field, which selects the message (`sensai_protocol`). Messages are
+frozen pydantic models that reject unknown fields; a frame that does not parse is answered with an `error` (by the
+server) or shown as one (by the client).
+
+### Client → server (`client_messages.py`)
+
+| `type` | Fields | Meaning |
+|---|---|---|
+| `login` | `model` | Open a session on `model`. Must come first |
+| `logout` | | Close the session; the server closes the socket |
+| `chat` | `prompt` | Send a prompt to the conversation |
+| `command` | `command` | Run a command, such as `/model llama3:8b` |
+| `cancel` | | Stop the running task, if any |
+| `complete` | `text` | Ask for the completions of the current input |
+| `confirm_answer` | `request_id`, `answer` (`allow`, `always`, `deny`) | Answer a `confirm_tool` |
+| `user_answer` | `request_id`, `answer` (or null if skipped) | Answer an `ask_user` |
+| `compression_answer` | `request_id`, `answer` (`compress`, `new_conversation`) | Answer an `ask_compression` |
+| `command_context` | `request_id`, `command`, `ctx` or `error` | Result of a `request_command` |
+
+### Server → client (`server_messages.py`)
+
+| `type` | Fields | Meaning |
+|---|---|---|
+| `session` | `client_id`, `model`, `commands`, `effort` | Login accepted, with what the client needs to draw its UI |
+| `input` | `role`, `content`, `command` | Echo of what the user sent |
+| `ai_chunk` | `content`, `thinking`, `tool_calls`, `done`, `error` | One chunk of a streamed answer; the last has `done` |
+| `system` | `message`, `append` | Command output or application message |
+| `error` | `message` | An error to show |
+| `history` | `messages` | A loaded conversation, replacing the transcript |
+| `effort` | `level` | The thinking effort changed |
+| `completions` | `text`, `values` | Answer to a `complete`, repeating its `text` so a stale one can be dropped |
+| `context_usage` | `used`, `budget`, `warning_threshold` | Context usage of the current branch |
+| `dashboard` | `report` | A monitoring report to show |
+| `confirm_tool` | `request_id`, `tool_name`, `arguments` | May this tool run? |
+| `ask_user` | `request_id`, `question` | A question from the model |
+| `ask_compression` | `request_id`, usage fields | Compress the conversation, or start a new one? |
+| `request_command` | `request_id`, `command`, `params` | Run a client command |
+
+### A chat exchange
+
+```mermaid
+sequenceDiagram
+    participant T as sensai-tui
+    participant S as sensai-server
+    participant O as Ollama
+
+    T->>S: login {model}
+    S-->>T: session {client_id, model, commands, effort}
+    S-->>T: context_usage
+    T->>S: chat {prompt}
+    S-->>T: input {role: user, content}
+    S->>O: chat (streaming)
+    opt gated tool
+        S-->>T: confirm_tool {request_id, tool_name, arguments}
+        T->>S: confirm_answer {request_id, allow}
+    end
+    O-->>S: chunks
+    S-->>T: ai_chunk ... ai_chunk {done: true}
+    S-->>T: context_usage
+```
+
+### Client commands
+
+The server never touches the user's files: it asks the client, which runs the command in its own working directory
+and answers with a `command_context` carrying either the result (`ctx`) or the reason it failed (`error`). The
+parameters and results are checked on both sides against `CLIENT_COMMANDS` (`client_commands.py`); a client must
+implement every command.
+
+| Command | Params | Result | Used by |
+|---|---|---|---|
+| `read_file` | `path` | `content`: the UTF-8 text, at most 1 000 000 characters | `/index` (text, Markdown, HTML), `/import`, `/persona create` |
+| `read_binary_file` | `path` | `content`: the bytes in base64, at most 8 MB before encoding | `/index` (PDF) |
+| `write_file` | `path`, `content` | `path`: the absolute path written | `/export` |
+
+The content is parsed on the server (PDF and HTML extraction, JSON import), never on the client. A new chat or
+command sent while the server waits for a client command stops the waiting task.
 
 ## Server monitoring
 

@@ -64,5 +64,5 @@ The servers start concurrently with the app, and each keeps one session open unt
 to start is logged and left out, without stopping the app. A server that disconnects is not reconnected: its tools
 answer `error: MCP server '<name>' disconnected…` until the app restarts. Only text results are supported.
 
-`tests/mcp/fixtures/tiny_server.py` is a small test server, served over stdio, or over HTTP at
+`tests/server/tools/mcp/fixtures/tiny_server.py` is a small test server, served over stdio, or over HTTP at
 `http://127.0.0.1:PORT/mcp` with `--http PORT`.

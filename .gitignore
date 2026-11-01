@@ -221,7 +221,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-src/sensai/config/settings.toml
-
 # avoid commit test file.pdf for the rag
 *.pdf

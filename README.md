@@ -1,6 +1,13 @@
 # Sensai
 
-Local CLI assistant for analysts, talking to Ollama over its HTTP API.
+Local assistant for analysts, talking to Ollama over its HTTP API. Sensai is split in two programs:
+
+- **`sensai-server`**, the assistant itself: models, conversations, tools, RAG, cache, monitoring. It serves its
+  clients over a websocket on `127.0.0.1`.
+- **`sensai-tui`**, a terminal client: it draws the chat, sends what the user types, and runs on the user's machine
+  the few things the server asks of it (reading or writing a file).
+
+Both speak the protocol of the shared **`sensai-protocol`** package. See [How it works](#how-it-works).
 
 ## Features
 
@@ -9,13 +16,13 @@ scenarios behind them are in [docs/user_stories/analyst.md](docs/user_stories/an
 
 | Feature | Use |
 |---|---|
-| Streaming chat with history, model chosen with `--model` or `/model` | `make run` |
+| Streaming chat with history, model chosen with `--model` or `/model` | `make run-server`, `make run-tui` |
 | Session persistence and branching (fork, resume, interrupt) | `/branch list\|set\|fork\|rename\|remove` |
 | Token budget shown live, conversation compressed near the budget | `[context]` settings, `/compress` |
 | ReAct reasoning loop with a thinking effort | `/effort off\|low\|medium\|high` |
 | Web search and page fetch, with fallback backends | `web_search`, `web_fetch` tools |
 | MCP servers, local (stdio) or remote (http) | `[mcp.<name>]` tables, see below |
-| RAG over text, Markdown, HTML, PDF files and web pages, with sources | `/index`, `/ask`, plain chat |
+| RAG over text, Markdown, HTML, PDF files and web pages, with sources | `/index`, plain chat |
 | Human in the loop: tool confirmation and questions to the user | `[features].confirm`, `ask_user` tool |
 | Personas switchable at runtime | `/persona list\|info\|load\|create\|update` |
 | Semantic cache in Redis | `[cache]` settings |
@@ -49,12 +56,12 @@ scenarios behind them are in [docs/user_stories/analyst.md](docs/user_stories/an
 3. Pull a chat model and the embedding model:
 
    ```sh
-   ollama pull qwen3:1.7b              # chat model used by `make run`
+   ollama pull qwen3:1.7b              # chat model used by `make run-tui`
    ollama pull nomic-embed-text        # embedding model of the RAG, the web tools and the cache
    ```
 
-   The embedding model is required: Sensai stops at start if Ollama does not serve the one set in
-   `[llm].embedding_model`.
+   The embedding model is needed by the RAG, the web tools and the semantic cache: without it, the server starts
+   but leaves them out, and logs why.
 
 4. Check that both are there:
 
@@ -82,25 +89,83 @@ Any model Ollama serves works: pass it with `--model`, or switch with `/model` w
 ## Quick start
 
 ```sh
-make                          # create .venv, install dependencies and the pre-commit hooks, copy settings.toml
-make run                      # start Qdrant and Redis with Docker, then Sensai on qwen3:1.7b
-make run MODEL=gemma4:e4b     # same, on another model
+make                              # create .venv and install every package, and the pre-commit hooks
+make run-server                   # terminal 1: start Qdrant and Redis with Docker, then the server on port 8000
+make run-tui                      # terminal 2: open the chat on qwen3:1.7b
+make run-tui MODEL=gemma4:e4b     # same, on another model
 ```
+
+Start Ollama before the server: the server lists the models Ollama serves when it starts, so a model pulled later,
+or an Ollama started later, needs a server restart.
+
+The server keeps running between clients: quit the TUI and start it again, and the stored conversations
+(`/branch list`) and indexed documents are still there. Several clients can be connected at once, each with its own
+session: its own conversation, model, persona, effort and tool choices.
 
 Without `make`:
 
 ```sh
 docker compose up -d --wait
-uv run sensai --model qwen3:1.7b
+uv run --package sensai-server sensai-server --config packages/server/settings.toml   # --port 8000 by default
+uv run --package sensai-tui sensai-tui --model qwen3:1.7b                             # --port must match the server
 ```
 
-`uv sync --locked` installs the dependencies; a `requirements.txt` is also provided for `pip install -r
-requirements.txt`.
+`uv sync --locked --all-packages` installs the dependencies; a `requirements.txt` is also provided for
+`pip install -r requirements.txt`.
+
+## How it works
+
+```mermaid
+flowchart LR
+    subgraph CLIENT["sensai-tui (user's machine)"]
+        UI["Textual chat"]
+        FILES["client commands<br/>read_file, read_binary_file, write_file"]
+    end
+
+    subgraph SERVER["sensai-server (127.0.0.1:8000)"]
+        WS["/ws endpoint"]
+        SESS["one Session per client"]
+        PIPE["chat pipeline<br/>guard → cache → compression → persona → RAG → ReAct"]
+        CMDS["commands<br/>/model, /branch, /index, ..."]
+    end
+
+    UI <-->|"JSON messages<br/>(sensai-protocol)"| WS
+    WS --> SESS
+    SESS --> PIPE
+    SESS --> CMDS
+    CMDS -.->|request_command| FILES
+    PIPE <--> OLLAMA[("Ollama")]
+    PIPE <--> REDIS[("Redis")]
+    PIPE <--> QDRANT[("Qdrant")]
+    SESS <--> SQLITE[("SQLite")]
+```
+
+1. **Login.** The TUI opens `ws://127.0.0.1:<port>/ws` and sends `login` with the model given by `--model`. The
+   server checks that a provider serves it, opens a session and answers `session` (its id, the model, the command
+   names for completion, the thinking effort). An unknown model is answered with an `error` listing the available
+   ones.
+2. **Chat.** Each prompt is sent as `chat`. The server echoes it (`input`), runs it through the chat pipeline as the
+   session's task, and streams the answer back as `ai_chunk` messages, then the new `context_usage`.
+3. **Commands.** A line starting with `/` is sent as `command` and run on the server, which answers with `system`
+   messages (or `history`, `dashboard`, `effort`...). Tab sends `complete` and the server answers with the
+   `completions`.
+4. **Questions to the user.** When the server needs the user mid-task, it sends a question with a `request_id` and
+   waits: `confirm_tool` before a gated tool, `ask_user` for the `ask_user` tool, `ask_compression` near the
+   context budget. The TUI opens a dialog and answers with the matching `*_answer`.
+5. **Files.** The server never reads the user's disk: `/index`, `/import`, `/persona create` and `/export` ask the
+   client with `request_command` to read or write the file, and the client answers with `command_context`. Paths are
+   therefore relative to the directory the **TUI** was started in.
+6. **Stop.** Escape or Ctrl+C sends `cancel`, which stops the running answer or command. Quitting sends `logout`;
+   a dropped connection frees the session the same way.
+
+The full message list and the inner workings of the server are in
+[docs/architecture/current_architecture.md](docs/architecture/current_architecture.md).
 
 ## Configuration
 
-Everything is set in `src/sensai/config/settings.toml`, which `make install` copies from `settings.toml.template`
-(git-ignored, edit your copy). Without it, Sensai runs with the template; `--config <path>` loads another file.
+The server reads its settings from the file given with `--config`; `make run-server` passes
+`packages/server/settings.toml`. `packages/server/settings.toml.template` documents every key: copy it over
+`settings.toml` to start from a clean file. The client has no settings file, only `--model` and `--port`.
 
 | Table | What it sets |
 |---|---|
@@ -110,9 +175,11 @@ Everything is set in `src/sensai/config/settings.toml`, which `make install` cop
 | `[cache]` | Redis URL, similarity threshold and lifetime of the cached answers |
 | `[web]` | Ollama web API key (optional, DuckDuckGo is used without it), timeout |
 | `[features]` | Tools to disable, tools asking confirmation before they run |
-| `[personas]` | Persona files loaded at start |
+| `[personas]` | Security personas seeded into the database at start |
 | `[logging]` | Record the model calls, with or without their content |
 | `[mcp.<name>]` | MCP servers, see [MCP server configuration](#mcp-server-configuration) |
+
+More on `[context]` and `[mcp.<name>]` in [packages/server/README.md](packages/server/README.md).
 
 ## Usage
 
@@ -127,7 +194,6 @@ arguments. `/help` lists them all.
 
 > /index reports/q3_results.pdf reports/forecast.md    index documents (text, Markdown, HTML, PDF, URLs)
 > How does Q3 revenue compare with the forecast?       answer from the documents, ending with "Sources: ..."
-> /ask What risks does the forecast list?              answer from the documents only
 
 > /persona list                                        list the personas
 > /persona load analyst                                switch persona, keeping the conversation
@@ -138,22 +204,22 @@ arguments. `/help` lists them all.
 > /branch set <uuid>                                   resume one
 > /branch fork                                         copy the current one into a new branch
 > /compress                                            summarise the oldest messages to free context
-> /export current                                      write the conversation to <uuid>.json
-> /import <path>                                       load an exported conversation
+> /export current                                      write the conversation to <uuid>.json, on the client
+> /import <path>                                       load an exported conversation, read on the client
 
 > /tools list                                          list the tools, and which ask confirmation
 > /dashboard 7d                                        metrics of the model calls over 7 days
 ```
 
 The input box shows the context used against the budget (top left) and the thinking effort (bottom right). Escape
-or Ctrl+C stops an answer; Ctrl+Q quits.
+or Ctrl+C stops an answer; Ctrl+Q quits the client, while the server keeps running.
 
 Complete walkthroughs, from one use case to another, are the scenarios of
 [docs/user_stories/analyst.md](docs/user_stories/analyst.md#4-user-scenarios).
 
 ## Vector database
 
-`/index` and `/ask` store and read their chunks in Qdrant, which `make run` starts for you. On its own:
+`/index` and the chat store and read their chunks in Qdrant, which `make run-server` starts for you. On its own:
 
 ```sh
 make docker         # start Qdrant and Redis
@@ -165,16 +231,18 @@ The documents live in the `qdrant_data` Docker volume, so a container stopped an
 
 Without Docker, pointing `db.rag.location` in `settings.toml` at a directory (`"rag_qdrant"`) runs Qdrant embedded in
 the process instead. It needs no server, but it locks that directory for one process at a time: the test suite and a
-running sensai cannot share one.
+running server cannot share one.
 
 ## Semantic cache
 
-Answers are cached in Redis, which `make run` starts along with Qdrant. The cached answers live in the `redis-data`
-Docker volume. Without a reachable Redis server, sensai runs without the cache.
+Answers are cached in Redis, which `make run-server` starts along with Qdrant. The cache is per client session: a
+prompt meaning the same as an earlier one of the same session (similarity above `[cache].similarity_threshold`) is
+answered from it, without calling the model. The entries expire after `[cache].ttl`, and are all cleared when the
+server starts and stops. Without a reachable Redis server at start, the server runs without the cache.
 
 ## MCP server configuration
 
-Sensai starts every MCP server configured in the settings file, each in its own `[mcp.<name>]` table. The name
+The server starts every MCP server configured in its settings file, each in its own `[mcp.<name>]` table. The name
 must only contain letters, digits, `_` or `-`. A server is either a local subprocess (`transport = "stdio"`, the
 default) or a remote server reached over streamable HTTP (`transport = "http"`).
 
@@ -192,9 +260,8 @@ The tools of a server are named `<server>__<tool>`, e.g. `filesystem__list_allow
 servers can offer a tool of the same name. Use that name in `[features]` to disable a tool
 (`disabled = ["tools.filesystem__write_file"]`) or to ask before it runs (`confirm = [...]`).
 
-Servers start concurrently. A server that fails to start, or does not answer within its `startup_timeout`, is
-skipped: Sensai starts without its tools and says why, e.g.
-`MCP server 'finance' failed to start, its tools are unavailable: All connection attempts failed`.
+Servers start concurrently with the Sensai server. A server that fails to start, or does not answer within its
+`startup_timeout`, is skipped: the Sensai server starts without its tools and logs why.
 
 ### Your own server
 
@@ -203,7 +270,7 @@ The local deterministic test server exposes an `echo` tool:
 ```toml
 [mcp.echo]
 command = "uv"
-args = ["run", "python", "tests/mcp/fixtures/tiny_server.py"]
+args = ["run", "python", "tests/server/tools/mcp/fixtures/tiny_server.py"]
 ```
 
 ### A pre-existing server
@@ -225,7 +292,7 @@ The configured directory must exist and is the only directory the filesystem ser
 The test server can also serve over HTTP, to try a remote server locally:
 
 ```bash
-uv run python tests/mcp/fixtures/tiny_server.py --http 8000   # serves http://127.0.0.1:8000/mcp
+uv run python tests/server/tools/mcp/fixtures/tiny_server.py --http 8000   # serves http://127.0.0.1:8000/mcp
 ```
 
 ```toml
@@ -237,13 +304,13 @@ headers = { Authorization = "Bearer <token>" }   # only if the server asks for o
 
 Keep tokens in your git-ignored `settings.toml`, never in the template.
 
-All the tables above can be used at once: Sensai then offers `echo__echo`, the `filesystem__` tools and
+All the tables above can be used at once: the server then offers `echo__echo`, the `filesystem__` tools and
 `remote__echo` side by side.
 
-Each server keeps one session open from the start of Sensai until it quits: tool calls reuse it, so a server
-keeps its state between calls (an open browser, a login) and a remote server is connected to only once. Current
-limit: a server that disconnects while Sensai runs is not reconnected. Its tools then answer
-`MCP server '<name>' disconnected, restart Sensai to reconnect: ...`, while the other servers keep working.
+Each MCP server keeps one session open from the start of the Sensai server until it stops, shared by every client:
+tool calls reuse it, so an MCP server keeps its state between calls (an open browser, a login) and a remote server is
+connected to only once. Current limit: an MCP server that disconnects is not reconnected. Its tools then answer
+`error: MCP server '<name>' disconnected...` until the Sensai server restarts, while the other servers keep working.
 
 ## Monitoring
 
@@ -283,41 +350,44 @@ The CI rejects any code that does not pass these checks or the tests.
 
 ## Make targets
 
-| Target        | Description                                                         |
-|---------------|---------------------------------------------------------------------|
-| `all`         | Default. Runs `install`                                             |
-| `install`     | `uv sync --locked`, the pre-commit hooks, and a copy of the settings |
-| `run`         | Starts Qdrant and Redis, then Sensai on `MODEL` (`qwen3:1.7b`)      |
-| `docker`      | Starts Qdrant and Redis with Docker Compose                         |
-| `docker-stop` | Stops them                                                          |
-| `help`        | Shows the command line options                                      |
-| `tests`       | Runs the test suite with `pytest`                                   |
-| `lint`        | Runs every pre-commit check on all files                            |
-| `format`      | Runs `ruff format` and `ruff check --fix`                           |
-| `lock`        | Regenerates `uv.lock` from `pyproject.toml`                         |
+| Target        | Description                                                          |
+|---------------|----------------------------------------------------------------------|
+| `all`         | Default. Runs `install`                                              |
+| `install`     | `uv sync --locked --all-packages`, and the pre-commit hooks          |
+| `run-server`  | Starts Qdrant and Redis, then the server on `packages/server/settings.toml` |
+| `run-tui`     | Starts the terminal client on `MODEL` (`qwen3:1.7b`)                 |
+| `docker`      | Starts Qdrant and Redis with Docker Compose                          |
+| `docker-stop` | Stops them                                                           |
+| `help`        | Shows the command line options of the client and the server          |
+| `tests`       | Runs the test suite with `pytest`                                    |
+| `lint`        | Runs every pre-commit check on all files                             |
+| `format`      | Runs `ruff format` and `ruff check --fix`                            |
+| `lock`        | Regenerates `uv.lock` from the `pyproject.toml` files               |
 
 ## Dependencies
 
-Dependencies are declared in `pyproject.toml` and locked in `uv.lock`:
+The repository is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) of three packages,
+each declaring its own runtime dependencies, all locked together in the one `uv.lock`:
 
-- `[project].dependencies`: runtime dependencies, needed to run the
-  program. These are the only ones included when the package is built.
-- `[dependency-groups].dev`: development tools (pytest, ruff, pre-commit).
+- `packages/protocol/pyproject.toml`: pydantic, for the messages.
+- `packages/server/pyproject.toml`: FastAPI and uvicorn, Qdrant, Redis, MCP, SQLAlchemy, the web and PDF tools.
+- `packages/client/tui/pyproject.toml`: Textual and websockets.
+- `[dependency-groups].dev` of the root `pyproject.toml`: development tools (pytest, ruff, pre-commit).
 - `uv.lock`: every package, including transitive ones, at an exact version.
   It is generated, do not edit it, but commit it.
 
-`uv sync` installs both runtime and dev dependencies. Use
-`uv sync --no-dev` to install only what the program needs.
+`uv sync --all-packages` installs every package with the dev dependencies. Use
+`uv sync --package sensai-server --no-dev` (or `sensai-tui`) to install only what one program needs.
 
 To add or upgrade a dependency:
 
 ```sh
-uv add <package>                  # runtime dependency
-uv add --dev <package>            # dev dependency
+uv add --package sensai-server <package>   # runtime dependency of one package
+uv add --dev <package>                     # dev dependency
 uv lock --upgrade-package <pkg>   # upgrade one package
 ```
 
-Then commit `pyproject.toml` and `uv.lock`. `make install` (and the CI) use
+Then commit the `pyproject.toml` and `uv.lock`. `make install` (and the CI) use
 `--locked`: they fail if `uv.lock` is out of date instead of resolving new
 versions.
 
@@ -325,14 +395,18 @@ versions.
 
 ```
 .
-├── pyproject.toml            # project metadata, dependencies, tool config
+├── pyproject.toml            # workspace members, dev dependencies, tool config
 ├── uv.lock                   # locked dependencies (generated)
 ├── requirements.txt          # the same dependencies, for pip
 ├── Makefile
 ├── compose.yaml              # Qdrant and Redis
 ├── .github/workflows/        # CI: install, run, style, tests + mirroring
-├── src/                      # the code of Sensai
-├── tests/                    # pytest test suite, Ollama mocked
+├── packages/
+│   ├── protocol/             # sensai-protocol: the messages exchanged over the websocket
+│   ├── server/               # sensai-server: the logic, served over a websocket (and its settings.toml)
+│   └── client/
+│       └── tui/              # sensai-tui: the terminal client
+├── tests/                    # pytest test suite, Ollama mocked: protocol/, server/, client/tui/
 ├── benchmarks/               # results of the chat and embedding model benchmarks
 └── docs/
     ├── features.md           # implemented features, and their traceability to stories, code and tests

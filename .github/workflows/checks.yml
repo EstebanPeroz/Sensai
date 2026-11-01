@@ -20,7 +20,9 @@ jobs:
     - name: Install
       run: uv sync --locked --all-packages
     - name: Program help
-      run: uv run sensai --help
+      run: |
+        uv run --package sensai-server sensai-server --help
+        uv run --package sensai-tui sensai-tui --help
     - name: Coding style
       run: uv run pre-commit run --all-files --show-diff-on-failure
     - name: Tests

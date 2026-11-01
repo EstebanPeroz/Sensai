@@ -127,18 +127,20 @@ A tool runs only after the user allows it when it declares `requires_confirmatio
 gated by default.
 
 The check is in `ToolManager.call`, so the model cannot skip it. Before running a
-gated tool, it calls the approver given by `Core`, `UIAdapter.ask_confirmation`,
-which shows a dialog with the tool name and its arguments:
+gated tool, it calls the session's `Outbound.ask_confirmation`, which sends
+`confirm_tool` to the client; the TUI shows a dialog with the tool name and its
+arguments, and answers with `confirm_answer`:
 
 - **Allow** (`y`): runs this call only.
-- **Always this session** (`a`): runs it and stops asking for that tool until Sensai
-  restarts. `ToolManager` keeps that list.
+- **Always this session** (`a`): runs it and stops asking for that tool until the
+  client disconnects. The session's `ToolState` keeps that list, so other clients
+  are still asked.
 - **Deny** (`n`, escape): the tool does not run, and the model receives
   `error: the user declined to run '<name>'; ...` as the tool result, like any other
   tool failure. The loop then answers without it.
 
-Deny is also the answer whenever nobody can be asked: no approver, a dialog that
-cannot be shown, or the app closing while the dialog is open.
+Deny is also the answer whenever nobody can be asked: a question that cannot be
+sent, or the client disconnecting while the dialog is open.
 
 `/tools list` shows which tools ask for confirmation.
 
@@ -146,23 +148,25 @@ cannot be shown, or the app closing while the dialog is open.
 
 `ask_user` (`tools/ask_user.py`) is a tool like the others: the model calls it with
 one `question` when the request lacks information no other tool can find (which
-period, which file). `UIAdapter.ask_user` shows the question in a dialog and returns
-the answer, which becomes the tool result, so the loop keeps what it already found.
+period, which file). `Outbound.ask_user` sends it as `ask_user`; the TUI shows the
+question in a dialog and sends the answer back as `user_answer`. The answer becomes
+the tool result, so the loop keeps what it already found.
 Escape or an empty answer returns `The user did not answer. State the assumption you
 make in your answer.` The question and the answer are also shown in the chat.
 
 It never asks for confirmation, and can be switched off like any tool
 (`[features].disabled = ["tools.ask_user"]`, or `/tools disable ask_user`).
 
-### Waiting for the user from the streaming thread
+### Waiting for the user over the websocket
 
-Tools run inside the ReAct generator, so on the streaming thread. The answer cannot
-come through the input box: `Conversation.chat` reads any new event in the
-`EventQueue` as a new message and stops the current answer. Instead, the Textual
-adapter opens a modal screen (`ui/tui/_dialogs.py`) with `call_from_thread` and blocks
-the streaming thread on a `threading.Event` until the screen is dismissed. The modal
-also covers the input, so no event can interrupt the answer while it waits. The
-waiting thread checks every 0.1 s that the app still runs, so it never stays blocked.
+Tools run inside the session's task on the server. Every question to the client
+carries a fresh `request_id`: `Outbound._ask` sends it and awaits a future, and the
+handler of the matching answer (`confirm_answer`, `user_answer`) resolves it. Those
+answers are accepted while the session is busy, since the busy task is the one
+waiting; an answer to no pending question is dropped. On the client, the dialog
+(`sensai_tui/ui/_dialogs.py`) is modal, so no new `chat` can be typed while it is
+open. If the client disconnects, the session is closed and the waiting task
+cancelled.
 
 ### Limitations
 
