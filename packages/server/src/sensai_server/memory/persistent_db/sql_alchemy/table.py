@@ -64,6 +64,7 @@ class BranchTable(Base):
     model_name: Mapped[str] = mapped_column(index=True)
     persona_id: Mapped[UUID | None] = mapped_column(ForeignKey("persona.id", ondelete="SET NULL"))
     persona: Mapped[PersonaTable | None] = relationship(back_populates="branches")
+    rag_id: Mapped[UUID | None] = mapped_column(default=None, unique=True)  # names its Qdrant collection
 
     messages: Mapped[list[MessageTable]] = relationship(
         back_populates="branch",
@@ -73,7 +74,10 @@ class BranchTable(Base):
     )
 
     def copy(self, name: str) -> BranchTable:
-        """Return an unsaved deep copy named `name`; ids are assigned on flush."""
+        """Return an unsaved deep copy named `name`; ids are assigned on flush.
+
+        The RAG id is not copied: a fork gets its own collection.
+        """
         new_branch = BranchTable()
         new_branch.name = name
         new_branch.model_name = self.model_name

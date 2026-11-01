@@ -1,10 +1,14 @@
 from sensai_protocol._base import ProtocolModel
 from sensai_protocol.client_commands import (
     CLIENT_COMMANDS,
+    MAX_BINARY_FILE_SIZE,
     MAX_FILE_SIZE,
+    BinaryFileContent,
     ClientCommand,
     FileContent,
+    FileWritten,
     ReadFileParams,
+    WriteFileParams,
     parse_ctx,
     parse_params,
 )
@@ -50,9 +54,11 @@ from sensai_protocol.server_messages import (
 
 __all__ = [
     "CLIENT_COMMANDS",
+    "MAX_BINARY_FILE_SIZE",
     "MAX_FILE_SIZE",
     "AiChunk",
     "AskUser",
+    "BinaryFileContent",
     "Cancel",
     "Chat",
     "ClientCommand",
@@ -73,6 +79,7 @@ __all__ = [
     "Effort",
     "Error",
     "FileContent",
+    "FileWritten",
     "History",
     "HistoryMessage",
     "Input",
@@ -88,6 +95,7 @@ __all__ = [
     "Session",
     "System",
     "UserAnswer",
+    "WriteFileParams",
     "parse_client_message",
     "parse_ctx",
     "parse_params",

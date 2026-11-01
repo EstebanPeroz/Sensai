@@ -15,7 +15,7 @@ $(SETTINGS):
 run: qdrant
 	uv run $(NAME) --model ${MODEL}
 
-run-server:
+run-server: qdrant
 	uv run --package sensai-server sensai-server --config ./packages/server/settings.toml
 
 run-tui:

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from contextlib import aclosing
 from typing import TYPE_CHECKING
 
 from sensai_protocol import AiChunk
-from sensai_protocol.error import SensaiError
 from sensai_protocol.server_messages import Role
 
 from sensai_server.chat.react import EFFORTS
@@ -18,29 +16,22 @@ if TYPE_CHECKING:
     from sensai_server.pipeline import ChatPipeline
     from sensai_server.session import Session
 
-BRANCH_NAME_LENGTH = 50
-"""The length a branch name, taken from the first prompt, is cut to, so it shows well in `/branch list`."""
-_NO_MODEL = "No model is set for this conversation."
-
 
 async def run_chat(session: Session, prompt: str, pipeline: ChatPipeline, db: PersistentDatabase) -> None:
     """Run the chat pipeline."""
     conv = session.conv
-    if conv.model is None:
-        raise SensaiError(_NO_MODEL)
-    if conv.uuid is None:
-        await asyncio.to_thread(conv.add_conv_to_db, db, None, prompt[:BRANCH_NAME_LENGTH])
     # TODO(cache): answer from the semantic cache here, as an outer stage right after the guard.  # noqa: TD003, FIX002
     if not await conv.save_message(Role.USER, prompt, session.out, db):
         return
     context = ChatContext(
         message=prompt,
         out=session.out,
-        model=conv.model,
+        model=str(conv.model),
         persona=conv.persona,
         messages=conv.history.to_json(),
         tools=session.tools,
         max_iterations=EFFORTS[session.effort],
+        rag_id=conv.rag_id,
     )
     content = await _stream(session.out, pipeline, context)
     if content.strip() == "":
