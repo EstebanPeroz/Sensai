@@ -6,15 +6,19 @@ from typing import TYPE_CHECKING, ClassVar, override
 
 from sensai_protocol import (
     AiChunk,
+    AskCompression,
     AskUser,
     Cancel,
     Chat,
     Command,
     Complete,
     Completions,
+    CompressionAnswer,
+    CompressionChoice,
     ConfirmAnswer,
     Confirmation,
     ConfirmTool,
+    ContextUsage,
     Dashboard,
     Effort,
     Error,
@@ -38,7 +42,7 @@ import sensai_tui.ui._style as fx
 from sensai_tui.client_commands.dispatch import run_client_command
 from sensai_tui.completion import Completer
 from sensai_tui.ui._dashboard import DashboardScreen
-from sensai_tui.ui._dialogs import ConfirmScreen, QuestionScreen
+from sensai_tui.ui._dialogs import CompressionScreen, ConfirmScreen, QuestionScreen
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -48,6 +52,20 @@ if TYPE_CHECKING:
     from textual.screen import Screen
 
     from sensai_tui.connection import Connection
+
+
+def _tokens(count: int) -> str:
+    """Write a token `count` short, in thousands from a thousand on (`12.3k`)."""
+    return str(count) if count < 1000 else f"{count / 1000:.1f}k"  # noqa: PLR2004
+
+
+def _format_usage(usage: ContextUsage) -> str:
+    """Render the context `usage` as `context: used / budget (share)`, in red once near the limit, `?` when unknown."""
+    used = "?" if usage.used is None else _tokens(usage.used)
+    if usage.budget is None or usage.used is None or usage.ratio is None:
+        return f"context: {used}" if usage.budget is None else f"context: {used} / {_tokens(usage.budget)}"
+    text = f"context: {_tokens(usage.used)} / {_tokens(usage.budget)} ({usage.ratio:.0%})"
+    return fx.red(text) if usage.near_limit else text
 
 
 class CompletionList(OptionList, can_focus=False):
@@ -211,12 +229,20 @@ class ChatApp(App):
                 self.add_error(message.message)
             case History():
                 self.load_conversation(message.messages)
-            case Effort():
-                self.update_thinking_effort(message.level)
+            case Effort() | ContextUsage():
+                self._update_status(message)
             case Completions():
                 self._receive_completions(message)
-            case ConfirmTool() | AskUser() | Dashboard() | RequestCommand():
+            case ConfirmTool() | AskUser() | AskCompression() | Dashboard() | RequestCommand():
                 self._on_request(message)
+
+    def _update_status(self, message: Effort | ContextUsage) -> None:
+        """Show the thinking effort or the context usage on the border of the input box."""
+        match message:
+            case Effort():
+                self.update_thinking_effort(message.level)
+            case ContextUsage():
+                self.update_context_usage(message)
 
     async def _run_client_command(self, message: RequestCommand) -> None:
         """Run the client command the server asked for, and send its answer back."""
@@ -227,7 +253,7 @@ class ChatApp(App):
         if self._completer.receive(message.text, message.values):
             self._refresh_completions(self.query_one("#input", Input).value)
 
-    def _on_request(self, message: ConfirmTool | AskUser | Dashboard | RequestCommand) -> None:
+    def _on_request(self, message: ConfirmTool | AskUser | AskCompression | Dashboard | RequestCommand) -> None:
         """Open the dialog or the dashboard the server asked for, or run the client command it asked for."""
         match message:
             case RequestCommand():
@@ -236,6 +262,8 @@ class ChatApp(App):
                 self.ask_confirmation(message)
             case AskUser():
                 self.ask_user(message)
+            case AskCompression():
+                self.ask_compression(message)
             case Dashboard():
                 self.push_screen(DashboardScreen(message.report))
 
@@ -254,6 +282,14 @@ class ChatApp(App):
             self._send(UserAnswer(request_id=message.request_id, answer=answer))
 
         self.open_dialog(QuestionScreen(message.question), on_dismiss)
+
+    def ask_compression(self, message: AskCompression) -> None:
+        """Ask in a dialog how to go on with a conversation near its budget, compress when the dialog is closed."""
+
+        def on_dismiss(answer: CompressionChoice | None) -> None:
+            self._send(CompressionAnswer(request_id=message.request_id, answer=answer or CompressionChoice.COMPRESS))
+
+        self.open_dialog(CompressionScreen(message), on_dismiss)
 
     def open_dialog[T](self, screen: Screen[T], on_dismiss: Callable[[T | None], None]) -> None:
         """Show the modal `screen` over the chat, `on_dismiss` receiving its result once it closes.
@@ -431,6 +467,10 @@ class ChatApp(App):
         field.value = value
         field.cursor_position = len(value)
         field.focus()
+
+    def update_context_usage(self, usage: ContextUsage) -> None:
+        """Show the context `usage` at the top left of the input box."""
+        self.query_one("#input", Input).border_title = _format_usage(usage)
 
     def update_thinking_effort(self, level: str) -> None:
         """Show the thinking effort `level` at the bottom right of the input box."""

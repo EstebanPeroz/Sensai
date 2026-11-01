@@ -55,6 +55,8 @@ class ChatContext:
     max_iterations: int = EFFORTS["off"]
     rag_id: UUID | None = None
     cache: SessionCache | None = None
+    branch_id: UUID | None = None
+    """The conversation's branch, None before its first message is saved. Read-only for the stages."""
     on_interaction: Callable[[Interaction], None] = ignore_interaction
     """Called once for every call to the model this exchange makes, whatever its outcome. Sync, never awaited."""
 

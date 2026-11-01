@@ -1,9 +1,16 @@
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sensai_server.llm.responses import ChatMetrics
+
+if TYPE_CHECKING:
+    from sensai_server.events import EventBus
+
+logger = logging.getLogger(__name__)
 
 
 class InteractionStatus(StrEnum):
@@ -41,3 +48,15 @@ class Interaction:
 
 def ignore_interaction(_: Interaction) -> None:
     """Ignore a call to the model, when nobody records them."""
+
+
+def emit_interaction(events: EventBus, interaction: Interaction) -> None:
+    """Emit `interaction` on `events`, never raising.
+
+    It runs in the `finally` of a model call that may be closing, so a failing subscriber is only logged, and the
+    caller goes on.
+    """
+    try:
+        events.emit(interaction)
+    except Exception:
+        logger.exception("Failed to emit an interaction")

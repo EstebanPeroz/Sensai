@@ -6,6 +6,7 @@ from sensai_protocol.server_messages import Role as HistoryRole
 
 import sensai_server.memory.persistent_db.error as db_err
 from sensai_server.cache import CacheError
+from sensai_server.chat.usage import send_context_usage
 from sensai_server.commands._base import Command
 
 if TYPE_CHECKING:
@@ -13,6 +14,7 @@ if TYPE_CHECKING:
 
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
+    from sensai_server.monitoring.budget import ContextBudget
     from sensai_server.session import Session
 
 
@@ -26,9 +28,12 @@ class Branch(Command):
     _subcommands: dict[str, Callable[..., Awaitable[None]]]
     _db: PersistentDatabase
     _pm: ProviderManager
+    _budget: ContextBudget | None
 
-    def __init__(self, db: PersistentDatabase, pm: ProviderManager) -> None:
+    def __init__(self, db: PersistentDatabase, pm: ProviderManager, budget: ContextBudget | None = None) -> None:
         """Initialize the Branch command and its subcommand map.
+
+        A loaded branch is sent its context usage from `budget`, if any.
 
         Raise:
             DatabaseError: Failed to get db
@@ -44,6 +49,7 @@ class Branch(Command):
         }
         self._db = db
         self._pm = pm
+        self._budget = budget
 
     async def _list(self, session: Session) -> None:
         """Display the available branches."""
@@ -58,7 +64,8 @@ class Branch(Command):
         """Load the branch identified by uuid.
 
         Switching to another branch clears the session's semantic cache, so no answer cached in the previous
-        conversation is reused. A failed switch, or one to the current branch, keeps it.
+        conversation is reused. A failed switch, or one to the current branch, keeps it. The loaded history is
+        followed by the branch's context usage.
         """
         target_id: UUID | None = self._try_parse_uuid(uuid)
         if target_id is None:
@@ -81,9 +88,10 @@ class Branch(Command):
             for message in session.conv.history.messages()
         ]
         await session.out.load_conversation(messages)
+        await send_context_usage(session, self._budget)
 
     async def _remove(self, session: Session, uuid: str) -> None:
-        """Remove the branch identified by uuid."""
+        """Remove the branch identified by uuid, and forget its context usage."""
         target_id: UUID | None = self._try_parse_uuid(uuid)
         if target_id is None:
             await session.out.send_system_message("parameter is not a valid UUID.")
@@ -96,6 +104,8 @@ class Branch(Command):
         except db_err.InvalidInstanceError:
             await session.out.send_system_message(f"Failed to remove {uuid}")
             return
+        if self._budget is not None:
+            self._budget.forget(target_id)
         await session.out.send_system_message(f"Branch {uuid} removed")
 
     async def _rename(self, session: Session, uuid: str, new_name: str) -> None:
@@ -156,7 +166,7 @@ class Branch(Command):
         if size == 0:
             return sorted(self._subcommands)
         if size == 1 and args[0] in ["set", "remove", "rename"]:
-            return list(map(str, self._db.get_branches().values()))
+            return list(map(str, self._db.get_branches().keys()))
         return []
 
     @staticmethod

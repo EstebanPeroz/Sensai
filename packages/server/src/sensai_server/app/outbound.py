@@ -6,11 +6,14 @@ from uuid import UUID, uuid4
 
 from fastapi import WebSocket, WebSocketDisconnect
 from sensai_protocol import (
+    AskCompression,
     AskUser,
     ClientCommand,
     Completions,
+    CompressionChoice,
     Confirmation,
     ConfirmTool,
+    ContextUsage,
     Dashboard,
     Effort,
     Error,
@@ -33,6 +36,8 @@ if TYPE_CHECKING:
         Role,
         ServerMessage,
     )
+
+    from sensai_server.monitoring import budget
 
 
 class ClientCommandError(SensaiError):
@@ -114,6 +119,22 @@ class Outbound:
     async def show_dashboard(self, report: DashboardReport) -> None:
         """Send a monitoring report, shown until the user closes it."""
         await self.send(Dashboard(report=report))
+
+    async def update_context_usage(self, usage: budget.ContextUsage) -> None:
+        """Send the context `usage` of the current conversation."""
+        await self.send(ContextUsage(used=usage.used, budget=usage.budget, warning_threshold=usage.warning_threshold))
+
+    async def ask_compression(self, usage: budget.ContextUsage) -> CompressionChoice:
+        """Ask how to go on with a conversation taking `usage` of its budget, waiting for its `compression_answer`.
+
+        Compress when the question cannot be sent, so that the conversation goes on as it is.
+        """
+        request_id = uuid4()
+        message = AskCompression(
+            request_id=request_id, used=usage.used, budget=usage.budget, warning_threshold=usage.warning_threshold
+        )
+        answer = await self._ask(request_id, message)
+        return CompressionChoice.COMPRESS if answer is None else answer
 
     async def ask_confirmation(self, tool_name: str, arguments: dict[str, Any]) -> Confirmation:
         """Ask whether the tool `tool_name` may run with `arguments`, waiting for the client's `confirm_answer`.

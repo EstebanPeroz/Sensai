@@ -16,6 +16,7 @@ from sensai_server.llm.persona import PersonaError, PersonaManager
 from sensai_server.llm.provider import provider_manager
 from sensai_server.memory.persistent_db import PersistentDatabase, base
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
+from sensai_server.monitoring.budget import ContextBudget
 from sensai_server.pipeline import ChatPipeline
 from sensai_server.rag import Rag
 from sensai_server.session import Session, SessionRegistry
@@ -37,6 +38,8 @@ async def fake_chat(
     _db: PersistentDatabase,
     _events: EventBus,
     _rag: Rag | None = None,
+    *,
+    budget: ContextBudget | None = None,  # noqa: ARG001 - the real chat's signature
 ) -> None:
     """Answer with the prompt in one chunk. A `slow` prompt then streams forever, until cancelled.
 
@@ -105,6 +108,7 @@ def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(FakeAdapter, "last_payload", None)
     monkeypatch.setattr(FakeAdapter, "tools", False)
     monkeypatch.setattr(FakeAdapter, "shown", [])
+    monkeypatch.setattr(FakeAdapter, "context_length", None)
     monkeypatch.setattr(FakeAdapter, "block", None)
     monkeypatch.setattr(FakeAdapter, "closed", threading.Event())
 

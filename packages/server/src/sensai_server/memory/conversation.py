@@ -45,6 +45,15 @@ class Conversation:
         self.history = History()
         self.rag_id = uuid4()
 
+    def reset(self) -> None:
+        """Start a new conversation on the same model and persona: no branch, an empty history and a new RAG id.
+
+        The branch left stays in the DB. The next message creates the new one, as a first message does.
+        """
+        self.uuid = None
+        self.history = History()
+        self.rag_id = uuid4()
+
     def add_conv_to_db(self, db: PersistentDatabase, uuid: UUID | None = None, name: str = "Branch") -> None:
         """Init the conversation in the DB if first message, linking the new branch to `rag_id`.
 

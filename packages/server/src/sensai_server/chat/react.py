@@ -57,10 +57,16 @@ class ReAct:
     steps all come from the `ChatContext`, so one instance serves every session at once.
     """
 
-    def __init__(self, provider_manager: ProviderManager, tool_manager: ToolManager) -> None:
-        """Bind the ReAct loop to the `provider_manager` serving the models and the `tool_manager` it calls."""
+    def __init__(
+        self, provider_manager: ProviderManager, tool_manager: ToolManager, *, context_window: int | None = None
+    ) -> None:
+        """Bind the ReAct loop to the `provider_manager` serving the models and the `tool_manager` it calls.
+
+        `context_window` is the number of tokens the model is asked to attend to; None leaves it to the provider.
+        """
         self._provider_manager = provider_manager
         self._tool_manager = tool_manager
+        self._context_window = context_window
 
     async def generate_answer(self, context: ChatContext) -> AsyncGenerator[ChatResponse]:
         """Stream the answer to `context`, repeating Think, Act and Observe until the model answers.
@@ -187,6 +193,8 @@ class ReAct:
         payload: dict[str, object] = {"model": context.model, "messages": messages, "think": False}
         if tools:
             payload["tools"] = tools
+        if self._context_window is not None:
+            payload["options"] = {"num_ctx": self._context_window}
 
         recorder = InteractionRecorder(model=context.model, request=messages)
         status, error = InteractionStatus.OK, None

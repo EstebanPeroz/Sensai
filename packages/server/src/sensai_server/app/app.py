@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
@@ -15,6 +16,7 @@ from sensai_protocol import (
     Command,
     CommandContext,
     Complete,
+    CompressionAnswer,
     ConfirmAnswer,
     Login,
     Logout,
@@ -22,6 +24,7 @@ from sensai_protocol import (
     UserAnswer,
     parse_client_message,
 )
+from sensai_protocol.error import SensaiError
 
 from sensai_server.app import _handlers as handlers
 from sensai_server.app._state import AppState, app_state, set_app_state
@@ -35,9 +38,12 @@ from sensai_server.llm.persona import DuplicatePersonaError, Persona, PersonaMan
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
+from sensai_server.monitoring.budget import ContextBudget
+from sensai_server.monitoring.interaction import emit_interaction
 from sensai_server.monitoring.logger import InteractionLogger
 from sensai_server.pipeline import ChatPipeline
-from sensai_server.pipeline.modules import CacheStage, ModelStage, PersonaStage, RagStage
+from sensai_server.pipeline.modules import CacheStage, CompressionStage, ModelStage, PersonaStage, RagStage
+from sensai_server.pipeline.modules.compression import Compressor
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
 from sensai_server.rag import Rag
 from sensai_server.session import SessionRegistry
@@ -67,15 +73,17 @@ def create_app(
 ) -> FastAPI:
     """Build a new app serving the `/ws` route, logging clients in on the models of the configured providers.
 
-    `settings` are the loaded settings, kept in the app state (see `app_state`). The persistent database is opened,
-    and the default persona is stored in it if it is not there yet. The chat pipeline is built once
-    (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task. So
-    is the tool manager (see `_build_tool_manager`): each session keeps only its own tool state. So is the ReAct loop
-    the pipeline's model stage hands each exchange to: it keeps nothing between two exchanges. So is the semantic
-    cache (see `_build_cache`), when there is one: its entries are cleared when the app starts and when it stops. So
-    is the event bus every chat emits its model calls on: the interaction logger stores them in the database, unless
-    logging is disabled. So is the MCP host, started with the tools: it is closed when the app stops, or right away if
-    building the app fails. At shutdown, the running chats are stopped and their last calls stored (see `_lifespan`).
+    `settings` are the loaded settings, kept in the app state (see `app_state`). The persistent database is opened, and
+    the default persona is stored in it if it is not there yet. The chat pipeline is built once (see `_build_pipeline`)
+    and shared by every session: each `chat` prompt goes through it as the session's task. So is the tool manager (see
+    `_build_tool_manager`): each session keeps only its own tool state. So is the ReAct loop the pipeline's model stage
+    hands each exchange to: it keeps nothing between two exchanges. So is the semantic cache (see `_build_cache`), when
+    there is one: its entries are cleared when the app starts and when it stops. So is the event bus every chat emits
+    its model calls on: the context budget measures each branch's usage from them, and the interaction logger stores
+    them in the database, unless logging is disabled. So is the compressor, summarising the oldest messages of a branch
+    near its budget, and emitting its own calls on the bus. So is the MCP host, started with the tools: it is closed
+    when the app stops, or right away if building the app fails. At shutdown, the running chats are stopped and their
+    last calls stored (see `_lifespan`).
     """
     pm: ProviderManager = ProviderManager(settings.llm)
     embedder = _build_embedder(settings, pm)
@@ -92,7 +100,7 @@ def _create_app(
     settings: Settings, pm: ProviderManager, embedder: Embedder | None, tool_manager: ToolManager, mcp: MCPHost
 ) -> FastAPI:
     """Build the rest of the app around its providers, embedder and tools: see `create_app`."""
-    react = ReAct(pm, tool_manager)
+    react = ReAct(pm, tool_manager, context_window=settings.context.budget)
     set_db(settings.db.persistent)
     db = get_db()
     if db is None:
@@ -103,12 +111,26 @@ def _create_app(
         persona_manager.create_default_persona()
     rag = _build_rag(settings, embedder, db)
     cache = _build_cache(settings, embedder)
-    pipeline = _build_pipeline(react, rag, cache, persona_manager.security_personas())
 
+    events = EventBus()
+    # Before the logger, as in the legacy app: the usage is measured before the call is stored.
+    budget = ContextBudget(settings.context, partial(_context_length, pm))
+    budget.attach(events)
+    compressor = Compressor(
+        pm,
+        db.summaries,
+        settings.context.keep_recent,
+        context_window=settings.context.budget,
+        on_interaction=partial(emit_interaction, events),
+    )
+    pipeline = _build_pipeline(
+        react, rag, cache, persona_manager.security_personas(), compressor=compressor, budget=budget
+    )
     sessions = SessionRegistry(pm, persona_manager, tool_manager, cache)
     commands = CommandRegistry()
-    commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager, rag=rag))
-    events = EventBus()
+    commands.set_commands(
+        build_commands(sessions, commands, db, pm, tool_manager, rag=rag, budget=budget, compressor=compressor)
+    )
     interaction_logger = InteractionLogger(db.interactions, settings.logging)
     interaction_logger.attach(events)
 
@@ -129,6 +151,8 @@ def _create_app(
             rag=rag,
             cache=cache,
             events=events,
+            budget=budget,
+            compressor=compressor,
             interaction_logger=interaction_logger,
             mcp=mcp,
         ),
@@ -137,23 +161,46 @@ def _create_app(
     return app
 
 
-def _build_pipeline(
-    react: ReAct, rag: Rag | None, cache: SemanticCache | None, security: list[Persona]
+def _build_pipeline(  # noqa: PLR0913 - each stage's shared service comes through here
+    react: ReAct,
+    rag: Rag | None,
+    cache: SemanticCache | None,
+    security: list[Persona],
+    *,
+    compressor: Compressor,
+    budget: ContextBudget,
 ) -> ChatPipeline:
-    """Build the chain every chat goes through: guard, semantic cache, persona, RAG's extracts, then the ReAct loop.
+    """Build the chain every chat goes through: guard, cache, compression, persona, RAG's extracts, then ReAct.
 
     The guard comes first, so that a rejected prompt is never embedded. The cache comes before the persona and the
-    RAG, so that a hit skips the RAG search and the model, and a stored answer already names its sources. Without
-    `cache`, nothing is cached; without `rag`, there are no extracts. The `security` personas are sent with every
-    chat, before the conversation's own.
+    RAG, so that a hit skips the RAG search and the model, and a stored answer already names its sources. The
+    compression comes after the cache, so that a hit never compresses, and before the persona and the RAG, so that
+    only the conversation's messages are summarised: it compresses with `compressor` once `budget` says the branch is
+    near its limit. Without `cache`, nothing is cached; without `rag`, there are no extracts. The `security` personas
+    are sent with every chat, before the conversation's own.
     """
     pipeline = ChatPipeline(ModelStage(react)).use(BadWordsGuard())
     if cache is not None:
         pipeline.use(CacheStage())
+    pipeline.use(CompressionStage(compressor, budget))
     pipeline.use(PersonaStage(security))
     if rag is not None:
         pipeline.use(RagStage(rag))
     return pipeline
+
+
+def _context_length(pm: ProviderManager, model: str) -> int | None:
+    """Return the context length of `model`, None when no provider serves it or its provider cannot tell.
+
+    It asks the provider over HTTP and blocks: the budget runs it in a thread.
+    """
+    provider = pm.get_provider(model)
+    if provider is None:
+        return None
+    try:
+        return provider.show(model).context_length
+    except SensaiError:
+        return None
 
 
 def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:
@@ -285,7 +332,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await out.send_error(str(err))
                 continue
             if isinstance(message, Login):
-                session = await handlers.handle_login(state.registry, out, session, message, state.commands.names())
+                session = await handlers.handle_login(
+                    state.registry, out, session, message, state.commands.names(), budget=state.budget
+                )
                 continue
             if session is None:
                 await out.send_error("Login first.")
@@ -310,7 +359,9 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message, state.pipeline, state.db, state.events, state.rag)
+            await handlers.handle_chat(
+                session, message, state.pipeline, state.db, state.events, state.rag, budget=state.budget
+            )
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():
@@ -323,4 +374,6 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await handlers.handle_user_answer(session, message)
         case CommandContext():
             await handlers.handle_command_context(session, message)
+        case CompressionAnswer():
+            await handlers.handle_compression_answer(session, message)
     return True

@@ -8,12 +8,15 @@ import pytest
 from fastapi import WebSocket, WebSocketDisconnect
 from sensai_protocol import (
     AiChunk,
+    AskCompression,
     AskUser,
     ClientCommand,
     CommandContext,
     Completions,
+    CompressionChoice,
     Confirmation,
     ConfirmTool,
+    ContextUsage,
     Dashboard,
     DashboardReport,
     DashboardSummary,
@@ -32,6 +35,7 @@ from sensai_protocol import (
     parse_server_message,
 )
 from sensai_server.app.outbound import ClientCommandError, Outbound
+from sensai_server.monitoring.budget import ContextUsage as Usage
 
 
 class FakeWebSocket:
@@ -91,6 +95,14 @@ CASES: list[tuple[Callable[[Outbound], Awaitable[None]], ServerMessage]] = [
     (lambda out: out.update_thinking_effort("high"), Effort(level="high")),
     (lambda out: out.send_completions("/model ", ["a", "b"]), Completions(text="/model ", values=["a", "b"])),
     (lambda out: out.show_dashboard(REPORT), Dashboard(report=REPORT)),
+    (
+        lambda out: out.update_context_usage(Usage(2048, 8192, 0.8)),
+        ContextUsage(used=2048, budget=8192, warning_threshold=0.8),
+    ),
+    (
+        lambda out: out.update_context_usage(Usage(None, None, 0.8)),
+        ContextUsage(used=None, budget=None, warning_threshold=0.8),
+    ),
 ]
 
 
@@ -138,10 +150,24 @@ class TestQuestions:
         assert await task is None
         assert parse_server_message(ws.frames[-1]) == System(message="Sensai asked: Which city?\n> (no answer)")
 
-    async def test_closed_socket_denies_and_skips(self) -> None:
+    @pytest.mark.parametrize("answer", list(CompressionChoice))
+    async def test_compression_waits_for_its_answer(self, answer: CompressionChoice) -> None:
+        ws = FakeWebSocket()
+        out = _outbound(ws)
+        task = asyncio.create_task(out.ask_compression(Usage(900, 1000, 0.8)))
+        request = await _asked(ws)
+        assert isinstance(request, AskCompression)
+        assert (request.used, request.budget, request.warning_threshold) == (900, 1000, 0.8)
+
+        out.resolve(request.request_id, answer)
+        assert await task == answer
+        assert not out.waiting
+
+    async def test_closed_socket_denies_skips_and_compresses(self) -> None:
         out = _outbound(FakeWebSocket(RuntimeError("closed")))
         assert await out.ask_confirmation("now", {}) == Confirmation.DENY
         assert await out.ask_user("Which city?") is None
+        assert await out.ask_compression(Usage(900, 1000, 0.8)) == CompressionChoice.COMPRESS
         assert not out.waiting
 
     async def test_cancel_forgets_the_question(self) -> None:

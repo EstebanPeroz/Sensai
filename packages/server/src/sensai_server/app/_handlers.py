@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from sensai_protocol import Role
 
 from sensai_server.chat import chat
+from sensai_server.chat.usage import send_context_usage
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
         Command,
         CommandContext,
         Complete,
+        CompressionAnswer,
         ConfirmAnswer,
         Login,
         Logout,
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
     from sensai_server.commands import CommandRegistry
     from sensai_server.events import EventBus
     from sensai_server.memory.persistent_db import PersistentDatabase
+    from sensai_server.monitoring.budget import ContextBudget
     from sensai_server.pipeline import ChatPipeline
     from sensai_server.rag import Rag
     from sensai_server.session import Session, SessionRegistry
@@ -32,12 +35,19 @@ if TYPE_CHECKING:
 PLACEHOLDER_DELAY = 0.3
 
 
-async def handle_login(
-    registry: SessionRegistry, out: Outbound, session: Session | None, message: Login, commands: Sequence[str]
+async def handle_login(  # noqa: PLR0913 - the shared services a login needs come through here
+    registry: SessionRegistry,
+    out: Outbound,
+    session: Session | None,
+    message: Login,
+    commands: Sequence[str],
+    *,
+    budget: ContextBudget | None = None,
 ) -> Session | None:
     """Check that a provider serves `message.model`, then open a session and answer with `session`.
 
-    `commands` are the typed names of the server's commands, sent for the client's completion.
+    `commands` are the typed names of the server's commands, sent for the client's completion. The new session is
+    then sent its context usage from `budget`, if any: a conversation not started yet takes nothing.
 
     An unknown model is answered with an `error` listing the available models, and the socket stays open. A login
     on a connection that already has a session is refused, and the session is kept. Returns the connection's
@@ -46,7 +56,10 @@ async def handle_login(
     if session is not None:
         await out.send_error(f"Already logged in with {session.conv.model}.")
         return session
-    return await registry.open(out, message.model, commands)
+    opened = await registry.open(out, message.model, commands)
+    if opened is not None:
+        await send_context_usage(opened, budget)
+    return opened
 
 
 async def handle_logout(registry: SessionRegistry, session: Session, _: Logout) -> None:
@@ -70,19 +83,22 @@ async def handle_chat(  # noqa: PLR0913, PLR0917 - the shared services a chat ne
     db: PersistentDatabase,
     events: EventBus,
     rag: Rag | None = None,
+    *,
+    budget: ContextBudget | None = None,
 ) -> None:
     """Echo the prompt as `input`, then start the answer as the session's task, streamed as `ai_chunk`.
 
     The prompt goes through `pipeline`, and the prompt and its answer are saved in `db`. The branch the first prompt
-    creates gets its collection in `rag`, if any. Every call to the model is emitted on `events`. A task waiting for
-    a client command is stopped first. Refused with an `error` while another task is running.
+    creates gets its collection in `rag`, if any. Every call to the model is emitted on `events`, and the new context
+    usage from `budget`, if any, is sent at the end. A task waiting for a client command is stopped first. Refused
+    with an `error` while another task is running.
     """
     await _stop_client_command(session)
     if session.busy:
         await session.out.send_error("An answer is already running: cancel it first.")
         return
     await session.out.send_input(Role.USER, message.prompt)
-    session.start(chat(session, message.prompt, pipeline, db, events, rag))
+    session.start(chat(session, message.prompt, pipeline, db, events, rag, budget=budget))
 
 
 async def handle_command(session: Session, message: Command, command_registry: CommandRegistry) -> None:
@@ -118,6 +134,14 @@ async def handle_confirm_answer(session: Session, message: ConfirmAnswer) -> Non
 
 async def handle_user_answer(session: Session, message: UserAnswer) -> None:
     """Give the answer to the waiting `ask_user`. It is not refused while busy: the busy task is the one waiting."""
+    session.out.resolve(message.request_id, message.answer)
+
+
+async def handle_compression_answer(session: Session, message: CompressionAnswer) -> None:
+    """Give the answer to the waiting `ask_compression`.
+
+    It is not refused while busy: the busy task is the one waiting.
+    """
     session.out.resolve(message.request_id, message.answer)
 
 

@@ -17,6 +17,8 @@ from sensai_protocol import (
     CommandContext,
     Complete,
     Completions,
+    CompressionAnswer,
+    CompressionChoice,
     ConfirmAnswer,
     Confirmation,
     ConfirmTool,
@@ -49,6 +51,8 @@ CLIENT_MESSAGES: list[ClientMessage] = [
     UserAnswer(request_id=uuid4(), answer=None),
     CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, ctx={"content": "name = 'x'"}),
     CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, error="file not found"),
+    CompressionAnswer(request_id=uuid4(), answer=CompressionChoice.COMPRESS),
+    CompressionAnswer(request_id=uuid4(), answer=CompressionChoice.NEW_CONVERSATION),
 ]
 
 SERVER_MESSAGES: list[ServerMessage] = [
@@ -93,6 +97,7 @@ class TestClientMessages:
                 {"type": "command_context", "request_id": str(uuid4()), "command": "read_file", "error": "x"},
                 CommandContext,
             ),
+            ({"type": "compression_answer", "request_id": str(uuid4()), "answer": "compress"}, CompressionAnswer),
         ],
     )
     def test_type_parses_into_its_class(self, raw: dict, expected: type) -> None:
@@ -111,6 +116,7 @@ class TestClientMessages:
             '{"type": "cancel", "modle": "typo"}',
             '{"type": "chat", "prompt": 1}',
             '{"type": "confirm_answer", "request_id": "6f1c1e2a-4b0e-4d8e-9a3c-2f9b1d7e5a10", "answer": "maybe"}',
+            '{"type": "compression_answer", "request_id": "6f1c1e2a-4b0e-4d8e-9a3c-2f9b1d7e5a10", "answer": "drop"}',
             _command_context(command="rm_rf", error="x"),
             _command_context(ctx={"content": "x"}, error="x"),
             _command_context(),
@@ -126,6 +132,7 @@ class TestClientMessages:
             "typo",
             "wrong-type",
             "invalid-confirmation",
+            "invalid-compression-choice",
             "unknown-client-command",
             "ctx-and-error",
             "neither-ctx-nor-error",
@@ -151,6 +158,9 @@ class TestClientMessages:
 
     def test_confirmations_match_ui_adapter(self) -> None:
         assert [answer.value for answer in Confirmation] == ["allow", "always", "deny"]
+
+    def test_compression_choices_match_ui_adapter(self) -> None:
+        assert [answer.value for answer in CompressionChoice] == ["compress", "new_conversation"]
 
     def test_type_is_serialized(self) -> None:
         assert json.loads(Login(model="m").model_dump_json()) == {"type": "login", "model": "m"}

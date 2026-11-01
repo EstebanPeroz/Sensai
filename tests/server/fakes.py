@@ -57,7 +57,8 @@ class FakeAdapter(ProviderAdapter):
     A streamed `chat` records its payload in `payloads` and `last_payload`. It yields the next stream of `script`,
     one per call (think, act, observe...), each a list of Ollama payloads; once `script` runs out, it yields
     `replies`. When `block` is set, it waits on it after the first reply. The `closed` event is set once a stream
-    has been closed. `show` records the model in `shown` and reports `tools` as its tool capability.
+    has been closed. `show` records the model in `shown` and reports `tools` as its tool capability and
+    `context_length` as its context length.
     """
 
     models: ClassVar[list[str]] = ["a", "b"]
@@ -70,6 +71,7 @@ class FakeAdapter(ProviderAdapter):
     last_payload: ClassVar[dict | None] = None
     tools: ClassVar[bool] = False
     shown: ClassVar[list[str]] = []
+    context_length: ClassVar[int | None] = None
     block: ClassVar[threading.Event | None] = None
     closed: ClassVar[threading.Event] = threading.Event()
 
@@ -111,7 +113,7 @@ class FakeAdapter(ProviderAdapter):
     @override
     def show(self, model_name: str) -> ShowResponse:
         self.shown.append(model_name)
-        return ShowResponse(model_name, tools=self.tools)
+        return ShowResponse(model_name, tools=self.tools, context_length=self.context_length)
 
     @override
     def load(self, model_name: str) -> bool:

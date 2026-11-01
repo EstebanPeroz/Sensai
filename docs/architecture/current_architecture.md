@@ -136,6 +136,61 @@ awaits `drain()` so the pending writes are stored.
 `/dashboard [24h|7d|30d]` reads every logged call of the period and its baseline, across all sessions, builds the
 report with `monitoring/metrics.py`, and sends it to the client as a `DashboardReport`.
 
+## Server: context budget and compression
+
+The server measures how much of the model's context each branch takes, and summarises the oldest messages of a branch
+near its budget (`[context]` settings).
+
+```mermaid
+flowchart LR
+    subgraph APP["create_app → AppState"]
+        BUS["EventBus<br/>(events)"]
+        BUDGET["ContextBudget<br/>(budget)"]
+        LOGGER["InteractionLogger"]
+        COMP["Compressor<br/>(compressor)"]
+    end
+
+    REACT["ReAct._request"]
+    CHAT["chat"]
+    STAGE["CompressionStage<br/>after CacheStage, before PersonaStage"]
+    CMD["/compress"]
+    CLIENT["client"]
+    SUMMARIES{{"SummaryRepository<br/>(db.summaries)"}}
+
+    REACT -->|"Interaction (branch_id, persona)"| BUS
+    COMP -->|"summary call (no branch_id)"| BUS
+    BUS --> BUDGET
+    BUS --> LOGGER
+    CHAT -->|near limit?| BUDGET
+    CHAT <-->|"ask_compression / compression_answer"| CLIENT
+    STAGE -->|near limit?| BUDGET
+    STAGE --> COMP
+    CMD --> COMP
+    COMP <-->|"asyncio.to_thread"| SUMMARIES
+    CHAT -->|context_usage| CLIENT
+```
+
+- **Budget on the bus.** `create_app` builds one `ContextBudget` and attaches it to the `EventBus` **before** the
+  logger. `record` stores the `prompt_tokens + completion_tokens` of each branch's last call, per branch id; a call with
+  no `branch_id` or no token count is ignored. It is passive: it cannot reach a session's `Outbound`, so each session
+  sends `context_usage` itself (`chat/usage.py`) at login, after each answer, after `/model`, `/branch set|fork`,
+  `/compress` and a new conversation. The budget is `[context] budget`, or else the model's context length
+  from `provider.show`, looked up in a thread and cached per model. `/branch remove` makes it forget the branch.
+  After a compression, `compressed` estimates the shorter usage (`used - tokens_before + tokens_after`), so the gauge
+  drops right away; the next chat call replaces the estimate with the real measure.
+- **Near-budget question.** Before saving the prompt, `chat` asks the client `ask_compression` (built on
+  `Outbound._ask`, like `confirm_tool`) when the branch is near its limit. `new_conversation` leaves the branch (empty
+  history, fresh `rag_id`) so that the prompt starts a new one; `compress`, or no answer, lets the stage compress.
+- **Compression stage.** `CompressionStage` runs after the guard and the cache, so a cache hit never compresses, and
+  before the persona and the RAG, so only the conversation's messages are summarised. Near the limit, the shared
+  `Compressor` summarises all but the `keep_recent` last messages, cut before a user message, and stores the summary
+  (one per branch, shielded from cancellation). It then replaces the covered messages with the summary in
+  `ChatContext.messages`. A failure is a system message, and the chat goes on uncompressed.
+- **Summary call.** It streams through `iterate_in_thread` and is recorded with an `InteractionRecorder` like a ReAct
+  call (`OK`, `ERROR`, `INTERRUPTED`). It is emitted with the persona but **without `branch_id`**, so the budget never
+  takes the summariser's prompt for the conversation's usage. `/compress` runs the same compression as the session's
+  task, so `/cancel` stops it.
+
 ## Server: MCP host
 
 The server (`packages/server`) offers the tools of external MCP servers next to its built-in tools. `MCPHost`

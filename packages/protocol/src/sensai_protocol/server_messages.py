@@ -119,6 +119,39 @@ class RequestCommand(ProtocolModel):
     params: dict[str, Any]
 
 
+class _Usage(ProtocolModel):
+    """Tokens the conversation takes in the context of the model, against the budget it may take."""
+
+    used: int | None
+    """None while the branch has not been measured yet."""
+    budget: int | None
+    """None when neither the settings nor the model give one."""
+    warning_threshold: float
+
+    @property
+    def ratio(self) -> float | None:
+        """Share of the budget in use, None without a budget or a measure."""
+        return None if self.budget is None or self.used is None else self.used / self.budget
+
+    @property
+    def near_limit(self) -> bool:
+        """Whether the usage has reached the warning threshold of the budget."""
+        return self.ratio is not None and self.ratio >= self.warning_threshold
+
+
+class ContextUsage(_Usage):
+    """The context usage of the current conversation changed."""
+
+    type: Literal["context_usage"] = "context_usage"
+
+
+class AskCompression(_Usage):
+    """Ask how to go on with a conversation near its budget, with its usage. Answered by a `compression_answer`."""
+
+    type: Literal["ask_compression"] = "ask_compression"
+    request_id: UUID
+
+
 class Dashboard(ProtocolModel):
     """Show a monitoring report until the user closes it."""
 
@@ -138,6 +171,8 @@ type ServerMessage = Annotated[
     | ConfirmTool
     | AskUser
     | Dashboard
-    | RequestCommand,
+    | RequestCommand
+    | ContextUsage
+    | AskCompression,
     Field(discriminator="type"),
 ]

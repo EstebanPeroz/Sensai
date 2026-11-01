@@ -390,3 +390,27 @@ class TestCancel:
             FakeAdapter.block.set()
             assert await asyncio.to_thread(FakeAdapter.closed.wait, TIMEOUT)
         assert len(FakeAdapter.payloads) == 1
+
+
+class TestContextWindow:
+    async def test_is_asked_of_the_model_on_every_call(self) -> None:
+        manager = ToolManager([SearchTool()])
+        FakeAdapter.script = _script_tool_round(call("search"))
+        react = ReAct(ProviderManager(SETTINGS.llm), manager, context_window=8192)
+
+        async with aclosing(react.generate_answer(_context(manager))) as chunks:
+            _ = [item async for item in chunks]
+
+        assert len(FakeAdapter.payloads) > 1
+        assert [payload["options"] for payload in FakeAdapter.payloads] == [{"num_ctx": 8192}] * len(
+            FakeAdapter.payloads
+        )
+
+    async def test_is_left_to_the_provider_without_one(self) -> None:
+        manager = ToolManager([SearchTool()])
+        FakeAdapter.script = _script_tool_round(call("search"))
+
+        await _run(manager, _context(manager))
+
+        assert FakeAdapter.payloads
+        assert all("options" not in payload for payload in FakeAdapter.payloads)

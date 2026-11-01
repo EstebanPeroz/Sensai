@@ -13,6 +13,7 @@ from sensai_protocol import (
     AiChunk,
     Chat,
     Command,
+    ContextUsage,
     Input,
     Login,
     Role,
@@ -71,6 +72,7 @@ def receive(ws: WebSocketTestSession) -> ServerMessage:
 def login(ws: WebSocketTestSession) -> None:
     ws.send_text(Login(model=MODEL).model_dump_json())
     assert isinstance(receive(ws), Session)
+    assert isinstance(receive(ws), ContextUsage)
 
 
 def tiny_pid(app: FastAPI) -> int:

@@ -17,9 +17,12 @@ from sensai_protocol import (
     CommandContext,
     Complete,
     Completions,
+    CompressionAnswer,
+    CompressionChoice,
     ConfirmAnswer,
     Confirmation,
     ConfirmTool,
+    ContextUsage,
     Error,
     Input,
     Login,
@@ -37,6 +40,7 @@ from sensai_server.app._state import app_state
 from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
+from sensai_server.commands._compress import Compress
 from sensai_server.commands._dashboard import Dashboard
 from sensai_server.commands._effort import Effort as EffortCommand
 from sensai_server.commands._export import Export
@@ -79,6 +83,7 @@ def _login(ws: WebSocketTestSession) -> Session:
     _send(ws, Login(model=MODEL))
     message = _receive(ws)
     assert isinstance(message, Session)
+    assert isinstance(_receive(ws), ContextUsage)
     return message
 
 
@@ -128,6 +133,7 @@ class TestLogin:
                 "/export",
                 "/import",
                 "/dashboard",
+                "/compress",
                 "/help",
             ]
             assert registry.get(session.client_id) is not None
@@ -448,7 +454,8 @@ class TestCommandAndComplete:
             assert _receive(ws) == Input(role=Role.USER, content="/help", command=True)
             assert _receive(ws) == System(
                 message=(
-                    f"Available commands:\n- branch: {Branch.help}\n- dashboard: {Dashboard.help}\n"
+                    f"Available commands:\n- branch: {Branch.help}\n- compress: {Compress.help}\n"
+                    f"- dashboard: {Dashboard.help}\n"
                     f"- effort: {EffortCommand.help}\n"
                     f"- export: {Export.help}\n- help: {Help.help}\n- import: {Import.help}\n"
                     f"- model: {Model.help}\n- persona: {PersonaCommand.help}\n"
@@ -477,6 +484,10 @@ class TestDispatch:
                 "handle_command_context",
                 CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, error="x"),
             ),
+            (
+                "handle_compression_answer",
+                CompressionAnswer(request_id=uuid4(), answer=CompressionChoice.NEW_CONVERSATION),
+            ),
         ],
     )
     def test_message_reaches_its_handler(
@@ -494,7 +505,7 @@ class TestDispatch:
         assert received_session.client_id == session.client_id
         assert received_message == message
 
-    def test_chat_reaches_its_handler_with_the_pipeline_db_events_and_rag(
+    def test_chat_reaches_its_handler_with_the_pipeline_db_events_rag_and_budget(
         self, app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         handler = AsyncMock()
@@ -509,6 +520,7 @@ class TestDispatch:
         assert db is app_state(app).db
         assert events is app_state(app).events
         assert rag is app_state(app).rag
+        assert handler.await_args.kwargs["budget"] is app_state(app).budget
 
     def test_logout_reaches_its_handler_with_the_registry(
         self, client: TestClient, registry: SessionRegistry, monkeypatch: pytest.MonkeyPatch
