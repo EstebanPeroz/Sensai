@@ -15,6 +15,7 @@ from sensai_protocol import (
     Command,
     CommandContext,
     Complete,
+    CompressionAnswer,
     ConfirmAnswer,
     Login,
     Logout,
@@ -323,4 +324,6 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await handlers.handle_user_answer(session, message)
         case CommandContext():
             await handlers.handle_command_context(session, message)
+        case CompressionAnswer():
+            await handlers.handle_compression_answer(session, message)
     return True

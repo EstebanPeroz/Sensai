@@ -17,6 +17,8 @@ from sensai_protocol import (
     CommandContext,
     Complete,
     Completions,
+    CompressionAnswer,
+    CompressionChoice,
     ConfirmAnswer,
     Confirmation,
     ConfirmTool,
@@ -476,6 +478,10 @@ class TestDispatch:
             (
                 "handle_command_context",
                 CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, error="x"),
+            ),
+            (
+                "handle_compression_answer",
+                CompressionAnswer(request_id=uuid4(), answer=CompressionChoice.NEW_CONVERSATION),
             ),
         ],
     )

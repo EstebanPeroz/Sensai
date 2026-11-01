@@ -64,6 +64,21 @@ class ConfirmAnswer(ProtocolModel):
     answer: Confirmation
 
 
+class CompressionChoice(StrEnum):
+    """Answer of the user whose conversation nears its budget: summarise its oldest messages, or start anew."""
+
+    COMPRESS = "compress"
+    NEW_CONVERSATION = "new_conversation"
+
+
+class CompressionAnswer(ProtocolModel):
+    """Answer to the `ask_compression` of `request_id`."""
+
+    type: Literal["compression_answer"] = "compression_answer"
+    request_id: UUID
+    answer: CompressionChoice
+
+
 class UserAnswer(ProtocolModel):
     """Answer to the `ask_user` of `request_id`. None when the user skipped the question."""
 
@@ -91,6 +106,15 @@ class CommandContext(ProtocolModel):
 
 
 type ClientMessage = Annotated[
-    Login | Logout | Chat | Command | Cancel | Complete | ConfirmAnswer | UserAnswer | CommandContext,
+    Login
+    | Logout
+    | Chat
+    | Command
+    | Cancel
+    | Complete
+    | ConfirmAnswer
+    | UserAnswer
+    | CommandContext
+    | CompressionAnswer,
     Field(discriminator="type"),
 ]

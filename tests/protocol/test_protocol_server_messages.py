@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from sensai_protocol import (
     AiChunk,
+    AskCompression,
     AskUser,
     Cancel,
     Chat,
@@ -14,9 +15,12 @@ from sensai_protocol import (
     CommandContext,
     Complete,
     Completions,
+    CompressionAnswer,
+    CompressionChoice,
     ConfirmAnswer,
     Confirmation,
     ConfirmTool,
+    ContextUsage,
     Dashboard,
     DashboardDrift,
     DashboardError,
@@ -93,6 +97,9 @@ SERVER_MESSAGES: list[ServerMessage] = [
     AskUser(request_id=uuid4(), question="Which city?"),
     Dashboard(report=REPORT),
     RequestCommand(request_id=uuid4(), command=ClientCommand.READ_FILE, params={"path": "./me.toml"}),
+    ContextUsage(used=2048, budget=8192, warning_threshold=0.8),
+    ContextUsage(used=None, budget=None, warning_threshold=0.8),
+    AskCompression(request_id=uuid4(), used=900, budget=1000, warning_threshold=0.8),
 ]
 
 CLIENT_MESSAGES: list[ClientMessage] = [
@@ -105,6 +112,7 @@ CLIENT_MESSAGES: list[ClientMessage] = [
     ConfirmAnswer(request_id=uuid4(), answer=Confirmation.ALWAYS),
     UserAnswer(request_id=uuid4(), answer=None),
     CommandContext(request_id=uuid4(), command=ClientCommand.READ_FILE, ctx={"content": "x"}),
+    CompressionAnswer(request_id=uuid4(), answer=CompressionChoice.NEW_CONVERSATION),
 ]
 
 CLIENT_ID = "6f1c1e2a-4b0e-4d8e-9a3c-2f9b1d7e5a10"
@@ -134,6 +142,11 @@ class TestServerMessages:
             (
                 {"type": "request_command", "request_id": CLIENT_ID, "command": "read_file", "params": {"path": "x"}},
                 RequestCommand,
+            ),
+            ({"type": "context_usage", "used": None, "budget": 8192, "warning_threshold": 0.8}, ContextUsage),
+            (
+                {"type": "ask_compression", "request_id": CLIENT_ID, "used": 1, "budget": 2, "warning_threshold": 0.8},
+                AskCompression,
             ),
         ],
     )
@@ -165,6 +178,25 @@ class TestServerMessages:
         assert message.report.summary.interrupted_rate == 0.25
         assert message.report.drifts[0].change == 0.5
         assert DashboardSummary(**(SUMMARY.model_dump() | {"calls": 0})).error_rate is None
+
+    @pytest.mark.parametrize(
+        ("used", "budget", "expected"),
+        [
+            (0, 8192, (0.0, False)),
+            (900, 1000, (0.9, True)),
+            (800, 1000, (0.8, True)),
+            (None, 8192, (None, False)),
+            (950, None, (None, False)),
+        ],
+    )
+    def test_context_usage_derived_figures(
+        self, used: int | None, budget: int | None, expected: tuple[float | None, bool]
+    ) -> None:
+        usage = ContextUsage(used=used, budget=budget, warning_threshold=0.8)
+        question = AskCompression(request_id=uuid4(), used=used, budget=budget, warning_threshold=0.8)
+
+        assert (usage.ratio, usage.near_limit) == expected
+        assert (question.ratio, question.near_limit) == expected
 
     def test_roles_match_chat_endpoint(self) -> None:
         assert [role.value for role in Role] == ["system", "user", "assistant", "tool"]

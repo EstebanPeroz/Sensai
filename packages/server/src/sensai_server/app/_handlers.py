@@ -15,6 +15,7 @@ if TYPE_CHECKING:
         Command,
         CommandContext,
         Complete,
+        CompressionAnswer,
         ConfirmAnswer,
         Login,
         Logout,
@@ -118,6 +119,14 @@ async def handle_confirm_answer(session: Session, message: ConfirmAnswer) -> Non
 
 async def handle_user_answer(session: Session, message: UserAnswer) -> None:
     """Give the answer to the waiting `ask_user`. It is not refused while busy: the busy task is the one waiting."""
+    session.out.resolve(message.request_id, message.answer)
+
+
+async def handle_compression_answer(session: Session, message: CompressionAnswer) -> None:
+    """Give the answer to the waiting `ask_compression`.
+
+    It is not refused while busy: the busy task is the one waiting.
+    """
     session.out.resolve(message.request_id, message.answer)
 
 
