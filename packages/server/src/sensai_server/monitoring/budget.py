@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
     from sensai_server.config.settings import ContextSettings
     from sensai_server.events import EventBus
+    from sensai_server.pipeline.modules.compression import Compression
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,19 @@ class ContextBudget:
         """
         used = 0 if branch_id is None else self._used.get(branch_id)
         return ContextUsage(used, await self._budget(model), self._settings.warning_threshold)
+
+    def compressed(self, branch_id: UUID, compression: Compression) -> None:
+        """Estimate the usage of the branch `branch_id` once `compression` has summarised its oldest messages.
+
+        The summarised tokens are taken off the last measure and the summary's are added, so that the usage shrinks
+        right away instead of waiting for the next chat call, which measures it exactly. The estimate is slightly low:
+        the summarised tokens include the instruction sent with them. Nothing changes without a measure, or when the
+        provider did not report the token counts.
+        """
+        used = self._used.get(branch_id)
+        if used is None or compression.tokens_before is None or compression.tokens_after is None:
+            return
+        self._used[branch_id] = max(0, used - compression.tokens_before + compression.tokens_after)
 
     def forget(self, branch_id: UUID) -> None:
         """Drop the usage of the branch `branch_id`, once removed."""

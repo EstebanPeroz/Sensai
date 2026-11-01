@@ -216,6 +216,7 @@ class CompressionStage:
                 persona = context.persona.name if context.persona is not None else None
                 compression = await self._compressor.compress(branch_id, context.messages, context.model, persona)
                 if compression is not None:
+                    self._budget.compressed(branch_id, compression)
                     await context.out.send_system_message(compression.describe())
             context.messages = await self._compressor.apply(branch_id, context.messages)
         except SensaiError as err:

@@ -23,7 +23,8 @@ keep_recent = 6
 ```
 
 The usage is the token count of the branch's last model call, kept in memory: after a restart, a branch's usage is
-unknown until its next call. A branch keeps one summary, stored in the `summary` table and not exported. The summary
+unknown until its next call. After a compression, it is estimated (the summarised tokens taken off, the summary's
+added) until the next call measures it again. A branch keeps one summary, stored in the `summary` table and not exported. The summary
 call is logged like any other, with the persona but without the branch.
 
 ## MCP servers

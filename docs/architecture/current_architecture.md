@@ -176,6 +176,8 @@ flowchart LR
   sends `context_usage` itself (`chat/usage.py`) at login, after each answer, after `/model`, `/branch set|fork`,
   `/compress` and a new conversation. The budget is `[context] budget`, or else the model's context length
   from `provider.show`, looked up in a thread and cached per model. `/branch remove` makes it forget the branch.
+  After a compression, `compressed` estimates the shorter usage (`used - tokens_before + tokens_after`), so the gauge
+  drops right away; the next chat call replaces the estimate with the real measure.
 - **Near-budget question.** Before saving the prompt, `chat` asks the client `ask_compression` (built on
   `Outbound._ask`, like `confirm_tool`) when the branch is near its limit. `new_conversation` leaves the branch (empty
   history, fresh `rag_id`) so that the prompt starts a new one; `compress`, or no answer, lets the stage compress.

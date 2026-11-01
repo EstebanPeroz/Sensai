@@ -222,17 +222,34 @@ class TestCompressCommand:
         assert fake.calls == []
         assert _systems(session) == ["This command takes no argument. Usage: /compress"]
 
-    async def test_then_sends_the_usage_as_measured(
+    async def test_then_sends_the_estimated_usage(
         self, db: SqlAlchemy, pm: ProviderManager, budget: ContextBudget, events: EventBus
     ) -> None:
         session = await _open(db, pm, RecordingOutbound())
         branch = await _started(session, db)
         _measure(events, branch, NEAR)
 
-        await Compress(cast("Compressor", FakeCompressor(Compression(4, 900, 40))), budget).execute(session)
+        await Compress(cast("Compressor", FakeCompressor(Compression(4, 60, 10))), budget).execute(session)
 
         assert isinstance(_sent(session)[0], System)
-        assert _sent(session)[1:] == [ContextUsage(used=NEAR, budget=BUDGET, warning_threshold=0.8)]
+        assert _sent(session)[1:] == [ContextUsage(used=NEAR - 60 + 10, budget=BUDGET, warning_threshold=0.8)]
+
+    @pytest.mark.parametrize("result", [None, Compression(4, None, None), CompressionError("down")])
+    async def test_sends_the_usage_as_measured_without_token_counts(
+        self,
+        db: SqlAlchemy,
+        pm: ProviderManager,
+        budget: ContextBudget,
+        events: EventBus,
+        result: Compression | CompressionError | None,
+    ) -> None:
+        session = await _open(db, pm, RecordingOutbound())
+        branch = await _started(session, db)
+        _measure(events, branch, NEAR)
+
+        await Compress(cast("Compressor", FakeCompressor(result)), budget).execute(session)
+
+        assert _sent(session)[-1] == ContextUsage(used=NEAR, budget=BUDGET, warning_threshold=0.8)
 
     @pytest.mark.usefixtures("replies")
     async def test_stores_the_summary_and_records_the_call(

@@ -37,7 +37,7 @@ class Compress(Command):
     async def execute(self, session: Session, *args: str) -> None:
         """Summarise the oldest messages of the session's branch, tell how much it saved, then send the usage.
 
-        The usage stays as last measured until the next chat call measures the shorter prompt.
+        The usage sent is an estimate of the shorter context, until the next chat call measures it exactly.
         """
         if args:
             await session.out.send_system_message(f"This command takes no argument. Usage: {self.usage}")
@@ -57,5 +57,7 @@ class Compress(Command):
                     "Nothing to compress: only the last messages are left to summarise."
                 )
             else:
+                if self._budget is not None:
+                    self._budget.compressed(conv.uuid, compression)
                 await session.out.send_system_message(compression.describe())
         await send_context_usage(session, self._budget)

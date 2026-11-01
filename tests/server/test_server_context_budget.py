@@ -7,6 +7,7 @@ from sensai_server.events import EventBus
 from sensai_server.llm.responses import ChatMetrics
 from sensai_server.monitoring.budget import ContextBudget, ContextUsage
 from sensai_server.monitoring.interaction import Interaction, InteractionStatus
+from sensai_server.pipeline.modules.compression import Compression
 
 BRANCH = uuid4()
 OTHER_BRANCH = uuid4()
@@ -168,3 +169,46 @@ class TestContextBudget:
 
         assert (await budget.usage("m", BRANCH)).used is None
         assert (await budget.usage("m", OTHER_BRANCH)).used == 3000
+
+    async def test_a_compression_takes_the_summarised_tokens_off_and_adds_the_summary(self) -> None:
+        bus, budget, _ = attached(ContextSettings(budget=8192))
+        bus.emit(chat_call(7000, 200))
+
+        budget.compressed(BRANCH, Compression(messages=6, tokens_before=5000, tokens_after=300))
+
+        assert (await budget.usage("m", BRANCH)).used == 7200 - 5000 + 300
+
+    async def test_a_compression_estimate_never_goes_below_zero(self) -> None:
+        bus, budget, _ = attached(ContextSettings(budget=8192))
+        bus.emit(chat_call(1000))
+
+        budget.compressed(BRANCH, Compression(messages=2, tokens_before=1500, tokens_after=100))
+
+        assert (await budget.usage("m", BRANCH)).used == 0
+
+    @pytest.mark.parametrize(("before", "after"), [(None, 100), (5000, None)])
+    async def test_a_compression_without_token_counts_keeps_the_measure(
+        self, before: int | None, after: int | None
+    ) -> None:
+        bus, budget, _ = attached(ContextSettings(budget=8192))
+        bus.emit(chat_call(7000))
+
+        budget.compressed(BRANCH, Compression(messages=6, tokens_before=before, tokens_after=after))
+
+        assert (await budget.usage("m", BRANCH)).used == 7000
+
+    async def test_a_compression_of_a_branch_not_measured_stays_unknown(self) -> None:
+        _, budget, _ = attached(ContextSettings(budget=8192))
+
+        budget.compressed(BRANCH, Compression(messages=6, tokens_before=5000, tokens_after=300))
+
+        assert (await budget.usage("m", BRANCH)).used is None
+
+    async def test_the_next_chat_call_replaces_the_estimate(self) -> None:
+        bus, budget, _ = attached(ContextSettings(budget=8192))
+        bus.emit(chat_call(7000))
+        budget.compressed(BRANCH, Compression(messages=6, tokens_before=5000, tokens_after=300))
+
+        bus.emit(chat_call(2600))
+
+        assert (await budget.usage("m", BRANCH)).used == 2600

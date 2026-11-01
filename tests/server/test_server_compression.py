@@ -92,10 +92,14 @@ class FakeBudget:
     def __init__(self, *, near_limit: bool) -> None:
         self._used = 90 if near_limit else 10
         self.asked: list[tuple[str, UUID | None]] = []
+        self.compressions: list[tuple[UUID, Compression]] = []
 
     async def usage(self, model: str, branch_id: UUID | None) -> ContextUsage:
         self.asked.append((model, branch_id))
         return ContextUsage(self._used, 100, 0.8)
+
+    def compressed(self, branch_id: UUID, compression: Compression) -> None:
+        self.compressions.append((branch_id, compression))
 
 
 def summary_chunks(content: str) -> list[ChatResponse]:
@@ -323,6 +327,20 @@ class TestCompressionStage:
         ]
         assert system == ["Summarised the 4 oldest messages of the conversation: 900 -> 40 tokens."]
         assert [chunk.content for chunk in received] == ["answer"]
+
+    async def test_updates_the_usage_estimate_after_compressing(self) -> None:
+        budget = FakeBudget(near_limit=True)
+
+        await run_stage(CompressionStage(compressor(), cast("ContextBudget", budget)), _context(conversation(6)))
+
+        assert budget.compressions == [(BRANCH, Compression(4, 900, 40))]
+
+    async def test_leaves_the_usage_below_the_limit(self) -> None:
+        budget = FakeBudget(near_limit=False)
+
+        await run_stage(CompressionStage(compressor(), cast("ContextBudget", budget)), _context(conversation(6)))
+
+        assert budget.compressions == []
 
     async def test_asks_the_budget_for_the_context_model_and_branch(self) -> None:
         budget = FakeBudget(near_limit=False)
