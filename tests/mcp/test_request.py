@@ -62,7 +62,7 @@ def test_add_tool_result_builds_one_follow_up_request() -> None:
 
 
 def test_model_tool_call_reaches_mcp_server() -> None:
-    session = MagicMock()
+    session = MagicMock(server_name="server")
     session.call_tool_sync.return_value = "hello from the MCP server"
     tool = MCPTool(
         MCPToolInfo("echo", "Echo text", {"type": "object"}),
@@ -73,7 +73,7 @@ def test_model_tool_call_reaches_mcp_server() -> None:
         [
             {
                 "type": "function",
-                "function": {"name": "echo", "arguments": {"message": "hello from the model"}},
+                "function": {"name": "server__echo", "arguments": {"message": "hello from the model"}},
             },
         ],
         ToolManager([tool]),
@@ -81,7 +81,7 @@ def test_model_tool_call_reaches_mcp_server() -> None:
 
     assert result == {
         "role": "tool",
-        "tool_name": "echo",
+        "tool_name": "server__echo",
         "content": "hello from the MCP server",
     }
     session.call_tool_sync.assert_called_once_with("echo", {"message": "hello from the model"})
