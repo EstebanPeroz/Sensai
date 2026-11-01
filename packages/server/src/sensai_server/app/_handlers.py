@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from sensai_server.events import EventBus
     from sensai_server.memory.persistent_db import PersistentDatabase
     from sensai_server.pipeline import ChatPipeline
+    from sensai_server.rag import Rag
     from sensai_server.session import Session, SessionRegistry
 
 PLACEHOLDER_DELAY = 0.3
@@ -62,21 +63,26 @@ async def _stop_client_command(session: Session) -> None:
         await session.out.send_system_message(f"{stopped} stopped: a new message was sent.")
 
 
-async def handle_chat(
-    session: Session, message: Chat, pipeline: ChatPipeline, db: PersistentDatabase, events: EventBus
+async def handle_chat(  # noqa: PLR0913, PLR0917 - the shared services a chat needs come through here
+    session: Session,
+    message: Chat,
+    pipeline: ChatPipeline,
+    db: PersistentDatabase,
+    events: EventBus,
+    rag: Rag | None = None,
 ) -> None:
     """Echo the prompt as `input`, then start the answer as the session's task, streamed as `ai_chunk`.
 
-    The prompt goes through `pipeline`, the prompt and its answer are saved in `db`, and every call to the model is
-    emitted on `events`. A task waiting for a client
-    command is stopped first. Refused with an `error` while another task is running.
+    The prompt goes through `pipeline`, and the prompt and its answer are saved in `db`. The branch the first prompt
+    creates gets its collection in `rag`, if any. Every call to the model is emitted on `events`. A task waiting for
+    a client command is stopped first. Refused with an `error` while another task is running.
     """
     await _stop_client_command(session)
     if session.busy:
         await session.out.send_error("An answer is already running: cancel it first.")
         return
     await session.out.send_input(Role.USER, message.prompt)
-    session.start(chat(session, message.prompt, pipeline, db, events))
+    session.start(chat(session, message.prompt, pipeline, db, events, rag))
 
 
 async def handle_command(session: Session, message: Command, command_registry: CommandRegistry) -> None:

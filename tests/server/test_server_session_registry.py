@@ -67,6 +67,26 @@ class TestSessionRegistry:
         assert task is not None
         assert task.cancelled()
 
+    async def test_close_all_closes_every_session(self, persona_manager: PersonaManager) -> None:
+        registry = _registry(persona_manager)
+        first = await registry.open(RecordingOutbound(), MODEL)
+        second = await registry.open(RecordingOutbound(), MODEL)
+        assert first is not None
+        assert second is not None
+        started = asyncio.Event()
+
+        async def forever() -> None:
+            started.set()
+            await asyncio.sleep(3600)
+
+        first.start(forever())
+        await started.wait()
+        task = first.task
+        await registry.close_all()
+        assert len(registry) == 0
+        assert task is not None
+        assert task.cancelled()
+
     async def test_close_unknown_id(self, persona_manager: PersonaManager) -> None:
         registry = _registry(persona_manager)
         await registry.open(RecordingOutbound(), MODEL)
@@ -81,6 +101,14 @@ class TestSessionRegistry:
         assert second is not None
         assert first.client_id != second.client_id
         assert len(registry) == 2
+
+    async def test_two_sessions_get_distinct_rag_ids(self, persona_manager: PersonaManager) -> None:
+        registry = _registry(persona_manager)
+        first = await registry.open(RecordingOutbound(), MODEL)
+        second = await registry.open(RecordingOutbound(), MODEL)
+        assert first is not None
+        assert second is not None
+        assert first.conv.rag_id != second.conv.rag_id
 
     async def test_sessions_share_the_persona_manager(self, persona_manager: PersonaManager) -> None:
         registry = _registry(persona_manager)

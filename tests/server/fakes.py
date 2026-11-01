@@ -3,10 +3,12 @@ from collections.abc import AsyncGenerator, Iterator
 from typing import ClassVar, Literal, cast, overload, override
 
 from fastapi import WebSocket
-from sensai_protocol import ServerMessage, parse_server_message
+from sensai_protocol import ClientCommand, CommandContext, RequestCommand, ServerMessage, parse_server_message
 from sensai_server.app.outbound import Outbound
+from sensai_server.cache import CacheError
 from sensai_server.config.settings import OllamaSettings
-from sensai_server.llm.error import RequestCallError
+from sensai_server.llm.embedder import Embedder
+from sensai_server.llm.error import EmbeddingError, RequestCallError
 from sensai_server.llm.provider import ChatResponse, ProviderAdapter, ShowResponse
 from sensai_server.pipeline import ChatContext
 
@@ -21,6 +23,32 @@ class RecordingOutbound(Outbound):
     async def send(self, message: ServerMessage) -> bool:
         self.sent.append(parse_server_message(message.model_dump_json()))
         return True
+
+
+class AnsweringOutbound(RecordingOutbound):
+    """A `RecordingOutbound` whose client runs client commands: each `request_command` gets the canned answer.
+
+    `answers` maps a command to the `ctx` the client answers with, or to a `str`, the `error` it fails with.
+    """
+
+    def __init__(self, answers: dict[ClientCommand, dict | str]) -> None:
+        super().__init__()
+        self.answers = answers
+
+    async def send(self, message: ServerMessage) -> bool:
+        await super().send(message)
+        if isinstance(message, RequestCommand):
+            answer = self.answers[message.command]
+            ctx, error = (None, answer) if isinstance(answer, str) else (answer, None)
+            self.resolve(
+                message.request_id,
+                CommandContext(request_id=message.request_id, command=message.command, ctx=ctx, error=error),
+            )
+        return True
+
+    def requests(self) -> list[RequestCommand]:
+        """The client commands asked so far."""
+        return [message for message in self.sent if isinstance(message, RequestCommand)]
 
 
 class FakeAdapter(ProviderAdapter):
@@ -107,6 +135,30 @@ class FakeAdapter(ProviderAdapter):
         return self.models
 
 
+class FakeEmbedder(Embedder):
+    """An `Embedder` whose vectors are deterministic and need no provider; it records every batch in `batches`.
+
+    Texts mentioning "engine" land on one axis, the others on the opposite one, with a small drift per position so
+    that consecutive scores are never exactly equal: an adaptive threshold sitting right on a score would find no
+    breakpoint at all. When `failing` is set, `embed` raises `EmbeddingError`, as the real one does.
+    """
+
+    def __init__(self, *, failing: bool = False) -> None:
+        super().__init__(FakeAdapter(OllamaSettings()), "fake-embed")
+        self.batches: list[list[str]] = []
+        self.failing = failing
+
+    @override
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.batches.append(list(texts))
+        if self.failing:
+            msg = f"embedding model '{self.model}' is not available"
+            raise EmbeddingError(msg)
+        return [
+            [0.1 + i * 0.01, 1.0] if "engine" in text.lower() else [1.0, 0.1 + i * 0.01] for i, text in enumerate(texts)
+        ]
+
+
 def chunk(content: str, *, done: bool = False) -> dict:
     """An Ollama `/api/chat` payload streaming `content`."""
     return {"done": done, "message": {"role": "assistant", "content": content}}
@@ -135,3 +187,48 @@ class RecordingNext:
         self.seen_messages.append(list(context.messages))
         for item in self.chunks:
             yield item
+
+
+class FakeSessionCache:
+    """A `SessionCache` held in memory, matching prompts exactly; each operation can be made to fail.
+
+    It records the prompts looked up in `lookups`, the `(prompt, answer)` pairs stored in `stored` and the number of
+    `clears`. A failing operation raises `CacheError`, as the real one does when Redis fails, or `lookup_error` when
+    given.
+    """
+
+    def __init__(
+        self,
+        answers: dict[str, str] | None = None,
+        *,
+        lookup_error: Exception | None = None,
+        failing_store: bool = False,
+        failing_clear: bool = False,
+    ) -> None:
+        self.answers = dict(answers or {})
+        self.lookup_error = lookup_error
+        self.failing_store = failing_store
+        self.failing_clear = failing_clear
+        self.lookups: list[str] = []
+        self.stored: list[tuple[str, str]] = []
+        self.clears = 0
+
+    async def lookup(self, prompt: str) -> str | None:
+        self.lookups.append(prompt)
+        if self.lookup_error is not None:
+            raise self.lookup_error
+        return self.answers.get(prompt)
+
+    async def store(self, prompt: str, answer: str) -> None:
+        if self.failing_store:
+            msg = "the Redis server does not answer"
+            raise CacheError(msg)
+        self.stored.append((prompt, answer))
+        self.answers[prompt] = answer
+
+    async def clear(self) -> None:
+        if self.failing_clear:
+            msg = "the Redis server does not answer"
+            raise CacheError(msg)
+        self.clears += 1
+        self.answers.clear()

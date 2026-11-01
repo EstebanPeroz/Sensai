@@ -30,8 +30,10 @@ from sensai_server.monitoring.interaction import ignore_interaction
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
+    from uuid import UUID
 
     from sensai_server.app.outbound import Outbound
+    from sensai_server.cache import SessionCache
     from sensai_server.llm.persona import Persona
     from sensai_server.monitoring.interaction import Interaction
     from sensai_server.tools.state import ToolState
@@ -51,6 +53,8 @@ class ChatContext:
     messages: list[dict] = field(default_factory=list)
     tools: ToolState | None = None
     max_iterations: int = EFFORTS["off"]
+    rag_id: UUID | None = None
+    cache: SessionCache | None = None
     on_interaction: Callable[[Interaction], None] = ignore_interaction
     """Called once for every call to the model this exchange makes, whatever its outcome. Sync, never awaited."""
 

@@ -1587,8 +1587,12 @@ name = "sensai-server"
 version = "0.1.0"
 source = { editable = "packages/server" }
 dependencies = [
+    { name = "beautifulsoup4" },
     { name = "ddgs" },
     { name = "fastapi" },
+    { name = "pypdf" },
+    { name = "qdrant-client" },
+    { name = "redis" },
     { name = "requests" },
     { name = "sensai-protocol" },
     { name = "trafilatura" },
@@ -1597,8 +1601,12 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "beautifulsoup4", specifier = ">=4.15.0" },
     { name = "ddgs", specifier = ">=9.16.0" },
     { name = "fastapi" },
+    { name = "pypdf", specifier = ">=6.21.1" },
+    { name = "qdrant-client", specifier = "==1.18.0" },
+    { name = "redis", specifier = ">=8.1.0" },
     { name = "requests" },
     { name = "sensai-protocol", editable = "packages/protocol" },
     { name = "trafilatura", specifier = ">=2.3.1" },

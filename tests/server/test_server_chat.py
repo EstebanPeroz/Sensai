@@ -2,11 +2,12 @@ import asyncio
 import threading
 from collections.abc import Iterator
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from sensai_protocol import AiChunk, Error, Input, Role, ServerMessage, System
-from sensai_server.chat import chat
-from sensai_server.chat.chat import BRANCH_NAME_LENGTH, _to_ai_chunk
+from sensai_server.chat import BRANCH_NAME_LENGTH, chat
+from sensai_server.chat.chat import _to_ai_chunk
 from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.events import EventBus
 from sensai_server.llm.error import RequestCallError
@@ -16,11 +17,13 @@ from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import ModelStage, PersonaStage
 from sensai_server.pipeline.modules.guardrails import WARNING, BadWordsGuard
+from sensai_server.rag import Rag
+from sensai_server.rag.collection import Collection
 from sensai_server.session import Session
 from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import MODEL, SETTINGS, db_url
-from tests.server.fakes import FakeAdapter, RecordingNext, RecordingOutbound, chunk
+from tests.server.fakes import FakeAdapter, FakeEmbedder, RecordingNext, RecordingOutbound, chunk
 
 PERSONA = Persona(None, "analyst", "Analyses things", "You are an analyst.")
 TIMEOUT = 2
@@ -43,6 +46,21 @@ def session(pm: ProviderManager, persona_manager: PersonaManager) -> Session:
     # `FakeAdapter` answers every call with the same stream: the pipeline makes a single answering call.
     session.effort = "off"
     return session
+
+
+@pytest.fixture
+def embedder() -> FakeEmbedder:
+    return FakeEmbedder()
+
+
+@pytest.fixture
+def rag(embedder: FakeEmbedder, db: SqlAlchemy) -> Rag:
+    return Rag(":memory:", embedder, db)
+
+
+def _exists(rag: Rag, rag_id: UUID) -> bool:
+    """Whether the collection of `rag_id` exists in the Qdrant of `rag`."""
+    return Collection(rag._client, rag_id).exists()  # noqa: SLF001
 
 
 @pytest.fixture
@@ -220,6 +238,41 @@ class TestChat:
         model = RecordingNext(ChatResponse(chunk("a", done=True)))
         await chat(session, "hello", ChatPipeline(model), db, EventBus())
         assert [context.max_iterations for context in model.calls] == [steps]
+
+    async def test_context_carries_the_rag_id_of_the_conversation(self, session: Session, db: SqlAlchemy) -> None:
+        model = RecordingNext(ChatResponse(chunk("a", done=True)))
+        await chat(session, "hello", ChatPipeline(model), db, EventBus())
+        assert [context.rag_id for context in model.calls] == [session.conv.rag_id]
+
+    async def test_first_message_stores_the_rag_id_with_the_branch(
+        self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy
+    ) -> None:
+        await chat(session, "hello", pipeline, db, EventBus())
+        assert session.conv.uuid is not None
+        assert db.get_branch_rag_id(session.conv.uuid) == session.conv.rag_id
+
+    async def test_first_message_creates_the_collection(
+        self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy, rag: Rag
+    ) -> None:
+        rag_id = session.conv.rag_id
+        assert rag_id is not None
+        assert not _exists(rag, rag_id)
+        await chat(session, "hello", pipeline, db, EventBus(), rag)
+        await chat(session, "again", pipeline, db, EventBus(), rag)
+        assert session.conv.uuid is not None
+        assert _exists(rag, rag_id)
+        assert await rag.rag_id_for(session.conv.uuid) == rag_id
+
+    async def test_a_failing_collection_is_reported_and_the_chat_goes_on(
+        self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy, rag: Rag, embedder: FakeEmbedder
+    ) -> None:
+        embedder.failing = True
+        FakeAdapter.replies = [chunk("hi", done=True)]
+        await chat(session, "hello", pipeline, db, EventBus(), rag)
+        assert any(
+            isinstance(message, System) and "could not be created" in message.message for message in _sent(session)
+        )
+        assert _history(session)[-1] == {"role": "assistant", "content": "hi"}
 
     async def test_cancel_saves_no_answer(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         block = threading.Event()

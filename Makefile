@@ -12,18 +12,19 @@ install: $(SETTINGS)
 $(SETTINGS):
 	cp $(SETTINGS).template $(SETTINGS)
 
-run: qdrant
+run: docker
 	uv run $(NAME) --model ${MODEL}
 
-run-server:
+run-server: docker
 	uv run --package sensai-server sensai-server --config ./packages/server/settings.toml
 
 run-tui:
 	uv run --package sensai-tui sensai-tui --model ${MODEL}
-qdrant:
+
+docker:
 	docker compose up -d --wait
 
-qdrant-stop:
+docker-stop:
 	docker compose down
 
 help:
@@ -42,4 +43,4 @@ format:
 lock:
 	uv lock
 
-.PHONY: all install run run-server run-tui qdrant qdrant-stop tests lint format lock
+.PHONY: all install run run-server run-tui docker docker-stop tests lint format lock

@@ -39,7 +39,9 @@ from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
 from sensai_server.commands._dashboard import Dashboard
 from sensai_server.commands._effort import Effort as EffortCommand
+from sensai_server.commands._export import Export
 from sensai_server.commands._help import Help
+from sensai_server.commands._import import Import
 from sensai_server.commands._model import Model
 from sensai_server.commands._tools import ToolsCommand
 from sensai_server.pipeline import ChatPipeline
@@ -117,7 +119,17 @@ class TestLogin:
         with client.websocket_connect("/ws") as ws:
             session = _login(ws)
             assert session.model == MODEL
-            assert session.commands == ["/persona", "/help", "/branch", "/effort", "/model", "/tools", "/dashboard"]
+            assert session.commands == [
+                "/model",
+                "/persona",
+                "/branch",
+                "/tools",
+                "/effort",
+                "/export",
+                "/import",
+                "/dashboard",
+                "/help",
+            ]
             assert registry.get(session.client_id) is not None
 
     def test_login_twice_keeps_session(self, client: TestClient, registry: SessionRegistry) -> None:
@@ -438,7 +450,8 @@ class TestCommandAndComplete:
                 message=(
                     f"Available commands:\n- branch: {Branch.help}\n- dashboard: {Dashboard.help}\n"
                     f"- effort: {EffortCommand.help}\n"
-                    f"- help: {Help.help}\n- model: {Model.help}\n- persona: {PersonaCommand.help}\n"
+                    f"- export: {Export.help}\n- help: {Help.help}\n- import: {Import.help}\n"
+                    f"- model: {Model.help}\n- persona: {PersonaCommand.help}\n"
                     f"- tools: {ToolsCommand.help}"
                 )
             )
@@ -481,7 +494,7 @@ class TestDispatch:
         assert received_session.client_id == session.client_id
         assert received_message == message
 
-    def test_chat_reaches_its_handler_with_the_pipeline_db_and_events(
+    def test_chat_reaches_its_handler_with_the_pipeline_db_events_and_rag(
         self, app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         handler = AsyncMock()
@@ -491,10 +504,11 @@ class TestDispatch:
             _send(ws, Chat(prompt="hi"))
             _sync(ws)
         assert handler.await_args is not None
-        _, _, pipeline, db, events = handler.await_args.args
+        _, _, pipeline, db, events, rag = handler.await_args.args
         assert pipeline is app_state(app).pipeline
         assert db is app_state(app).db
         assert events is app_state(app).events
+        assert rag is app_state(app).rag
 
     def test_logout_reaches_its_handler_with_the_registry(
         self, client: TestClient, registry: SessionRegistry, monkeypatch: pytest.MonkeyPatch

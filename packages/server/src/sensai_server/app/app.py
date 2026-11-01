@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
+from redis import Redis as SyncRedis
+from redis.exceptions import RedisError
 from sensai_protocol import (
     Cancel,
     Chat,
@@ -22,6 +25,7 @@ from sensai_protocol import (
 from sensai_server.app import _handlers as handlers
 from sensai_server.app._state import AppState, app_state, set_app_state
 from sensai_server.app.outbound import Outbound
+from sensai_server.cache import CacheError, SemanticCache
 from sensai_server.chat.react import ReAct
 from sensai_server.commands import CommandRegistry, build_commands
 from sensai_server.events import EventBus
@@ -32,8 +36,9 @@ from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
 from sensai_server.monitoring.logger import InteractionLogger
 from sensai_server.pipeline import ChatPipeline
-from sensai_server.pipeline.modules import ModelStage, PersonaStage
+from sensai_server.pipeline.modules import CacheStage, ModelStage, PersonaStage, RagStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
+from sensai_server.rag import Rag
 from sensai_server.session import SessionRegistry
 from sensai_server.tools import build_tools
 from sensai_server.tools.tool_manager import ToolManager
@@ -44,9 +49,13 @@ if TYPE_CHECKING:
     from sensai_protocol import ClientMessage
 
     from sensai_server.config.settings import Settings
+    from sensai_server.memory.persistent_db.adapter import PersistentDatabase
     from sensai_server.session.session import Session
 
 logger = logging.getLogger(__name__)
+
+# How long, in seconds, the startup probe waits for the Redis server of the semantic cache.
+_REDIS_PROBE_TIMEOUT = 2
 
 router = APIRouter()
 
@@ -60,15 +69,15 @@ def create_app(
     and the default persona is stored in it if it is not there yet. The chat pipeline is built once
     (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task. So
     is the tool manager (see `_build_tool_manager`): each session keeps only its own tool state. So is the ReAct loop
-    the pipeline's model stage hands each exchange to: it keeps nothing between two exchanges. So is the event bus
-    every chat emits its model calls on: the interaction logger stores them in the database, unless logging is
-    disabled. At shutdown, the running chats are stopped and their last calls stored (see `_lifespan`).
+    the pipeline's model stage hands each exchange to: it keeps nothing between two exchanges. So is the semantic
+    cache (see `_build_cache`), when there is one: its entries are cleared when the app starts and when it stops. So
+    is the event bus every chat emits its model calls on: the interaction logger stores them in the database, unless
+    logging is disabled. At shutdown, the running chats are stopped and their last calls stored (see `_lifespan`).
     """
     pm: ProviderManager = ProviderManager(settings.llm)
     embedder = _build_embedder(settings, pm)
     tool_manager = _build_tool_manager(settings, embedder)
     react = ReAct(pm, tool_manager)
-    pipeline = _build_pipeline(react)
     set_db(settings.db.persistent)
     db = get_db()
     if db is None:
@@ -77,10 +86,13 @@ def create_app(
     persona_manager = PersonaManager(db)
     with contextlib.suppress(DuplicatePersonaError):
         persona_manager.create_default_persona()
+    rag = _build_rag(settings, embedder, db)
+    cache = _build_cache(settings, embedder)
+    pipeline = _build_pipeline(react, rag, cache)
 
-    sessions = SessionRegistry(pm, persona_manager, tool_manager)
+    sessions = SessionRegistry(pm, persona_manager, tool_manager, cache)
     commands = CommandRegistry()
-    commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager))
+    commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager, rag=rag))
     events = EventBus()
     interaction_logger = InteractionLogger(db.interactions, settings.logging)
     interaction_logger.attach(events)
@@ -99,6 +111,8 @@ def create_app(
             registry=sessions,
             commands=commands,
             pipeline=pipeline,
+            rag=rag,
+            cache=cache,
             events=events,
             interaction_logger=interaction_logger,
         ),
@@ -107,21 +121,20 @@ def create_app(
     return app
 
 
-@contextlib.asynccontextmanager
-async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    """Serve `app`, then, at shutdown, stop every running chat and wait until its model calls are stored.
+def _build_pipeline(react: ReAct, rag: Rag | None, cache: SemanticCache | None) -> ChatPipeline:
+    """Build the chain every chat goes through: guard, semantic cache, persona, RAG's extracts, then the ReAct loop.
 
-    Stopping a chat mid-answer emits its call as interrupted: the logger is drained only after the sessions are closed.
+    The guard comes first, so that a rejected prompt is never embedded. The cache comes before the persona and the
+    RAG, so that a hit skips the RAG search and the model, and a stored answer already names its sources. Without
+    `cache`, nothing is cached; without `rag`, there are no extracts.
     """
-    yield
-    state = app_state(app)
-    await state.registry.close_all()
-    await state.interaction_logger.drain()
-
-
-def _build_pipeline(react: ReAct) -> ChatPipeline:
-    """Build the chain every chat goes through: the guard first, then the persona, then the model's ReAct loop."""
-    return ChatPipeline(ModelStage(react)).use(BadWordsGuard()).use(PersonaStage())
+    pipeline = ChatPipeline(ModelStage(react)).use(BadWordsGuard())
+    if cache is not None:
+        pipeline.use(CacheStage())
+    pipeline.use(PersonaStage())
+    if rag is not None:
+        pipeline.use(RagStage(rag))
+    return pipeline
 
 
 def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:
@@ -137,6 +150,76 @@ def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:
         logger.warning("no provider serves the embedding model '%s': the web tools are left out", model)
         return None
     return Embedder(provider, model)
+
+
+def _build_rag(settings: Settings, embedder: Embedder | None, db: PersistentDatabase) -> Rag | None:
+    """Build the RAG shared by every session, on the Qdrant of the settings, or None without an embedder.
+
+    Without it, the conversations have no RAG: at startup there is no client to tell, so it is logged.
+    """
+    if embedder is None:
+        logger.warning("no embedder: the RAG is left out")
+        return None
+    location = settings.db.rag.location
+    return Rag(location, embedder, db)
+
+
+def _build_cache(settings: Settings, embedder: Embedder | None) -> SemanticCache | None:
+    """Build the semantic cache shared by every session, on the Redis of the settings, or None without one.
+
+    Without an embedder, or without a Redis server answering, the conversations have no cache: at startup there is no
+    client to tell, so it is logged. `create_app` runs before the event loop does, so Redis is probed with a short-lived
+    blocking client; the cache itself only uses its async client, from the event loop.
+    """
+    if embedder is None:
+        logger.warning("no embedder: the semantic cache is left out")
+        return None
+    if not _redis_answers(settings.cache.redis_url):
+        logger.warning("the Redis server does not answer: the semantic cache is left out")
+        return None
+    return SemanticCache(settings.cache.redis_url, embedder, settings.cache.similarity_threshold, settings.cache.ttl)
+
+
+def _redis_answers(redis_url: str) -> bool:
+    """Report whether the Redis server at `redis_url` answers a ping, within `_REDIS_PROBE_TIMEOUT` seconds."""
+    client = SyncRedis.from_url(
+        redis_url, socket_connect_timeout=_REDIS_PROBE_TIMEOUT, socket_timeout=_REDIS_PROBE_TIMEOUT
+    )
+    try:
+        return bool(client.ping())
+    except RedisError:
+        return False
+    finally:
+        client.close()
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    """Clear the semantic cache when the app starts, then close every session and clear the cache when it stops.
+
+    At startup, the entries left are those of a previous run's sessions, which no longer exist: each login has a fresh
+    client id. A failing clear is logged and never stops the app from starting or stopping. Stopping a chat mid-answer
+    emits its call as interrupted: the interaction logger is drained only after the sessions are closed.
+    """
+    state = app_state(app)
+    if state.cache is not None:
+        await _clear_cache(state.cache)
+    try:
+        yield
+    finally:
+        await state.registry.close_all()
+        await state.interaction_logger.drain()
+        if state.cache is not None:
+            await _clear_cache(state.cache)
+            await state.cache.close()
+
+
+async def _clear_cache(cache: SemanticCache) -> None:
+    """Delete every entry of `cache`, logging a failure instead of raising it."""
+    try:
+        await cache.clear_all()
+    except CacheError as error:
+        logger.warning("the semantic cache could not be cleared: %s", error)
 
 
 def _build_tool_manager(settings: Settings, embedder: Embedder | None) -> ToolManager:
@@ -200,7 +283,7 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message, state.pipeline, state.db, state.events)
+            await handlers.handle_chat(session, message, state.pipeline, state.db, state.events, state.rag)
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():

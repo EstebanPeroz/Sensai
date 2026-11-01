@@ -13,7 +13,9 @@ from sensai_server.commands._base import Command
 from sensai_server.commands._branch import Branch
 from sensai_server.commands._dashboard import Dashboard
 from sensai_server.commands._effort import Effort
+from sensai_server.commands._export import Export
 from sensai_server.commands._help import Help
+from sensai_server.commands._import import Import
 from sensai_server.commands._model import Model
 from sensai_server.commands._tools import ToolsCommand
 from sensai_server.llm.persona import Persona, PersonaManager
@@ -110,7 +112,17 @@ class _Echo(Command):
 
 class TestCommandRegistry:
     async def test_names(self, commands: CommandRegistry) -> None:
-        assert commands.names() == ["/persona", "/help", "/branch", "/effort", "/model", "/tools", "/dashboard"]
+        assert commands.names() == [
+            "/model",
+            "/persona",
+            "/branch",
+            "/tools",
+            "/effort",
+            "/export",
+            "/import",
+            "/dashboard",
+            "/help",
+        ]
 
     async def test_execute_splits_the_arguments(self, sessions: SessionRegistry) -> None:
         session, out = await _open(sessions)
@@ -153,8 +165,8 @@ class TestHelp:
         await commands.execute(session, "/help")
         assert _system(out) == (
             f"Available commands:\n- branch: {Branch.help}\n- dashboard: {Dashboard.help}\n- effort: {Effort.help}"
-            f"\n- help: {Help.help}"
-            f"\n- model: {Model.help}\n- persona: {PersonaCommand.help}\n- tools: {ToolsCommand.help}"
+            f"\n- export: {Export.help}\n- help: {Help.help}\n- import: {Import.help}\n- model: {Model.help}"
+            f"\n- persona: {PersonaCommand.help}\n- tools: {ToolsCommand.help}"
         )
 
     async def test_lists_the_commands_of_its_registry(self, sessions: SessionRegistry) -> None:

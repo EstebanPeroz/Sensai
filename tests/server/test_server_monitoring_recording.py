@@ -4,9 +4,11 @@ import threading
 from collections.abc import Iterator
 from contextlib import aclosing
 from pathlib import Path
+from typing import cast
 
 import pytest
 from sensai_protocol import AiChunk
+from sensai_server.cache import SessionCache
 from sensai_server.chat import chat
 from sensai_server.chat.react import ReAct
 from sensai_server.events import EventBus
@@ -16,14 +18,14 @@ from sensai_server.llm.provider import ChatResponse, ProviderManager
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
 from sensai_server.monitoring.interaction import Interaction, InteractionStatus
 from sensai_server.pipeline import ChatContext, ChatPipeline
-from sensai_server.pipeline.modules import ModelStage, PersonaStage
+from sensai_server.pipeline.modules import CacheStage, ModelStage, PersonaStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
 from sensai_server.session import Session
 from sensai_server.tools.tool import Tool, ToolContext
 from sensai_server.tools.tool_manager import ToolManager
 
 from tests.server.conftest import MODEL, SETTINGS, db_url
-from tests.server.fakes import FakeAdapter, RecordingOutbound, call, chunk, tool_call_chunk
+from tests.server.fakes import FakeAdapter, FakeSessionCache, RecordingOutbound, call, chunk, tool_call_chunk
 
 TIMEOUT = 2
 ANSWER = "Bonjour !"
@@ -187,8 +189,9 @@ def session(persona_manager: PersonaManager) -> Session:
 
 @pytest.fixture
 def pipeline() -> ChatPipeline:
+    """The pipeline of the app, with the semantic cache: a session without a cache skips the cache stage."""
     react = ReAct(ProviderManager(SETTINGS.llm), ToolManager())
-    return ChatPipeline(ModelStage(react)).use(BadWordsGuard()).use(PersonaStage())
+    return ChatPipeline(ModelStage(react)).use(BadWordsGuard()).use(CacheStage()).use(PersonaStage())
 
 
 @pytest.fixture
@@ -280,3 +283,41 @@ class TestChatEmission:
         assert [item.content for item in _ai_chunks(session)] == ["hi ", "there"]
         assert session.conv.history.to_json()[-1] == {"role": "assistant", "content": "hi there"}
         assert "subscriber down" in caplog.text
+
+    async def test_cache_miss_records_the_call_and_a_hit_emits_nothing(
+        self,
+        session: Session,
+        pipeline: ChatPipeline,
+        db: SqlAlchemy,
+        events: tuple[EventBus, list[Interaction]],
+    ) -> None:
+        bus, received = events
+        cache = FakeSessionCache()
+        session.cache = cast("SessionCache", cache)
+
+        await chat(session, "hello", pipeline, db, bus)
+        assert [interaction.status for interaction in received] == [InteractionStatus.OK]
+        assert cache.stored == [("hello", ANSWER)]
+
+        await chat(session, "hello", pipeline, db, bus)
+        assert len(received) == 1
+        assert [item.content for item in _ai_chunks(session)] == [ANSWER, ANSWER]
+
+    async def test_raising_subscriber_still_fills_the_cache(
+        self,
+        session: Session,
+        pipeline: ChatPipeline,
+        db: SqlAlchemy,
+    ) -> None:
+        def broken(_: Interaction) -> None:
+            msg = "subscriber down"
+            raise RuntimeError(msg)
+
+        bus = EventBus()
+        bus.subscribe(Interaction, broken)
+        cache = FakeSessionCache()
+        session.cache = cast("SessionCache", cache)
+
+        await chat(session, "hello", pipeline, db, bus)
+
+        assert cache.stored == [("hello", ANSWER)]

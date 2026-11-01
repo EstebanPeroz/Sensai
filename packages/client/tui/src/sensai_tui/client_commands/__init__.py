@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from sensai_protocol import ClientCommand
 
-from .file import ClientCommandFailedError, read_file
+from .file import ClientCommandFailedError, read_binary_file, read_file, write_file
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -15,6 +15,15 @@ type ClientCommandHandler = Callable[[Any], Awaitable[ProtocolModel]]
 
 CLIENT_COMMAND_HANDLERS: dict[ClientCommand, ClientCommandHandler] = {
     ClientCommand.READ_FILE: read_file,
+    ClientCommand.WRITE_FILE: write_file,
+    ClientCommand.READ_BINARY_FILE: read_binary_file,
 }
 
-__all__ = ["CLIENT_COMMAND_HANDLERS", "ClientCommandFailedError", "ClientCommandHandler", "read_file"]
+__all__ = [
+    "CLIENT_COMMAND_HANDLERS",
+    "ClientCommandFailedError",
+    "ClientCommandHandler",
+    "read_binary_file",
+    "read_file",
+    "write_file",
+]
