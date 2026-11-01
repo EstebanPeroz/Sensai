@@ -1,48 +1,176 @@
 # Sensai
 
+Local CLI assistant for analysts, talking to Ollama over its HTTP API.
+
+## Features
+
+Every feature, with how to use it, is described in [docs/features.md](docs/features.md); the user stories and user
+scenarios behind them are in [docs/user_stories/analyst.md](docs/user_stories/analyst.md).
+
+| Feature | Use |
+|---|---|
+| Streaming chat with history, model chosen with `--model` or `/model` | `make run` |
+| Session persistence and branching (fork, resume, interrupt) | `/branch list\|set\|fork\|rename\|remove` |
+| Token budget shown live, conversation compressed near the budget | `[context]` settings, `/compress` |
+| ReAct reasoning loop with a thinking effort | `/effort off\|low\|medium\|high` |
+| Web search and page fetch, with fallback backends | `web_search`, `web_fetch` tools |
+| MCP servers, local (stdio) or remote (http) | `[mcp.<name>]` tables, see below |
+| RAG over text, Markdown, HTML, PDF files and web pages, with sources | `/index`, `/ask`, plain chat |
+| Human in the loop: tool confirmation and questions to the user | `[features].confirm`, `ask_user` tool |
+| Personas switchable at runtime | `/persona list\|info\|load\|create\|update` |
+| Semantic cache in Redis | `[cache]` settings |
+| Input guardrail and security persona | automatic, `/persona load security` |
+| Logging of every model call and monitoring dashboard | `[logging]` settings, `/dashboard [24h\|7d\|30d]` |
+| Export and import of conversations as JSON | `/export current\|<uuid>`, `/import <path>` |
+
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/)
+- [Ollama](https://ollama.com), which serves the models (see below)
+- [uv](https://docs.astral.sh/uv/), which installs Python 3.14 and the dependencies
 - `make`
 - Docker, for the vector database the RAG indexes into and the Redis server of the semantic cache
+
+## Installing Ollama
+
+1. Install Ollama:
+
+   ```sh
+   curl -fsSL https://ollama.com/install.sh | sh     # Linux
+   ```
+
+   On macOS and Windows, download the installer from [ollama.com/download](https://ollama.com/download).
+
+2. Start the server, if the installer did not start it as a service:
+
+   ```sh
+   ollama serve      # answers on http://localhost:11434
+   ```
+
+3. Pull a chat model and the embedding model:
+
+   ```sh
+   ollama pull qwen3:1.7b              # chat model used by `make run`
+   ollama pull nomic-embed-text        # embedding model of the RAG, the web tools and the cache
+   ```
+
+   The embedding model is required: Sensai stops at start if Ollama does not serve the one set in
+   `[llm].embedding_model`.
+
+4. Check that both are there:
+
+   ```sh
+   ollama list
+   ```
+
+### Which models
+
+The choice comes from our benchmarks (summary in [technical-notes.md](docs/architecture/technical-notes.md),
+full tables in [benchmarks/models/results](benchmarks/models/results/README.md) and
+[benchmarks/embeddings/results](benchmarks/embeddings/results/README.md)):
+
+| Use | Model | Why |
+|---|---|---|
+| Chat, light default | `qwen3:1.7b` | 1.4 GB, fastest (161 tok/s), runs without a GPU, but picks the right tool in 5 cases of 11 |
+| Chat, best results | `gemma4:e4b` | Only model passing every case (11/11 tools, 6/6 instructions); 6.6 GB, slow first load |
+| Chat, runner-up | `qwen2.5:7b` | Every instruction followed, 8/11 tool cases |
+| Embeddings, default | `nomic-embed-text` | 0.27 GB, small enough to stay loaded beside the chat model |
+| Embeddings, better retrieval | `embeddinggemma` | Right passage first in 17/20 cases against 10/20, at 0.62 GB |
+
+Any model Ollama serves works: pass it with `--model`, or switch with `/model` while Sensai runs. Models without the
+`tools` capability answer, but cannot use any tool.
 
 ## Quick start
 
 ```sh
-make          # create .venv, install dependencies and the pre-commit hooks
-make run      # run the program
+make                          # create .venv, install dependencies and the pre-commit hooks, copy settings.toml
+make run                      # start Qdrant and Redis with Docker, then Sensai on qwen3:1.7b
+make run MODEL=gemma4:e4b     # same, on another model
 ```
+
+Without `make`:
+
+```sh
+docker compose up -d --wait
+uv run sensai --model qwen3:1.7b
+```
+
+`uv sync --locked` installs the dependencies; a `requirements.txt` is also provided for `pip install -r
+requirements.txt`.
+
+## Configuration
+
+Everything is set in `src/sensai/config/settings.toml`, which `make install` copies from `settings.toml.template`
+(git-ignored, edit your copy). Without it, Sensai runs with the template; `--config <path>` loads another file.
+
+| Table | What it sets |
+|---|---|
+| `[llm]`, `[llm.ollama]` | Embedding model, URL of the Ollama API |
+| `[db]` | SQLite database of the conversations, location of Qdrant |
+| `[context]` | Token budget, warning threshold, messages kept out of the compression |
+| `[cache]` | Redis URL, similarity threshold and lifetime of the cached answers |
+| `[web]` | Ollama web API key (optional, DuckDuckGo is used without it), timeout |
+| `[features]` | Tools to disable, tools asking confirmation before they run |
+| `[personas]` | Persona files loaded at start |
+| `[logging]` | Record the model calls, with or without their content |
+| `[mcp.<name>]` | MCP servers, see [MCP server configuration](#mcp-server-configuration) |
+
+## Usage
+
+Type a message and press Enter: the answer streams in. Commands start with `/`, and Tab completes them and their
+arguments. `/help` lists them all.
+
+```text
+> What does EBITDA stand for?                          plain question, answered with the conversation as context
+> /effort off                                          answer directly, without thinking steps or tools
+> /effort high                                         think up to 5 steps, using the tools
+> How did NVIDIA stock move this week?                 -> Using web_search... then an answer from the results
+
+> /index reports/q3_results.pdf reports/forecast.md    index documents (text, Markdown, HTML, PDF, URLs)
+> How does Q3 revenue compare with the forecast?       answer from the documents, ending with "Sources: ..."
+> /ask What risks does the forecast list?              answer from the documents only
+
+> /persona list                                        list the personas
+> /persona load analyst                                switch persona, keeping the conversation
+> /model                                               list the models Ollama serves
+> /model qwen2.5:7b                                    switch model
+
+> /branch list                                         list the stored conversations
+> /branch set <uuid>                                   resume one
+> /branch fork                                         copy the current one into a new branch
+> /compress                                            summarise the oldest messages to free context
+> /export current                                      write the conversation to <uuid>.json
+> /import <path>                                       load an exported conversation
+
+> /tools list                                          list the tools, and which ask confirmation
+> /dashboard 7d                                        metrics of the model calls over 7 days
+```
+
+The input box shows the context used against the budget (top left) and the thinking effort (bottom right). Escape
+or Ctrl+C stops an answer; Ctrl+Q quits.
+
+Complete walkthroughs, from one use case to another, are the scenarios of
+[docs/user_stories/analyst.md](docs/user_stories/analyst.md#4-user-scenarios).
 
 ## Vector database
 
-`/index` and `/ask` store and read their chunks in Qdrant, which `make run`
-starts for you. On its own:
+`/index` and `/ask` store and read their chunks in Qdrant, which `make run` starts for you. On its own:
 
 ```sh
-make qdrant
-make qdrant-stop
+make docker         # start Qdrant and Redis
+make docker-stop    # stop them
 ```
 
-The documents live in the `sensai_qdrant_data` Docker volume, so a container
-stopped and started again finds them. `docker compose down -v` is what drops
-them.
+The documents live in the `qdrant_data` Docker volume, so a container stopped and started again finds them.
+`docker compose down -v` is what drops them.
 
-Without Docker, pointing `db.rag.location` in `settings.toml` at a directory
-(`"rag_qdrant"`) runs Qdrant embedded in the process instead. It needs no
-server, but it locks that directory for one process at a time: the test suite
-and a running sensai cannot share one.
+Without Docker, pointing `db.rag.location` in `settings.toml` at a directory (`"rag_qdrant"`) runs Qdrant embedded in
+the process instead. It needs no server, but it locks that directory for one process at a time: the test suite and a
+running sensai cannot share one.
 
 ## Semantic cache
 
-Answers are cached in Redis, which `make run` starts along with Qdrant (`make qdrant` and `make qdrant-stop` start and
-stop both). The cached answers live in the `sensai_redis-data` Docker volume. Without a reachable Redis server, sensai
-runs without the cache.
-
-You can also call uv directly, without activating the virtualenv:
-
-```sh
-uv run sensai             # run the program
-```
+Answers are cached in Redis, which `make run` starts along with Qdrant. The cached answers live in the `redis-data`
+Docker volume. Without a reachable Redis server, sensai runs without the cache.
 
 ## MCP server configuration
 
@@ -155,15 +283,18 @@ The CI rejects any code that does not pass these checks or the tests.
 
 ## Make targets
 
-| Target    | Description                                                     |
-|-----------|-----------------------------------------------------------------|
-| `all`     | Default. Runs `install`                                         |
-| `install` | `uv sync --locked`, then installs the pre-commit hooks          |
-| `run`     | Runs the program                                                |
-| `tests`   | Runs the test suite with `pytest`                               |
-| `lint`    | Runs every pre-commit check on all files                        |
-| `format`  | Runs `ruff format` and `ruff check --fix`                       |
-| `lock`    | Regenerates `uv.lock` from `pyproject.toml`                     |
+| Target        | Description                                                         |
+|---------------|---------------------------------------------------------------------|
+| `all`         | Default. Runs `install`                                             |
+| `install`     | `uv sync --locked`, the pre-commit hooks, and a copy of the settings |
+| `run`         | Starts Qdrant and Redis, then Sensai on `MODEL` (`qwen3:1.7b`)      |
+| `docker`      | Starts Qdrant and Redis with Docker Compose                         |
+| `docker-stop` | Stops them                                                          |
+| `help`        | Shows the command line options                                      |
+| `tests`       | Runs the test suite with `pytest`                                   |
+| `lint`        | Runs every pre-commit check on all files                            |
+| `format`      | Runs `ruff format` and `ruff check --fix`                           |
+| `lock`        | Regenerates `uv.lock` from `pyproject.toml`                         |
 
 ## Dependencies
 
@@ -196,18 +327,17 @@ versions.
 .
 ├── pyproject.toml            # project metadata, dependencies, tool config
 ├── uv.lock                   # locked dependencies (generated)
-├── .python-version           # Python version used by uv
-├── .pre-commit-config.yaml   # pre-commit hooks
+├── requirements.txt          # the same dependencies, for pip
 ├── Makefile
+├── compose.yaml              # Qdrant and Redis
 ├── .github/workflows/        # CI: install, run, style, tests + mirroring
-├── src/
-│   └── sensai/               # the package
-│       ├── __init__.py
-│       ├── __main__.py       # `python -m sensai`, delegates to main()
-│       ├── main.py           # entry point and composition root: main()
-│       └── parsing.py        # command line arguments
-├── tests/                    # pytest test suite
+├── src/                      # the code of Sensai
+├── tests/                    # pytest test suite, Ollama mocked
+├── benchmarks/               # results of the chat and embedding model benchmarks
 └── docs/
+    ├── features.md           # implemented features, and their traceability to stories, code and tests
+    ├── user_stories/         # user stories and user scenarios
+    └── architecture/         # architecture, technical choices, database schema
 ```
 
 ## Contributors
