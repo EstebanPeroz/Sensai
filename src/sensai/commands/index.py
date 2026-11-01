@@ -8,6 +8,7 @@ from sensai.rag.indexation_rag import Indexation
 
 if TYPE_CHECKING:
     from sensai.rag.indexer import Indexer
+    from sensai.ui.adapter import UIAdapter
 
 _MAX_COMPLETIONS = 50
 # How often the dispatch thread looks for a UI event while indexing runs.
@@ -47,12 +48,13 @@ class Index(Command):
             self._ui.send_system_message("An indexation is already running.")
             return
         self._running.set()
-        threading.Thread(target=self._index_all, args=args, daemon=True).start()
+        # The worker keeps the UI that asked: it may outlive a later `bind_ui`, and must not report to that one.
+        threading.Thread(target=self._index_all, args=(self._ui, *args), daemon=True).start()
         while self._running.is_set():
             if self._ui.wait_event(timeout=_POLL_SECONDS):
                 return
 
-    def _index_all(self, *sources: str) -> None:
+    def _index_all(self, ui: UIAdapter, *sources: str) -> None:
         """Index every source, reporting each one then a summary. Runs on a worker thread.
 
         A source that cannot be indexed is reported and skipped: the others are
@@ -65,14 +67,14 @@ class Index(Command):
                     indexed = self._indexer.index(source)
                 except RagError as error:
                     failures += 1
-                    self._ui.send_system_message(f"{source}: {error.message}")
+                    ui.send_system_message(f"{source}: {error.message}")
                     continue
                 chunks += indexed
-                self._ui.send_system_message(f"{source}: {indexed} chunks")
+                ui.send_system_message(f"{source}: {indexed} chunks")
             if len(sources) > 1 or failures:
-                self._ui.send_system_message(self._summary(len(sources), chunks, failures))
+                ui.send_system_message(self._summary(len(sources), chunks, failures))
         except Exception as error:  # noqa: BLE001 - nothing above would report a worker dying
-            self._ui.send_system_message(f"Indexation stopped on an unexpected error: {error!r}")
+            ui.send_system_message(f"Indexation stopped on an unexpected error: {error!r}")
         finally:
             self._running.clear()
 
