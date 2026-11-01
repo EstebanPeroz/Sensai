@@ -55,3 +55,17 @@ budget = 8192
 warning_threshold = 0.8
 # Number of the last messages always sent as they are, never summarised.
 keep_recent = 6
+
+
+# MCP servers to start, one `[mcp.<name>]` table each; the name must only contain letters, digits, '_' or '-'.
+# Their tools are named `<name>__<tool>`. See the README for every key.
+# [mcp.filesystem]
+# command = "npx"
+# args = ["--yes", "@modelcontextprotocol/server-filesystem", "/tmp/sensai-mcp-demo"]
+# startup_timeout = 30
+#
+# A remote server; keep its token in settings.toml only.
+# [mcp.remote]
+# transport = "http"
+# url = "http://127.0.0.1:8000/mcp"
+# headers = { Authorization = "Bearer <token>" }

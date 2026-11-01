@@ -1,8 +1,6 @@
 import contextlib
 from typing import TYPE_CHECKING
 
-import anyio
-
 from sensai import ui
 from sensai.commands import Ask, Branch, Command, Compress, Dashboard, Help, Index, Model, PersonaCommand, StateCommand
 from sensai.commands.data_transfer import Export, Import
@@ -19,7 +17,7 @@ from sensai.llm.persona import DuplicatePersonaError
 from sensai.llm.persona_manager import PersonaManager
 from sensai.llm.provider_manager import ProviderManager
 from sensai.llm.thinking.react import ReAct
-from sensai.mcp.client import MCPClient
+from sensai.mcp.client import MCPHost
 from sensai.memory.persistent_db.base import get_db
 from sensai.memory.persistent_db.error import DbConnectionError
 from sensai.monitoring.budget import ContextBudget, ContextUsage
@@ -40,6 +38,7 @@ if TYPE_CHECKING:
     import argparse
 
     from sensai.config.settings import Settings
+    from sensai.mcp.errors import MCPError
     from sensai.memory.persistent_db.adapter import PersistentDatabase
     from sensai.monitoring.interaction import Interaction
 
@@ -54,7 +53,8 @@ class Core:
     _command_registry: CommandRegistry
     _settings: Settings
     _events: EventBus
-    _mcp_client: MCPClient | None
+    _mcp_host: MCPHost
+    _mcp_failures: dict[str, MCPError]
     _tool_manager: ToolManager
     _context_budget: ContextBudget
     _compressor: Compressor
@@ -63,7 +63,7 @@ class Core:
         """Set up the provider manager and conversation. Safe to call before `ui.run()` starts."""
         self._ui = ui
         self._settings = settings
-        self._mcp_client = MCPClient(settings.mcp) if settings.mcp is not None else None
+        self._mcp_host = MCPHost(settings.mcp)
 
         db = get_db()
         if db is None:
@@ -85,8 +85,8 @@ class Core:
         InteractionLogger(db.interactions, settings.logging).attach(self._events)
         embedder = self._build_embedder()
         tools = build_tools(settings, embedder, self._ui.ask_user)
-        if self._mcp_client is not None:
-            tools.extend(anyio.run(self._mcp_client.start))
+        mcp_tools, self._mcp_failures = self._mcp_host.start()
+        tools.extend(mcp_tools)
         self._tool_manager = ToolManager(
             tools,
             disabled=settings.features.disabled_in("tools"),
@@ -109,8 +109,11 @@ class Core:
         self._command_registry = self._build_command_registry(db, indexer, retrieval)
 
     def run(self) -> None:
-        """Run the application."""
-        self._run_application()
+        """Run the application, then close the MCP servers."""
+        try:
+            self._run_application()
+        finally:
+            self._mcp_host.close()
 
     def _run_application(self) -> None:
         """Wait for `ui` to be ready, then dispatch its events to the conversation until quit.
@@ -126,6 +129,8 @@ class Core:
         unknown = self._tool_manager.unknown_confirm()
         if unknown:
             self._ui.send_system_message(f"Unknown tools to confirm in the settings: {', '.join(unknown)}")
+        for name, err in self._mcp_failures.items():
+            self._ui.send_system_message(f"MCP server '{name}' failed to start, its tools are unavailable: {err}")
 
         self._ui.set_completions(
             {f"/{command.name}": command.completions for command in self._command_registry.commands()}
