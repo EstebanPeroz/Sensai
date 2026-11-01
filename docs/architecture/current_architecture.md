@@ -135,3 +135,42 @@ awaits `drain()` so the pending writes are stored.
 
 `/dashboard [24h|7d|30d]` reads every logged call of the period and its baseline, across all sessions, builds the
 report with `monitoring/metrics.py`, and sends it to the client as a `DashboardReport`.
+
+## Server: MCP host
+
+The server (`packages/server`) offers the tools of external MCP servers next to its built-in tools. `MCPHost`
+(`sensai_server/tools/mcp/host.py`) keeps one session open to every enabled `[mcp.<name>]` server, from startup to
+shutdown, on **its own anyio event loop in a background thread**, beside uvicorn's loop:
+
+```mermaid
+flowchart LR
+    subgraph UVICORN["uvicorn loop"]
+        REACT["ReAct"] --> TM["ToolManager"] --> TOOL["MCPTool.run"]
+    end
+
+    subgraph HOSTTHREAD["MCPHost thread (own anyio loop)"]
+        SERVE["_serve<br/>one task group"]
+        S1["MCPServerSession(fs)"]
+        S2["MCPServerSession(remote)"]
+        SERVE --> S1
+        SERVE --> S2
+    end
+
+    TOOL -->|"wrap_future(host.call)"| S1
+    S1 <-->|stdio| FS[("subprocess")]
+    S2 <-->|streamable HTTP| REMOTE[("remote server")]
+```
+
+- **Creator: `build_tools`.** `create_app` runs before uvicorn starts its loop, so `build_tools` creates the host,
+  starts it (servers open concurrently, each listing its tools under `startup_timeout`), and appends one `MCPTool`
+  per tool, named `<server>__<tool>`. A server that fails to start is logged and its tools are left out; the app
+  still starts. `build_tools` returns the host with the tools, and `AppState.mcp` keeps it.
+- **Calls.** `MCPTool.run` awaits `asyncio.wrap_future(host.call(...))`, which schedules `session.call_tool` on the
+  host's loop through its portal, so uvicorn's loop never blocks. Cancelling the chat cancels the asyncio future, and
+  through it the call on the host's loop. One `ClientSession` per server serves every client session at once.
+- **Disconnect.** A dropped subprocess or connection is logged once; every later call to that server returns an
+  `error: MCP server '<name>' disconnected…` message to the model. There is no reconnection.
+- **Closer: `_lifespan`.** On shutdown, after `registry.close_all()` has cancelled the running tool calls, it runs
+  `asyncio.to_thread(state.mcp.close)`, which closes every session, reaps every subprocess and stops the thread.
+  `close` is idempotent: `create_app` also calls it when a later startup step fails, and `main` in a `finally` around
+  `uvicorn.run`, so no thread or subprocess outlives the process.
