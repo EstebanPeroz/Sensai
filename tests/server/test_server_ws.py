@@ -40,6 +40,7 @@ from sensai_server.app._state import app_state
 from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
+from sensai_server.commands._compress import Compress
 from sensai_server.commands._dashboard import Dashboard
 from sensai_server.commands._effort import Effort as EffortCommand
 from sensai_server.commands._export import Export
@@ -132,6 +133,7 @@ class TestLogin:
                 "/export",
                 "/import",
                 "/dashboard",
+                "/compress",
                 "/help",
             ]
             assert registry.get(session.client_id) is not None
@@ -452,7 +454,8 @@ class TestCommandAndComplete:
             assert _receive(ws) == Input(role=Role.USER, content="/help", command=True)
             assert _receive(ws) == System(
                 message=(
-                    f"Available commands:\n- branch: {Branch.help}\n- dashboard: {Dashboard.help}\n"
+                    f"Available commands:\n- branch: {Branch.help}\n- compress: {Compress.help}\n"
+                    f"- dashboard: {Dashboard.help}\n"
                     f"- effort: {EffortCommand.help}\n"
                     f"- export: {Export.help}\n- help: {Help.help}\n- import: {Import.help}\n"
                     f"- model: {Model.help}\n- persona: {PersonaCommand.help}\n"

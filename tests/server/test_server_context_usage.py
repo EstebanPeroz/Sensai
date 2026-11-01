@@ -238,3 +238,25 @@ class TestBranchCommand:
 
         assert _usages(session) == []
         assert isinstance(_sent(session)[-1], System)
+
+    async def test_remove_forgets_the_usage_of_the_branch(
+        self, session: ServerSession, db: SqlAlchemy, pm: ProviderManager, budget: ContextBudget, events: EventBus
+    ) -> None:
+        target = _new_branch(db)
+        _measure(events, target, 1500)
+
+        await Branch(db, pm, budget).execute(session, "remove", str(target))
+
+        assert (await budget.usage(MODEL, target)).used is None
+        assert _usages(session) == []
+
+    async def test_a_failed_remove_keeps_the_usage(
+        self, session: ServerSession, db: SqlAlchemy, pm: ProviderManager, budget: ContextBudget, events: EventBus
+    ) -> None:
+        current = _new_branch(db)
+        await Branch(db, pm, budget).execute(session, "set", str(current))
+        _measure(events, current, 1500)
+
+        await Branch(db, pm, budget).execute(session, "remove", str(current))
+
+        assert (await budget.usage(MODEL, current)).used == 1500

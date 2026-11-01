@@ -91,7 +91,7 @@ class Branch(Command):
         await send_context_usage(session, self._budget)
 
     async def _remove(self, session: Session, uuid: str) -> None:
-        """Remove the branch identified by uuid."""
+        """Remove the branch identified by uuid, and forget its context usage."""
         target_id: UUID | None = self._try_parse_uuid(uuid)
         if target_id is None:
             await session.out.send_system_message("parameter is not a valid UUID.")
@@ -104,6 +104,8 @@ class Branch(Command):
         except db_err.InvalidInstanceError:
             await session.out.send_system_message(f"Failed to remove {uuid}")
             return
+        if self._budget is not None:
+            self._budget.forget(target_id)
         await session.out.send_system_message(f"Branch {uuid} removed")
 
     async def _rename(self, session: Session, uuid: str, new_name: str) -> None:

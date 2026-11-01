@@ -108,6 +108,7 @@ def fake_providers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(FakeAdapter, "last_payload", None)
     monkeypatch.setattr(FakeAdapter, "tools", False)
     monkeypatch.setattr(FakeAdapter, "shown", [])
+    monkeypatch.setattr(FakeAdapter, "context_length", None)
     monkeypatch.setattr(FakeAdapter, "block", None)
     monkeypatch.setattr(FakeAdapter, "closed", threading.Event())
 

@@ -3,6 +3,29 @@
 The Sensai logic, served to the clients over a websocket. Start it with `make run-server`, which reads
 `packages/server/settings.toml` (copied from `settings.toml.template`).
 
+## Context budget
+
+The `[context]` table sets how much of the model's context a conversation may take. The client shows the usage of
+the current branch as a gauge; past the warning threshold, the next prompt first asks whether to compress the
+conversation or to start a new one, and `/compress` summarises it by hand at any time.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `budget` | none | Token budget of a conversation, also sent to the model as its context window (`num_ctx`). Without it, the budget is the model's context length, and Ollama keeps its own, often much smaller, window. |
+| `warning_threshold` | `0.8` | Share of the budget, in `]0, 1]`, past which the usage is flagged and the oldest messages are summarised. |
+| `keep_recent` | `6` | Number of the last messages always sent as they are, never summarised. |
+
+```toml
+[context]
+budget = 8192
+warning_threshold = 0.8
+keep_recent = 6
+```
+
+The usage is the token count of the branch's last model call, kept in memory: after a restart, a branch's usage is
+unknown until its next call. A branch keeps one summary, stored in the `summary` table and not exported. The summary
+call is logged like any other, with the persona but without the branch.
+
 ## MCP servers
 
 The server offers the tools of every MCP server configured in its settings, one `[mcp.<name>]` table each. The name
