@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
     from sensai_server.app.outbound import Outbound
     from sensai_server.commands import CommandRegistry
+    from sensai_server.events import EventBus
     from sensai_server.memory.persistent_db import PersistentDatabase
     from sensai_server.pipeline import ChatPipeline
     from sensai_server.session import Session, SessionRegistry
@@ -61,10 +62,13 @@ async def _stop_client_command(session: Session) -> None:
         await session.out.send_system_message(f"{stopped} stopped: a new message was sent.")
 
 
-async def handle_chat(session: Session, message: Chat, pipeline: ChatPipeline, db: PersistentDatabase) -> None:
+async def handle_chat(
+    session: Session, message: Chat, pipeline: ChatPipeline, db: PersistentDatabase, events: EventBus
+) -> None:
     """Echo the prompt as `input`, then start the answer as the session's task, streamed as `ai_chunk`.
 
-    The prompt goes through `pipeline`, and the prompt and its answer are saved in `db`. A task waiting for a client
+    The prompt goes through `pipeline`, the prompt and its answer are saved in `db`, and every call to the model is
+    emitted on `events`. A task waiting for a client
     command is stopped first. Refused with an `error` while another task is running.
     """
     await _stop_client_command(session)
@@ -72,7 +76,7 @@ async def handle_chat(session: Session, message: Chat, pipeline: ChatPipeline, d
         await session.out.send_error("An answer is already running: cancel it first.")
         return
     await session.out.send_input(Role.USER, message.prompt)
-    session.start(chat(session, message.prompt, pipeline, db))
+    session.start(chat(session, message.prompt, pipeline, db, events))
 
 
 async def handle_command(session: Session, message: Command, command_registry: CommandRegistry) -> None:

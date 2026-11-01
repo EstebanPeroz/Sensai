@@ -24,6 +24,7 @@ from sensai_server.app._state import AppState, app_state, set_app_state
 from sensai_server.app.outbound import Outbound
 from sensai_server.chat.react import ReAct
 from sensai_server.commands import CommandRegistry, build_commands
+from sensai_server.events import EventBus
 from sensai_server.llm.embedder import Embedder
 from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
@@ -90,6 +91,7 @@ def create_app(
             registry=sessions,
             commands=commands,
             pipeline=pipeline,
+            events=EventBus(),
         ),
     )
     app.include_router(router)
@@ -177,7 +179,7 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message, state.pipeline, state.db)
+            await handlers.handle_chat(session, message, state.pipeline, state.db, state.events)
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():

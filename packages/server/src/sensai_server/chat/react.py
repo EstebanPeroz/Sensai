@@ -12,6 +12,8 @@ from sensai_protocol.error import SensaiError
 
 from sensai_server.llm.responses import ChatResponse
 from sensai_server.llm.threaded import iterate_in_thread
+from sensai_server.monitoring.interaction import InteractionStatus
+from sensai_server.monitoring.recorder import InteractionRecorder
 from sensai_server.tools.tool import ToolContext
 
 if TYPE_CHECKING:
@@ -171,21 +173,38 @@ class ReAct:
         results = await self._tool_manager.calls(tool_calls, context.tools, ToolContext(out=context.out))
         context.messages.extend(results)
 
-    def _request(
+    async def _request(
         self, context: ChatContext, provider: ProviderAdapter, instruction: str, tools: list[dict]
     ) -> AsyncGenerator[ChatResponse]:
         """Stream the answer of the model to `context.messages` followed by `instruction`, offering it `tools`.
 
-        `think` stays off: the loop is the thinking.
+        `think` stays off: the loop is the thinking. The call is recorded and passed to `context.on_interaction`
+        once it ends: `OK` when done, `ERROR` on an error chunk or a `SensaiError`, `INTERRUPTED` when closed or
+        cancelled before its end. The error or the cancellation still propagates.
         """
         messages = [*context.messages, {"role": "user", "content": instruction}]
         payload: dict[str, object] = {"model": context.model, "messages": messages, "think": False}
         if tools:
             payload["tools"] = tools
 
-        # TODO(monitoring): record the call here with an `InteractionRecorder`  # noqa: TD003, FIX002
-        # and pass it to `context.on_interaction` when it ends: done, failed, or closed before its end.
-        return iterate_in_thread(partial(provider.chat, payload, stream=True))
+        recorder = InteractionRecorder(model=context.model, request=messages)
+        status, error = InteractionStatus.OK, None
+        try:
+            async with aclosing(iterate_in_thread(partial(provider.chat, payload, stream=True))) as chunks:
+                async for chunk in chunks:
+                    recorder.add_chunk(chunk)
+                    if chunk.error is not None:
+                        status, error = InteractionStatus.ERROR, chunk.error
+                    yield chunk
+        except GeneratorExit, asyncio.CancelledError:
+            if status is not InteractionStatus.ERROR:
+                status = InteractionStatus.INTERRUPTED
+            raise
+        except SensaiError as err:
+            status, error = InteractionStatus.ERROR, str(err)
+            raise
+        finally:
+            context.on_interaction(recorder.finish(status, error))
 
     async def _available_tools(self, context: ChatContext, provider: ProviderAdapter) -> list[dict]:
         """Return the tools to offer to the model, none when none is enabled or when it cannot call tools.

@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from sensai_server.chat.react import ReAct
     from sensai_server.commands import CommandRegistry
     from sensai_server.config.settings import Settings
+    from sensai_server.events import EventBus
     from sensai_server.llm.embedder import Embedder
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider import ProviderManager
@@ -39,6 +40,7 @@ class AppState:
     registry: SessionRegistry
     commands: CommandRegistry
     pipeline: ChatPipeline
+    events: EventBus
 
 
 def set_app_state(app: Starlette, state: AppState) -> None:
