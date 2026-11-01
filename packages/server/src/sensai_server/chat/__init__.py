@@ -8,6 +8,7 @@ from sensai_protocol.error import SensaiError
 from sensai_server.chat.chat import run_chat
 
 if TYPE_CHECKING:
+    from sensai_server.events import EventBus
     from sensai_server.memory.persistent_db import PersistentDatabase
     from sensai_server.pipeline import ChatPipeline
     from sensai_server.rag import Rag
@@ -19,19 +20,25 @@ BRANCH_NAME_LENGTH = 50
 _NO_MODEL = "No model is set for this conversation."
 
 
-async def chat(
-    session: Session, prompt: str, pipeline: ChatPipeline, db: PersistentDatabase, rag: Rag | None = None
+async def chat(  # noqa: PLR0913, PLR0917 - the shared services a chat needs come through here
+    session: Session,
+    prompt: str,
+    pipeline: ChatPipeline,
+    db: PersistentDatabase,
+    events: EventBus,
+    rag: Rag | None = None,
 ) -> None:
     """Send `prompt` through `pipeline` and stream the answer to the session as `ai_chunk`.
 
     The prompt is not echoed: `handle_chat` already did. The branch is created in `db` on the first message, with
-    its collection in `rag`, if any. The prompt and the answer are both saved. A `SensaiError` is
+    its collection in `rag`, if any. The prompt and the answer are both saved. Every call to the model is emitted on
+    `events`. A `SensaiError` is
     sent as an `error`. A cancellation saves nothing more and propagates, closing the pipeline down to the model's
     stream.
     """
     try:
         await _set_chat(session, prompt, db, rag)
-        await run_chat(session, prompt, pipeline, db)
+        await run_chat(session, prompt, pipeline, db, events)
     except SensaiError as err:
         await session.out.send_error(str(err))
 

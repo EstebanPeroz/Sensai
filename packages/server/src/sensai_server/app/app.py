@@ -29,11 +29,13 @@ from sensai_server.app.outbound import Outbound
 from sensai_server.cache import CacheError, SemanticCache
 from sensai_server.chat.react import ReAct
 from sensai_server.commands import CommandRegistry, build_commands
+from sensai_server.events import EventBus
 from sensai_server.llm.embedder import Embedder
 from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
+from sensai_server.monitoring.logger import InteractionLogger
 from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import CacheStage, ModelStage, PersonaStage, RagStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
@@ -70,9 +72,10 @@ def create_app(
     (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task. So
     is the tool manager (see `_build_tool_manager`): each session keeps only its own tool state. So is the ReAct loop
     the pipeline's model stage hands each exchange to: it keeps nothing between two exchanges. So is the semantic
-    cache (see `_build_cache`), when there is one: its entries are cleared when the app starts and when it stops
-    (see `_lifespan`). So is the MCP host, started with the tools: it is closed when the app stops, or right away if
-    building the app fails.
+    cache (see `_build_cache`), when there is one: its entries are cleared when the app starts and when it stops. So
+    is the event bus every chat emits its model calls on: the interaction logger stores them in the database, unless
+    logging is disabled. So is the MCP host, started with the tools: it is closed when the app stops, or right away if
+    building the app fails. At shutdown, the running chats are stopped and their last calls stored (see `_lifespan`).
     """
     pm: ProviderManager = ProviderManager(settings.llm)
     embedder = _build_embedder(settings, pm)
@@ -105,6 +108,9 @@ def _create_app(
     sessions = SessionRegistry(pm, persona_manager, tool_manager, cache)
     commands = CommandRegistry()
     commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager, rag=rag))
+    events = EventBus()
+    interaction_logger = InteractionLogger(db.interactions, settings.logging)
+    interaction_logger.attach(events)
 
     app = FastAPI(lifespan=_lifespan)
     set_app_state(
@@ -122,6 +128,8 @@ def _create_app(
             pipeline=pipeline,
             rag=rag,
             cache=cache,
+            events=events,
+            interaction_logger=interaction_logger,
             mcp=mcp,
         ),
     )
@@ -205,9 +213,10 @@ def _redis_answers(redis_url: str) -> bool:
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Clear the semantic cache when the app starts, then close every session, the MCP host and the cache when it stops.
 
-    The MCP host is closed after the sessions, so that their running tool calls are cancelled first. At startup, the
-    cache entries left are those of a previous run's sessions, which no longer exist: each login has a fresh client
-    id. A failing clear is logged and never stops the app from starting or stopping.
+    At startup, the cache entries left are those of a previous run's sessions, which no longer exist: each login has
+    a fresh client id. A failing clear is logged and never stops the app from starting or stopping. Stopping a chat
+    mid-answer emits its call as interrupted: the interaction logger is drained only after the sessions are closed.
+    The MCP host is closed after the sessions too, so that their running tool calls are cancelled first.
     """
     state = app_state(app)
     if state.cache is not None:
@@ -216,6 +225,7 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         yield
     finally:
         await state.registry.close_all()
+        await state.interaction_logger.drain()
         await asyncio.to_thread(state.mcp.close)
         if state.cache is not None:
             await _clear_cache(state.cache)
@@ -297,7 +307,7 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message, state.pipeline, state.db, state.rag)
+            await handlers.handle_chat(session, message, state.pipeline, state.db, state.events, state.rag)
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():

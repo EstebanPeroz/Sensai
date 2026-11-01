@@ -1,13 +1,17 @@
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from sensai_protocol import Dashboard as DashboardMessage
 from sensai_protocol import Effort as EffortMessage
-from sensai_protocol import System
+from sensai_protocol import Period, System
 from sensai_server.chat.react import EFFORTS
 from sensai_server.commands import CommandRegistry, PersonaCommand, build_commands
 from sensai_server.commands._base import Command
 from sensai_server.commands._branch import Branch
+from sensai_server.commands._dashboard import Dashboard
 from sensai_server.commands._effort import Effort
 from sensai_server.commands._export import Export
 from sensai_server.commands._help import Help
@@ -17,7 +21,11 @@ from sensai_server.commands._tools import ToolsCommand
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory import Conversation
+from sensai_server.memory.persistent_db.error import DatabaseError
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
+from sensai_server.monitoring.interaction import Interaction, InteractionStatus
+from sensai_server.monitoring.interaction_repository import InteractionRepository
+from sensai_server.monitoring.metrics import history_start
 from sensai_server.session import Session, SessionRegistry
 from sensai_server.tools.tool_manager import ToolManager
 
@@ -112,6 +120,7 @@ class TestCommandRegistry:
             "/effort",
             "/export",
             "/import",
+            "/dashboard",
             "/help",
         ]
 
@@ -155,8 +164,8 @@ class TestHelp:
         session, out = await _open(sessions)
         await commands.execute(session, "/help")
         assert _system(out) == (
-            f"Available commands:\n- branch: {Branch.help}\n- effort: {Effort.help}\n- export: {Export.help}"
-            f"\n- help: {Help.help}\n- import: {Import.help}\n- model: {Model.help}"
+            f"Available commands:\n- branch: {Branch.help}\n- dashboard: {Dashboard.help}\n- effort: {Effort.help}"
+            f"\n- export: {Export.help}\n- help: {Help.help}\n- import: {Import.help}\n- model: {Model.help}"
             f"\n- persona: {PersonaCommand.help}\n- tools: {ToolsCommand.help}"
         )
 
@@ -342,3 +351,83 @@ class TestModelCommand:
     async def test_completions(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
         session, _ = await _open(sessions)
         assert commands.completions(session, "/model ") == ["a", "b"]
+
+
+NOW = datetime(2026, 10, 14, 12, 0, tzinfo=UTC)
+
+
+def _dashboard_registry(repository: InteractionRepository) -> CommandRegistry:
+    return _registry(Dashboard(repository, clock=lambda: NOW))
+
+
+def _report(out: RecordingOutbound) -> DashboardMessage:
+    """The last message sent, which must be a `dashboard` one."""
+    message = out.sent[-1]
+    assert isinstance(message, DashboardMessage)
+    return message
+
+
+class TestDashboardCommand:
+    @pytest.mark.parametrize(
+        ("text", "period"),
+        [
+            ("/dashboard", Period.DAY),
+            ("/dashboard 24h", Period.DAY),
+            ("/dashboard 7d", Period.WEEK),
+            ("/dashboard 30d", Period.MONTH),
+        ],
+    )
+    async def test_sends_the_report_of_the_period(self, sessions: SessionRegistry, text: str, period: Period) -> None:
+        session, out = await _open(sessions)
+        repository = MagicMock(spec=InteractionRepository)
+        repository.get_all.return_value = []
+        await _dashboard_registry(repository).execute(session, text)
+        repository.get_all.assert_called_once_with(since=history_start(period, NOW), with_content=False)
+        report = _report(out).report
+        assert report.period == period
+        assert report.end == NOW
+
+    async def test_the_report_counts_the_logged_calls(self, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        repository = MagicMock(spec=InteractionRepository)
+        repository.get_all.return_value = [
+            Interaction(
+                model="qwen", status=InteractionStatus.OK, latency_ms=1000.0, created_at=NOW - timedelta(hours=1)
+            ),
+            Interaction(
+                model="qwen",
+                status=InteractionStatus.ERROR,
+                error="boom",
+                latency_ms=10.0,
+                created_at=NOW - timedelta(hours=2),
+            ),
+        ]
+        await _dashboard_registry(repository).execute(session, "/dashboard")
+        report = _report(out).report
+        assert report.summary.calls == 2
+        assert report.summary.errors == 1
+        assert [error.error for error in report.recent_errors] == ["boom"]
+
+    @pytest.mark.parametrize("text", ["/dashboard 1y", "/dashboard 7d x"])
+    async def test_bad_arguments_answer_with_the_usage(self, sessions: SessionRegistry, text: str) -> None:
+        session, out = await _open(sessions)
+        repository = MagicMock(spec=InteractionRepository)
+        await _dashboard_registry(repository).execute(session, text)
+        assert _system(out).endswith(f"Usage: {Dashboard.usage}")
+        repository.get_all.assert_not_called()
+
+    async def test_a_database_error_is_reported(self, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        repository = MagicMock(spec=InteractionRepository)
+        repository.get_all.side_effect = DatabaseError("unreadable")
+        await _dashboard_registry(repository).execute(session, "/dashboard")
+        assert _system(out) == "[DatabaseError]unreadable"
+
+    async def test_reads_the_server_database(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, out = await _open(sessions)
+        await commands.execute(session, "/dashboard 7d")
+        assert _report(out).report.summary.calls == 0
+
+    async def test_completions(self, commands: CommandRegistry, sessions: SessionRegistry) -> None:
+        session, _ = await _open(sessions)
+        assert commands.completions(session, "/dashboard ") == ["24h", "7d", "30d"]

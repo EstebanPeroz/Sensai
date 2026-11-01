@@ -74,12 +74,11 @@ class SessionRegistry:
             await session.close()
 
     async def close_all(self) -> None:
-        """Close and unregister every open session, as when the server stops."""
+        """Stop the task of every session and unregister them all, as the server shuts down."""
         async with self._lock:
             sessions = list(self._sessions.values())
             self._sessions.clear()
-        for session in sessions:
-            await session.close()
+        await asyncio.gather(*(session.close() for session in sessions))
 
     def refresh_persona(self, updated: Persona) -> None:
         """Give `updated` to every session whose conversation uses an older version of that persona."""

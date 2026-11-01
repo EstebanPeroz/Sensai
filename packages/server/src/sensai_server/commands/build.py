@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from sensai_server.commands._branch import Branch
+from sensai_server.commands._dashboard import Dashboard
 from sensai_server.commands._effort import Effort
 from sensai_server.commands._export import Export
 from sensai_server.commands._help import Help
@@ -34,7 +35,8 @@ def build_commands(  # noqa: PLR0913 - every command's shared dependency comes t
     """Build every command of the server, to register in the `CommandRegistry`.
 
     `sessions` are the live sessions, for the commands that act on other sessions than the caller's. `tool_manager`
-    is shared by every session, each one toggling its tools in its own state. `/index` is left out without `rag`.
+    is shared by every session, each one toggling its tools in its own state. `/index` is left out without `rag`. The
+    dashboard reads `db.interactions` and is always present: with logging off, its report is just empty.
     """
     commands: list[Command] = [
         Model(),
@@ -44,6 +46,7 @@ def build_commands(  # noqa: PLR0913 - every command's shared dependency comes t
         Effort(),
         Export(db),
         Import(db),
+        Dashboard(db.interactions),
     ]
     if rag is not None:
         commands.append(Index(rag))

@@ -9,6 +9,7 @@ import pytest
 from sensai_protocol.client_messages import Confirmation
 from sensai_server.chat import chat
 from sensai_server.chat.react import ANSWER_INSTRUCTION, ReAct
+from sensai_server.events import EventBus
 from sensai_server.llm.persona import PersonaManager
 from sensai_server.llm.provider import ChatResponse, ProviderManager
 from sensai_server.memory.persistent_db.sql_alchemy.core import SqlAlchemy
@@ -350,7 +351,7 @@ class TestHistoryUntouched:
         session.conv.model = MODEL
         pipeline = ChatPipeline(ModelStage(ReAct(pm, manager)))
 
-        await chat(session, "Find it", pipeline, SqlAlchemy(db_url(tmp_path)))
+        await chat(session, "Find it", pipeline, SqlAlchemy(db_url(tmp_path)), EventBus())
 
         assert {"role": "tool", "tool_name": "search", "content": "a result"} in FakeAdapter.payloads[-1]["messages"]
         assert session.conv.history.to_json() == [

@@ -37,6 +37,7 @@ from sensai_server.app._state import app_state
 from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
 from sensai_server.commands import PersonaCommand
 from sensai_server.commands._branch import Branch
+from sensai_server.commands._dashboard import Dashboard
 from sensai_server.commands._effort import Effort as EffortCommand
 from sensai_server.commands._export import Export
 from sensai_server.commands._help import Help
@@ -126,6 +127,7 @@ class TestLogin:
                 "/effort",
                 "/export",
                 "/import",
+                "/dashboard",
                 "/help",
             ]
             assert registry.get(session.client_id) is not None
@@ -446,7 +448,8 @@ class TestCommandAndComplete:
             assert _receive(ws) == Input(role=Role.USER, content="/help", command=True)
             assert _receive(ws) == System(
                 message=(
-                    f"Available commands:\n- branch: {Branch.help}\n- effort: {EffortCommand.help}\n"
+                    f"Available commands:\n- branch: {Branch.help}\n- dashboard: {Dashboard.help}\n"
+                    f"- effort: {EffortCommand.help}\n"
                     f"- export: {Export.help}\n- help: {Help.help}\n- import: {Import.help}\n"
                     f"- model: {Model.help}\n- persona: {PersonaCommand.help}\n"
                     f"- tools: {ToolsCommand.help}"
@@ -491,7 +494,7 @@ class TestDispatch:
         assert received_session.client_id == session.client_id
         assert received_message == message
 
-    def test_chat_reaches_its_handler_with_the_pipeline_db_and_rag(
+    def test_chat_reaches_its_handler_with_the_pipeline_db_events_and_rag(
         self, app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         handler = AsyncMock()
@@ -501,9 +504,10 @@ class TestDispatch:
             _send(ws, Chat(prompt="hi"))
             _sync(ws)
         assert handler.await_args is not None
-        _, _, pipeline, db, rag = handler.await_args.args
+        _, _, pipeline, db, events, rag = handler.await_args.args
         assert pipeline is app_state(app).pipeline
         assert db is app_state(app).db
+        assert events is app_state(app).events
         assert rag is app_state(app).rag
 
     def test_logout_reaches_its_handler_with_the_registry(

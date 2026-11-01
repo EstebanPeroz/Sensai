@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from sensai_server.chat.react import EFFORTS
 from sensai_server.llm.responses import ChatResponse
+from sensai_server.monitoring.interaction import ignore_interaction
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Callable
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from sensai_server.app.outbound import Outbound
     from sensai_server.cache import SessionCache
     from sensai_server.llm.persona import Persona
+    from sensai_server.monitoring.interaction import Interaction
     from sensai_server.tools.state import ToolState
 
 
@@ -53,9 +55,8 @@ class ChatContext:
     max_iterations: int = EFFORTS["off"]
     rag_id: UUID | None = None
     cache: SessionCache | None = None
-    # TODO(monitoring): add `on_interaction`  # noqa: TD003, FIX002
-    # `on_interaction: Callable[[Interaction], None] = ignore_interaction`, called once for every call to the model
-    # this exchange makes, whatever its outcome.
+    on_interaction: Callable[[Interaction], None] = ignore_interaction
+    """Called once for every call to the model this exchange makes, whatever its outcome. Sync, never awaited."""
 
 
 type Next = Callable[[ChatContext], AsyncGenerator[ChatResponse]]
