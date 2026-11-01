@@ -261,11 +261,11 @@ class TestServe:
                 tools = await task_group.start(session.serve, stop)
                 first = await session.call_tool("echo", {"message": "hello"})
                 second = await session.call_tool("echo", {"message": "again"})
+                assert [tool.name for tool in tools] == ["echo"]
+                assert first == second == "Echoed message"
                 assert client_context.closed is False
                 stop.set()
 
-        assert [tool.name for tool in tools] == ["echo"]
-        assert first == second == "Echoed message"
         assert client_context.closed is True
         with pytest.raises(MCPCallError, match="session is not started"):
             await session.call_tool("echo", {})
@@ -295,11 +295,11 @@ class TestFixtureServer:
             result = await session.call_tool("echo", {"message": "hello"})
             stop.set()
 
-        assert {"echo", "fail", "image", "slow", "pid"} <= {tool.name for tool in tools}
-        echo = next(tool for tool in tools if tool.name == "echo")
-        assert echo.description == "Echo a message"
-        assert "message" in echo.input_schema["properties"]  # type: ignore[operator]
-        assert result == "hello"
+            assert {"echo", "fail", "image", "slow", "pid"} <= {tool.name for tool in tools}
+            echo = next(tool for tool in tools if tool.name == "echo")
+            assert echo.description == "Echo a message"
+            assert "message" in echo.input_schema["properties"]  # type: ignore[operator]
+            assert result == "hello"
 
     async def test_reports_a_bad_command_as_a_startup_error(self) -> None:
         session = MCPServerSession(MCPServerConfig(name="missing", command="sensai-missing-mcp-server"))
