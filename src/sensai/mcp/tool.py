@@ -19,8 +19,8 @@ class MCPTool(Tool[str]):
 
     @property
     def name(self) -> str:
-        """Return the name advertised by the MCP server."""
-        return self._info.name
+        """Return the advertised name, prefixed by the server name so that two servers' tools never collide."""
+        return f"{self._session.server_name}__{self._info.name}"
 
     @property
     def description(self) -> str:
@@ -34,4 +34,4 @@ class MCPTool(Tool[str]):
 
     def run(self, **kwargs: object) -> str:
         """Execute the MCP tool and return its simple text result."""
-        return self._session.call_tool_sync(self.name, kwargs)
+        return self._session.call_tool_sync(self._info.name, kwargs)
