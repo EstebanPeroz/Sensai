@@ -52,6 +52,7 @@ def with_mcp(tmp_path: Path, *configs: MCPServerConfig) -> Settings:
 
 
 def threads() -> set[threading.Thread]:
+    """The live threads. Compare with `<=`: a thread of an earlier test may end in between, never a new one start."""
     return {thread for thread in threading.enumerate() if thread.is_alive()}
 
 
@@ -92,7 +93,7 @@ class TestBuildTools:
     def test_no_mcp_server_starts_no_thread(self) -> None:
         before = threads()
         built = build_tools(SETTINGS, None)
-        assert threads() == before
+        assert threads() <= before
         assert [tool.name for tool in built.tools] == ["ask_user"]
         built.mcp.close()
 
@@ -148,13 +149,13 @@ class TestApp:
             pid = tiny_pid(app)
             assert is_running(pid)
         assert not is_running(pid)
-        assert threads() == before
+        assert threads() <= before
 
     def test_a_later_failure_closes_the_host(self) -> None:
         before = threads()
         with pytest.raises(DbConnectionError):
             create_app(Settings(llm=SETTINGS.llm, mcp=[tiny()]))  # no persistent database
-        assert threads() == before
+        assert threads() <= before
 
     def test_a_failing_tool_manager_closes_the_host(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         def refuse(*_args: object, **_kwargs: object) -> None:
@@ -165,7 +166,7 @@ class TestApp:
         before = threads()
         with pytest.raises(DuplicateToolError):
             create_app(with_mcp(tmp_path, tiny()))
-        assert threads() == before
+        assert threads() <= before
 
 
 class TestMain:
@@ -183,4 +184,4 @@ class TestMain:
 
         [app] = apps
         assert "tiny__echo" in app_state(app).tool_manager.names()
-        assert threads() == before
+        assert threads() <= before
