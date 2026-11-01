@@ -64,7 +64,7 @@ class TestChatNonStreaming:
                     "required": ["message"],
                 },
             ),
-            MagicMock(),
+            MagicMock(server_name="server"),
         )
         request = {"model": "qwen2.5:1.5b", "messages": []}
         add_tool_schemas(request, ToolManager([tool]))
@@ -82,7 +82,7 @@ class TestChatNonStreaming:
                 {
                     "type": "function",
                     "function": {
-                        "name": "echo",
+                        "name": "server__echo",
                         "description": "Echo text",
                         "parameters": {
                             "type": "object",
