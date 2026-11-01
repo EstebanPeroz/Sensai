@@ -13,6 +13,7 @@ from sensai_server.memory.persistent_db.error import DatabaseError, DbConnection
 from sensai_server.memory.persistent_db.sql_alchemy.table import Base, BranchTable, MessageTable, PersonaTable
 
 from .interaction import SqlInteractionRepository
+from .summary import SqlSummaryRepository
 
 if TYPE_CHECKING:
     import sqlite3
@@ -28,6 +29,7 @@ class SqlAlchemy(PersistentDatabase):
     _engine: Engine
     _conn: Connection
     _interactions: SqlInteractionRepository
+    _summaries: SqlSummaryRepository
     _uuid_error_essage: str = "given uuid is invalid"
     _update_error_message: str = "the update could not be stored"
     _import_error_message: str = "the branch could not be imported, the config is invalid"
@@ -50,12 +52,19 @@ class SqlAlchemy(PersistentDatabase):
         self._conn = self._engine.connect()
         Base.metadata.create_all(self._engine)
         self._interactions = SqlInteractionRepository(self._engine)
+        self._summaries = SqlSummaryRepository(self._engine)
 
     @property
     @override
     def interactions(self) -> SqlInteractionRepository:
         """Logged calls to the model, stored in this database."""
         return self._interactions
+
+    @property
+    @override
+    def summaries(self) -> SqlSummaryRepository:
+        """Summaries of the oldest messages of each branch, stored in this database."""
+        return self._summaries
 
     @staticmethod
     def _enable_foreign_keys(dbapi_conn: sqlite3.Connection, _: object) -> None:

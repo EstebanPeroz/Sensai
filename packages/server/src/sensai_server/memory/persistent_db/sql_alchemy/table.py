@@ -114,3 +114,13 @@ class InteractionTable(Base):
     load_duration_ms: Mapped[float | None] = mapped_column()
     prompt_eval_duration_ms: Mapped[float | None] = mapped_column()
     eval_duration_ms: Mapped[float | None] = mapped_column()
+
+
+class SummaryTable(Base):
+    """Summary of the oldest messages of a branch; removed with its branch."""
+
+    __tablename__ = "summary"
+
+    branch_id: Mapped[UUID] = mapped_column(ForeignKey("branch.id", ondelete="CASCADE"), unique=True)
+    covered: Mapped[int] = mapped_column()
+    content: Mapped[str] = mapped_column()
