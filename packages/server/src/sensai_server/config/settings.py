@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 import tomllib
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 from urllib.parse import urlsplit
 
 from sensai_protocol.error import SensaiError
@@ -132,26 +133,74 @@ class RagDBSettings:
         _check_name(self.location, "db.rag.location")
 
 
+# The name prefixes the server's tool names, so it must also be valid in an LLM function name.
+_MCP_NAME_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+
+MCPTransport = Literal["stdio", "http"]
+
+
 @dataclass
 class MCPServerConfig:
-    """Configuration needed to start and call one MCP server."""
+    """Settings of one MCP server, read from its [mcp.<name>] table.
 
-    command: str
+    A stdio server is a subprocess started from `command` and `args`; an http server is a remote one
+    reached at `url`, with `headers` sent on every request, such as an authorization token.
+    """
+
+    name: str
+    transport: MCPTransport = "stdio"
+    command: str | None = None
     args: list[str] = field(default_factory=list)
+    url: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
     enabled: bool = True
     startup_timeout: float = 10.0
     call_timeout: float = 30.0
 
     def __post_init__(self) -> None:
         """Validate values that would make an MCP server unusable."""
-        if not self.command:
-            msg = "MCP server command must be a non-empty string"
+        if not isinstance(self.name, str) or not _MCP_NAME_PATTERN.fullmatch(self.name):
+            msg = "MCP server name must be non-empty and only contain letters, digits, '_' or '-'"
             raise ValueError(msg)
+        if self.transport == "stdio":
+            self._check_stdio()
+        elif self.transport == "http":
+            self._check_http()
+        else:
+            msg = f"MCP server transport must be 'stdio' or 'http', got {self.transport!r}"
+            raise ValueError(msg)
+        _check_bool(self.enabled, f"mcp.{self.name}.enabled")
         if self.startup_timeout <= 0:
             msg = "MCP server startup timeout must be greater than zero"
             raise ValueError(msg)
         if self.call_timeout <= 0:
             msg = "MCP server call timeout must be greater than zero"
+            raise ValueError(msg)
+
+    def _check_stdio(self) -> None:
+        if not isinstance(self.command, str) or not self.command:
+            msg = "MCP server command must be a non-empty string"
+            raise ValueError(msg)
+        if not isinstance(self.args, list) or not all(isinstance(arg, str) for arg in self.args):
+            msg = "MCP server args must be a list of strings"
+            raise TypeError(msg)
+        if self.url is not None or self.headers:
+            msg = "MCP server url and headers only apply to the http transport"
+            raise ValueError(msg)
+
+    def _check_http(self) -> None:
+        url = self.url if isinstance(self.url, str) else ""
+        parts = urlsplit(url)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            msg = f"MCP server url must be an http(s) URL with a host, got {self.url!r}"
+            raise ValueError(msg)
+        if self.command is not None or self.args:
+            msg = "MCP server command and args only apply to the stdio transport"
+            raise ValueError(msg)
+        if not isinstance(self.headers, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in self.headers.items()
+        ):
+            msg = "MCP server headers must map strings to strings"
             raise ValueError(msg)
 
 
@@ -210,7 +259,7 @@ class Settings:
 
     llm: LLMSettings = field(default_factory=LLMSettings)
     cache: CacheSettings = field(default_factory=CacheSettings)
-    mcp: MCPServerConfig | None = None
+    mcp: list[MCPServerConfig] = field(default_factory=list)
     web: WebSettings = field(default_factory=WebSettings)
     db: DBSettings = field(default_factory=DBSettings)
     features: FeatureSettings = field(default_factory=FeatureSettings)
@@ -243,7 +292,7 @@ def load_settings(path: Path) -> Settings:
                 if provider.name in llm
             }
             cache = CacheSettings(**_pop_table(data, "cache"))
-            mcp = MCPServerConfig(**mcp_data) if mcp_data else None
+            mcp = [MCPServerConfig(name=name, **_pop_table(mcp_data, name)) for name in list(mcp_data)]
             web = WebSettings(**_pop_table(data, "web"))
             persistent = PersistentDBSettings(**_pop_table(db, "persistent"))
             rag = RagDBSettings(**_pop_table(db, "rag"))

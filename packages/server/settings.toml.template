@@ -28,6 +28,19 @@ api_base_url = "https://ollama.com/"
 api_key = ""
 timeout = 10.0
 
+# MCP servers to start, one `[mcp.<name>]` table each; the name must only contain letters, digits, '_' or '-'.
+# Their tools are named `<name>__<tool>`.
+# [mcp.filesystem]
+# command = "npx"
+# args = ["--yes", "@modelcontextprotocol/server-filesystem", "/tmp/sensai-mcp-demo"]
+# startup_timeout = 30
+#
+# A remote server; keep its token in settings.toml only.
+# [mcp.remote]
+# transport = "http"
+# url = "http://127.0.0.1:8000/mcp"
+# headers = { Authorization = "Bearer <token>" }
+
 [features]
 # Feature ids to switch off, as `<namespace>.<name>`.
 disabled = []
