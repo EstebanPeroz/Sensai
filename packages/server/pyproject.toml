@@ -21,6 +21,8 @@ dependencies = [
     "beautifulsoup4>=4.15.0",
     "pypdf>=6.21.1",
     "redis>=8.1.0",
+    "mcp>=2.3.0",
+    "httpx2>=2.16.0",
 ]
 
 [project.scripts]

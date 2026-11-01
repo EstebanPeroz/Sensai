@@ -7,6 +7,7 @@ import uvicorn
 from sensai_protocol.error import SensaiError
 
 from sensai_server.app import create_app
+from sensai_server.app._state import app_state
 from sensai_server.config.settings import load_settings
 from sensai_server.parsing import HOST, Parsing
 
@@ -23,5 +24,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except SensaiError as err:
         print(err.message, file=sys.stderr)
         return 1
-    uvicorn.run(app, host=HOST, port=args.port)
+    try:
+        uvicorn.run(app, host=HOST, port=args.port)
+    finally:
+        app_state(app).mcp.close()
     return 0

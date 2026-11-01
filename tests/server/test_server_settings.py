@@ -46,7 +46,7 @@ class TestTemplate:
         assert settings.web == WebSettings()
         assert settings.features == FeatureSettings()
         assert settings.logging == LoggingSettings(enabled=True, log_content=True)
-        assert settings.mcp is None
+        assert settings.mcp == []
 
 
 class TestApp:
@@ -98,59 +98,58 @@ class TestDefaults:
         assert load_settings(write_config(tmp_path, "")) == Settings()
 
     def test_missing_mcp_configuration_gives_no_mcp_server(self, tmp_path: Path) -> None:
-        assert load_settings(write_config(tmp_path, "")).mcp is None
-
-
-class TestMCPServerConfig:
-    def test_uses_default_values(self) -> None:
-        config = MCPServerConfig(command="uv")
-
-        assert config.args == []
-        assert config.enabled is True
-        assert config.startup_timeout == 10.0
-        assert config.call_timeout == 30.0
-
-    def test_rejects_empty_command(self) -> None:
-        with pytest.raises(ValueError, match="command must be a non-empty string"):
-            MCPServerConfig(command="")
-
-    @pytest.mark.parametrize("timeout", [0, -1])
-    def test_rejects_non_positive_startup_timeout(self, timeout: float) -> None:
-        with pytest.raises(ValueError, match="startup timeout must be greater than zero"):
-            MCPServerConfig(command="uv", startup_timeout=timeout)
-
-    @pytest.mark.parametrize("timeout", [0, -1])
-    def test_rejects_non_positive_call_timeout(self, timeout: float) -> None:
-        with pytest.raises(ValueError, match="call timeout must be greater than zero"):
-            MCPServerConfig(command="uv", call_timeout=timeout)
+        assert load_settings(write_config(tmp_path, "")).mcp == []
 
 
 class TestMCP:
-    def test_loads_one_configured_server(self, tmp_path: Path) -> None:
+    def test_loads_every_configured_server_in_file_order(self, tmp_path: Path) -> None:
         settings = load_settings(
             write_config(
                 tmp_path,
-                '[mcp]\ncommand = "uv"\nargs = ["run", "server.py"]\nstartup_timeout = 5\ncall_timeout = 20\n',
+                '[mcp.files]\ncommand = "uv"\nargs = ["run", "server.py"]\nstartup_timeout = 5\ncall_timeout = 20\n'
+                '[mcp.remote]\ntransport = "http"\nurl = "https://example.com/mcp"\n'
+                'headers = { Authorization = "Bearer token" }\n',
             ),
         )
 
-        assert settings.mcp == MCPServerConfig(
-            command="uv", args=["run", "server.py"], startup_timeout=5, call_timeout=20
-        )
+        assert settings.mcp == [
+            MCPServerConfig(name="files", command="uv", args=["run", "server.py"], startup_timeout=5, call_timeout=20),
+            MCPServerConfig(
+                name="remote",
+                transport="http",
+                url="https://example.com/mcp",
+                headers={"Authorization": "Bearer token"},
+            ),
+        ]
 
     def test_loads_disabled_server(self, tmp_path: Path) -> None:
-        settings = load_settings(write_config(tmp_path, '[mcp]\ncommand = "server"\nenabled = false\n'))
+        settings = load_settings(write_config(tmp_path, '[mcp.server]\ncommand = "server"\nenabled = false\n'))
 
-        assert settings.mcp is not None
-        assert settings.mcp.enabled is False
+        assert [config.enabled for config in settings.mcp] == [False]
+
+    def test_empty_mcp_table_gives_no_server(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "[mcp]\n")).mcp == []
 
     @pytest.mark.parametrize(
         ("content", "reason"),
         [
-            ('[mcp]\ncommand = ""\n', "command must be a non-empty string"),
-            ('[mcp]\ncommand = "server"\nstartup_timeout = 0\n', "startup timeout must be greater than zero"),
-            ('[mcp]\ncommand = "server"\ncall_timeout = -1\n', "call timeout must be greater than zero"),
-            ('[mcp]\ncommand = "server"\nport = 1\n', "unexpected keyword argument 'port'"),
+            ('[mcp]\nserver = "x"\n', "server must be a table"),
+            ('[mcp]\ncommand = "uv"\n', "command must be a table"),
+            ('[mcp."my server"]\ncommand = "uv"\n', "server name must be non-empty"),
+            ('[mcp.server]\ncommand = ""\n', "command must be a non-empty string"),
+            ("[mcp.server]\n", "command must be a non-empty string"),
+            ('[mcp.server]\ncommand = "uv"\nargs = "server.py"\n', "args must be a list of strings"),
+            ('[mcp.server]\ncommand = "uv"\nenabled = "no"\n', "mcp.server.enabled must be a boolean"),
+            ('[mcp.server]\ncommand = "uv"\nstartup_timeout = 0\n', "startup timeout must be greater than zero"),
+            ('[mcp.server]\ncommand = "uv"\ncall_timeout = -1\n', "call timeout must be greater than zero"),
+            ('[mcp.server]\ncommand = "uv"\nport = 1\n', "unexpected keyword argument 'port'"),
+            ('[mcp.server]\ncommand = "uv"\nname = "other"\n', "multiple values for keyword argument 'name'"),
+            ('[mcp.server]\ntransport = "sse"\ncommand = "uv"\n', "transport must be 'stdio' or 'http'"),
+            ('[mcp.server]\ntransport = "http"\n', r"url must be an http\(s\) URL with a host"),
+            (
+                '[mcp.server]\ntransport = "http"\nurl = "http://localhost/mcp"\nheaders = "x"\n',
+                "headers must map strings to strings",
+            ),
         ],
     )
     def test_invalid_mcp_values_raise_config_error(self, tmp_path: Path, content: str, reason: str) -> None:
