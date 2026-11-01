@@ -92,7 +92,7 @@ def _create_app(
     settings: Settings, pm: ProviderManager, embedder: Embedder | None, tool_manager: ToolManager, mcp: MCPHost
 ) -> FastAPI:
     """Build the rest of the app around its providers, embedder and tools: see `create_app`."""
-    react = ReAct(pm, tool_manager)
+    react = ReAct(pm, tool_manager, context_window=settings.context.budget)
     set_db(settings.db.persistent)
     db = get_db()
     if db is None:

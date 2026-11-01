@@ -276,6 +276,37 @@ class LoggingSettings:
 
 
 @dataclass
+class ContextSettings:
+    """Settings of the [context] table: the token budget of the conversation context.
+
+    `budget` is also the context window asked of the model; without it, the budget is the context length of the
+    model and the window is left to the provider. Past `warning_threshold` of the budget, the usage is flagged and
+    the oldest messages are summarised, all but the `keep_recent` last ones, sent as they are.
+    """
+
+    budget: int | None = None
+    warning_threshold: float = 0.8
+    keep_recent: int = 6
+
+    def __post_init__(self) -> None:
+        """Check the values, which come unchecked from the settings file."""
+        if self.budget is not None and (
+            isinstance(self.budget, bool) or not isinstance(self.budget, int) or self.budget <= 0
+        ):
+            msg = f"context.budget must be a positive number of tokens, got {self.budget!r}"
+            raise TypeError(msg)
+        if isinstance(self.warning_threshold, bool) or not isinstance(self.warning_threshold, int | float):
+            msg = "context.warning_threshold must be a number"
+            raise TypeError(msg)
+        if not 0 < self.warning_threshold <= 1:
+            msg = f"context.warning_threshold must be in ]0, 1], got {self.warning_threshold}"
+            raise ValueError(msg)
+        if isinstance(self.keep_recent, bool) or not isinstance(self.keep_recent, int) or self.keep_recent <= 0:
+            msg = f"context.keep_recent must be a positive number of messages, got {self.keep_recent!r}"
+            raise TypeError(msg)
+
+
+@dataclass
 class Settings:
     """Every runtime setting, built once by the composition root and injected."""
 
@@ -287,6 +318,7 @@ class Settings:
     features: FeatureSettings = field(default_factory=FeatureSettings)
     logging: LoggingSettings = field(default_factory=LoggingSettings)
     personas: PersonaSettings = field(default_factory=PersonaSettings)
+    context: ContextSettings = field(default_factory=ContextSettings)
 
 
 def load_settings(path: Path) -> Settings:
@@ -322,6 +354,7 @@ def load_settings(path: Path) -> Settings:
             features = FeatureSettings(**_pop_table(data, "features"))
             logging = LoggingSettings(**_pop_table(data, "logging"))
             personas = PersonaSettings(**_pop_table(data, "personas"))
+            context = ContextSettings(**_pop_table(data, "context"))
             return Settings(
                 llm=LLMSettings(**llm, providers=providers),
                 cache=cache,
@@ -331,6 +364,7 @@ def load_settings(path: Path) -> Settings:
                 features=features,
                 logging=logging,
                 personas=personas,
+                context=context,
                 **data,
             )
         except (TypeError, ValueError) as err:

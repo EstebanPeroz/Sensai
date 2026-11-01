@@ -9,6 +9,7 @@ from sensai_server.config.settings import (
     PROVIDERS,
     CacheSettings,
     ConfigError,
+    ContextSettings,
     FeatureSettings,
     LLMSettings,
     LoggingSettings,
@@ -49,6 +50,7 @@ class TestTemplate:
         assert settings.features == FeatureSettings()
         assert settings.logging == LoggingSettings(enabled=True, log_content=True)
         assert settings.personas == PersonaSettings()
+        assert settings.context == ContextSettings()
         assert settings.mcp == []
 
 
@@ -302,6 +304,21 @@ class TestLogging:
         assert LoggingSettings() == LoggingSettings(enabled=True, log_content=True)
 
 
+class TestContext:
+    def test_is_read_from_context_table(self, tmp_path: Path) -> None:
+        settings = load_settings(
+            write_config(tmp_path, "[context]\nbudget = 4096\nwarning_threshold = 0.5\nkeep_recent = 2\n")
+        )
+
+        assert settings.context == ContextSettings(budget=4096, warning_threshold=0.5, keep_recent=2)
+
+    def test_budget_defaults_to_none(self, tmp_path: Path) -> None:
+        assert load_settings(write_config(tmp_path, "")).context.budget is None
+
+    def test_defaults(self) -> None:
+        assert ContextSettings() == ContextSettings(budget=None, warning_threshold=0.8, keep_recent=6)
+
+
 class TestValidation:
     @pytest.mark.parametrize(
         ("content", "reason"),
@@ -360,6 +377,15 @@ class TestValidation:
             ('logging = "x"\n', "logging must be a table"),
             ('[logging]\nenabled = "yes"\n', "logging.enabled must be a boolean"),
             ("[logging]\nlog_content = 1\n", "logging.log_content must be a boolean"),
+            ('context = "x"\n', "context must be a table"),
+            ("[context]\nbudget = 0\n", "context.budget must be a positive number of tokens"),
+            ("[context]\nbudget = 1.5\n", "context.budget must be a positive number of tokens"),
+            ("[context]\nbudget = true\n", "context.budget must be a positive number of tokens"),
+            ('[context]\nwarning_threshold = "x"\n', "context.warning_threshold must be a number"),
+            ("[context]\nwarning_threshold = 0\n", "context.warning_threshold must be in"),
+            ("[context]\nwarning_threshold = 1.5\n", "context.warning_threshold must be in"),
+            ("[context]\nkeep_recent = 0\n", "context.keep_recent must be a positive number of messages"),
+            ('[context]\nkeep_recent = "6"\n', "context.keep_recent must be a positive number of messages"),
             ('unknown = "x"\n', "unexpected keyword argument 'unknown'"),
         ],
     )

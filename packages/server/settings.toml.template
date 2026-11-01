@@ -53,6 +53,15 @@ confirm = []
 # Security personas seeded into the database at startup: a path on the server, or `<package>/<filename>`.
 security = ["sensai_server.config.personas/security.toml"]
 
+# [context]
+# Token budget of the conversation, also sent to the model as its context window. Without it, the budget is the
+# context length of the model, while Ollama keeps its own, often much smaller, window.
+# budget = 8192
+# Share of the budget past which the usage is flagged and the oldest messages are summarised.
+# warning_threshold = 0.8
+# Number of the last messages always sent as they are, never summarised.
+# keep_recent = 6
+
 [logging]
 # Record every call to the model in the persistent database; log_content = false keeps only the metadata.
 enabled = true
