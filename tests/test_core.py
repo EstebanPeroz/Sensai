@@ -14,6 +14,7 @@ from sensai.llm.error import ModelError
 from sensai.llm.responses import ChatMetrics
 from sensai.mcp.config import MCPServerConfig
 from sensai.mcp.discovery import MCPToolInfo
+from sensai.mcp.errors import MCPStartupError
 from sensai.mcp.tool import MCPTool
 from sensai.memory.persistent_db.error import DatabaseError
 from sensai.monitoring.interaction import Interaction, InteractionStatus
@@ -172,34 +173,41 @@ class TestNearTheBudget:
         conversation.chat.assert_called_once()
 
 
-def test_core_does_not_create_mcp_client_without_configuration() -> None:
+def core_with_mcp_host(
+    settings: Settings,
+    started: tuple[list[MCPTool], dict[str, MCPStartupError]],
+    ui: MagicMock | None = None,
+) -> tuple[Core, MagicMock, MagicMock]:
+    """Build a Core whose MCP host is a mock reporting `started`, returning it with the host type and tools."""
     provider_manager = MagicMock()
     provider_manager.set_model.return_value = True
-    db = MagicMock()
+
+    with (
+        patch("sensai.core.core.get_db", return_value=MagicMock()),
+        patch("sensai.core.core.ProviderManager", return_value=provider_manager),
+        patch("sensai.core.core.MCPHost") as mcp_host_type,
+        patch("sensai.core.core.ToolManager", wraps=ToolManager) as tool_manager_type,
+    ):
+        mcp_host_type.return_value.start.return_value = started
+        core = Core(ui or MagicMock(), settings, Namespace(model="model"))
+    return core, mcp_host_type, tool_manager_type
+
+
+def test_core_without_mcp_configuration_registers_no_mcp_tool() -> None:
+    provider_manager = MagicMock()
+    provider_manager.set_model.return_value = True
     built_in_tool = MagicMock()
     ui = MagicMock()
     settings = Settings(features=FeatureSettings(disabled=["tools.example"], confirm=["tools.web_fetch"]))
 
     with (
-        patch("sensai.core.core.get_db", return_value=db),
-        patch(
-            "sensai.core.core.ProviderManager",
-            return_value=provider_manager,
-        ),
-        patch(
-            "sensai.core.core.MCPClient",
-        ) as mcp_client,
-        patch(
-            "sensai.core.core.build_tools",
-            return_value=[built_in_tool],
-        ) as build_tools,
-        patch(
-            "sensai.core.core.ToolManager",
-        ) as tool_manager,
+        patch("sensai.core.core.get_db", return_value=MagicMock()),
+        patch("sensai.core.core.ProviderManager", return_value=provider_manager),
+        patch("sensai.core.core.build_tools", return_value=[built_in_tool]) as build_tools,
+        patch("sensai.core.core.ToolManager") as tool_manager,
     ):
         Core(ui, settings, Namespace(model="model"))
 
-    mcp_client.assert_not_called()
     build_tools.assert_called_once_with(settings, None, ui.ask_user)
     tool_manager.assert_called_once()
     assert tool_manager.call_args.args[0] == [built_in_tool]
@@ -210,86 +218,59 @@ def test_core_does_not_create_mcp_client_without_configuration() -> None:
     }
 
 
-def test_core_creates_mcp_client_for_configured_server() -> None:
-    provider_manager = MagicMock()
-    provider_manager.set_model.return_value = True
-    config = MCPServerConfig(command="server")
-    db = MagicMock()
+def test_core_starts_one_mcp_host_for_every_configured_server() -> None:
+    first = MCPServerConfig(name="first", command="first")
+    second = MCPServerConfig(name="second", command="second")
 
-    with (
-        patch("sensai.core.core.get_db", return_value=db),
-        patch(
-            "sensai.core.core.ProviderManager",
-            return_value=provider_manager,
-        ),
-        patch(
-            "sensai.core.core.MCPClient",
-        ) as mcp_client,
-        patch(
-            "sensai.core.core.anyio.run",
-            return_value=[],
-        ),
-    ):
-        Core(MagicMock(), Settings(mcp=config), Namespace(model="model"))
+    _, mcp_host_type, _ = core_with_mcp_host(Settings(mcp=[first, second]), ([], {}))
 
-    mcp_client.assert_called_once_with(config)
+    mcp_host_type.assert_called_once_with([first, second])
+    mcp_host_type.return_value.start.assert_called_once_with()
 
 
-def test_core_registers_discovered_mcp_tools() -> None:
-    provider_manager = MagicMock()
-    provider_manager.set_model.return_value = True
-    db = MagicMock()
-    config = MCPServerConfig(command="server")
-    mcp_tool = MCPTool(MCPToolInfo("echo", "Echo text", {"type": "object"}), MagicMock())
+def test_core_registers_the_tools_of_the_mcp_host() -> None:
+    first_tool = MCPTool(MCPToolInfo("echo", "Echo text", {"type": "object"}), MagicMock(server_name="first"))
+    second_tool = MCPTool(MCPToolInfo("echo", "Echo text", {"type": "object"}), MagicMock(server_name="second"))
+    settings = Settings(mcp=[MCPServerConfig(name="first", command="first")])
 
-    with (
-        patch("sensai.core.core.get_db", return_value=db),
-        patch(
-            "sensai.core.core.ProviderManager",
-            return_value=provider_manager,
-        ),
-        patch(
-            "sensai.core.core.MCPClient",
-        ) as mcp_client_type,
-        patch(
-            "sensai.core.core.anyio.run",
-            return_value=[mcp_tool],
-        ) as run,
-        patch(
-            "sensai.core.core.ToolManager",
-        ) as tool_manager_type,
-    ):
-        Core(MagicMock(), Settings(mcp=config), Namespace(model="model"))
+    _, _, tool_manager_type = core_with_mcp_host(settings, ([first_tool, second_tool], {}))
 
-    run.assert_called_once_with(mcp_client_type.return_value.start)
-    tool_manager_type.assert_called_once()
     registered_tools = tool_manager_type.call_args.args[0]
-    assert registered_tools[-1] is mcp_tool
-    assert ToolManager(registered_tools).names() == ["ask_user", "echo"]
+    assert registered_tools[-2:] == [first_tool, second_tool]
+    assert ToolManager(registered_tools).names() == ["ask_user", "first__echo", "second__echo"]
 
 
-def test_core_runs_with_mcp_client() -> None:
-    provider_manager = MagicMock()
-    provider_manager.set_model.return_value = True
-    db = MagicMock()
+def test_core_closes_the_mcp_host_when_the_application_stops() -> None:
     ui = MagicMock()
     ui.get_event.return_value = MagicMock(type=EventType.Command, content="/q")
+    settings = Settings(mcp=[MCPServerConfig(name="server", command="server")])
+    core, mcp_host_type, _ = core_with_mcp_host(settings, ([], {}), ui)
 
-    with (
-        patch("sensai.core.core.get_db", return_value=db),
-        patch(
-            "sensai.core.core.ProviderManager",
-            return_value=provider_manager,
-        ),
-        patch(
-            "sensai.core.core.MCPClient",
-        ),
-        patch(
-            "sensai.core.core.anyio.run",
-            return_value=[],
-        ) as run,
-    ):
-        core = Core(ui, Settings(mcp=MCPServerConfig(command="server")), Namespace(model="model"))
+    core.run()
+
+    mcp_host_type.return_value.close.assert_called_once_with()
+
+
+def test_core_closes_the_mcp_host_when_the_application_fails() -> None:
+    ui = MagicMock()
+    ui.open.side_effect = RuntimeError("ui failed")
+    settings = Settings(mcp=[MCPServerConfig(name="server", command="server")])
+    core, mcp_host_type, _ = core_with_mcp_host(settings, ([], {}), ui)
+
+    with pytest.raises(RuntimeError, match="ui failed"):
         core.run()
 
-    run.assert_called_once()
+    mcp_host_type.return_value.close.assert_called_once_with()
+
+
+def test_core_reports_mcp_servers_that_failed_to_start() -> None:
+    ui = MagicMock()
+    ui.get_event.return_value = MagicMock(type=EventType.Command, content="/q")
+    settings = Settings(mcp=[MCPServerConfig(name="github", command="server")])
+    core, _, _ = core_with_mcp_host(settings, ([], {"github": MCPStartupError("connection refused")}), ui)
+
+    core.run()
+
+    ui.send_system_message.assert_any_call(
+        "MCP server 'github' failed to start, its tools are unavailable: connection refused",
+    )
