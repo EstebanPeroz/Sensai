@@ -81,8 +81,8 @@ fast model for simple tasks and a bigger one for hard questions.
 Example: You start with `--model qwen3:1.7b`, then switch to a bigger model
 with `/model` before a complex question.
 Acceptance criteria:
-- `sensai --model <name>` (or `make run MODEL=<name>`) starts on that model,
-  and `--config <path>` loads another settings file.
+- `sensai-tui --model <name>` (or `make run-tui MODEL=<name>`) starts on that
+  model, and the server's `--config <path>` loads another settings file.
 - `/model` lists the models Ollama serves; `/model <name>` switches to one and
   confirms with `Model set to '<name>'.`
 - `/model <unknown>` answers `Model '<unknown>' is not available.` and keeps
@@ -365,11 +365,11 @@ Acceptance criteria:
 with a single answer, so that a long investigation doesn't ask me the same
 question for every call.
 Example: Sensai asks to open a page; you choose "Always this session", and
-the next pages open without asking until you restart Sensai.
+the next pages open without asking until you quit the client.
 Acceptance criteria:
-- `a` in the dialog runs the tool and stops asking for it until Sensai
-  quits.
-- After a restart, the tool asks again, as set in the settings.
+- `a` in the dialog runs the tool and stops asking for it until the client
+  disconnects.
+- After reconnecting, the tool asks again, as set in the settings.
 - Other gated tools keep asking.
 
 **US-56** — As an analyst, I want a refused tool call to still end with an
@@ -660,8 +660,8 @@ quarterly report throughout the day.
 getting an answer that does not fit the current context.
 **Covers:** US-49, US-50, US-51.
 
-1. **Starting the session.** The analyst runs `make run`, which starts Redis
-   with the rest. The semantic cache is on, as an embedding model is
+1. **Starting the session.** The analyst runs `make run-server`, which starts
+   Redis with the rest, then `make run-tui`. The semantic cache is on, as an embedding model is
    configured and the Redis server answers.
 2. **First answer.** The analyst asks "What is the EBITDA margin?". The
    model answers as usual, and the complete answer is stored in the cache
@@ -709,7 +709,7 @@ opens, and give it the details it is missing instead of letting it guess.
    the search results it already has, without reading the blog.
 6. **Stopping the interruptions.** For a batch of questions about the same
    site, the analyst chooses "Always this session" (`a`) on the next dialog.
-   The following pages open without asking, until Sensai is restarted.
+   The following pages open without asking, until the client is restarted.
 7. **Being asked instead of guessed.** The analyst asks "Compare it with
    last quarter". The assistant doesn't know which quarter is meant and asks
    "Which quarter do you want to compare with?" in a dialog. The analyst
@@ -884,10 +884,11 @@ slowness comes from, without storing client content on disk.
 and pick the model fit for each question.
 **Covers:** US-59, US-60, US-61.
 
-1. **Ollama not started.** The analyst runs `make run` before starting
-   Ollama. Sensai prints a one-line error naming the problem and exits,
-   without a traceback.
-2. **First question.** With Ollama running, `make run` opens the chat. The
+1. **Ollama not started.** The analyst starts the server and the client
+   before starting Ollama. No model is served, so the login is refused with
+   `Unknown model '<name>'. Available models: none`, without a traceback.
+2. **First question.** With Ollama running, the analyst restarts the server,
+   and `make run-tui` opens the chat. The
    analyst asks a question; the answer appears word by word.
 3. **Follow-up.** The analyst asks "and in French?"; the model translates
    its previous answer, as it receives the earlier turns.

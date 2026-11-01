@@ -2,7 +2,7 @@
 
 The persistent database stores conversations so they survive between runs. It is
 defined as an abstract interface, `PersistentDatabase`
-(`src/sensai/memory/persistent_db/adapter.py`), so the rest of the code does not
+(`packages/server/src/sensai_server/memory/persistent_db/adapter.py`), so the rest of the code does not
 depend on a specific backend. A concrete backend (SQLite, Postgres, ...) only has
 to implement that interface.
 

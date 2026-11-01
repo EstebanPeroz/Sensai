@@ -9,12 +9,12 @@ Status: **done** covers the whole catalogue entry, **partial** covers part of it
 
 | ID | Feature | Status | How to use it |
 |---|---|---|---|
-| B1 | Functional CLI chatbot | done | `make run`, `--model`, `/model` |
+| B1 | Functional CLI chatbot | done | `make run-server`, `make run-tui`, `--model`, `/model` |
 | M1 | Session Persistence & Profiles | partial | `/branch list`, `/branch set <uuid>` |
 | M2 | Token Budgeting & Semantic Compression | done | `[context]` settings, `/compress` |
 | T1 | MCP | done | `[mcp.<name>]` tables in `settings.toml` |
 | T3 | Web Search | done | `web_search` and `web_fetch` tools |
-| R1 | Basic RAG | done | `/index <path\|url>`, `/ask <question>`, plain chat |
+| R1 | Basic RAG | done | `/index <path\|url>`, plain chat |
 | R2 | Advanced RAG | partial | automatic |
 | A1 | Reasoning Loops (ReAct) | done | `/effort off\|low\|medium\|high` |
 | A3 | Human-in-the-Loop | done | `[features].confirm`, `ask_user` tool |
@@ -36,25 +36,26 @@ and the tests that verify its acceptance criteria. The stories and scenarios are
 
 | ID | User stories | Scenario | Code | Tests |
 |---|---|---|---|---|
-| B1 | US-59, US-60, US-61 | 9 | `llm/ollama.py`, `history/conversation.py`, `parsing.py`, `commands/model.py` | `test_ollama.py`, `test_conversation.py`, `test_parsing.py`, `commands/test_commands_model.py` |
-| M1 | US-01, US-62 | 6 | `memory/persistent_db/`, `commands/branch.py` | `persistent_db/test_sql_alchemy.py`, `commands/test_commands_branch.py` |
-| M2 | US-03, US-04, US-63 | 6 | `monitoring/budget.py`, `pipeline/modules/compression.py`, `commands/compress.py` | `monitoring/test_budget.py`, `pipeline/test_compression.py`, `persistent_db/test_summaries.py`, `commands/test_commands_compress.py` |
-| T1 | US-05, US-06, US-58 | 4 | `mcp/` | `mcp/test_client.py`, `mcp/test_config.py` |
-| T3 | US-07, US-08 | 1, 3 | `tools/web/` | `test_web_search.py` |
-| R1 | US-13, US-14 | 5 | `rag/`, `pipeline/modules/rag.py`, `commands/index.py`, `commands/ask.py` | `rag/`, `commands/test_commands_index.py`, `commands/test_commands_ask.py` |
-| R2 | US-16, US-64 | 5 | `rag/retrievial_rag.py`, `rag/indexation_rag.py` | `rag/test_retrieval.py`, `rag/test_indexation.py` |
-| A1 | US-17, US-18, US-47, US-48 | 1 | `llm/thinking/react.py`, `commands/effort.py` | `test_react.py`, `commands/test_commands_effort.py` |
-| A3 | US-19, US-54, US-55, US-56 | 3 | `tools/tool_manager.py`, `commands/tools.py` | `test_tool_manager.py`, `commands/test_commands_tools.py` |
-| X4 | US-20, US-57 | 3 | `tools/ask_user.py` | `test_ask_user.py` |
-| A5 | US-23, US-24, US-65 | 2, 7 | `llm/persona.py`, `llm/persona_manager.py`, `commands/persona.py` | `test_persona.py` |
-| A6 | US-49, US-50, US-51 | 2 | `semantic/` | `test_semantic_cache.py` |
-| EV2 | US-66, US-67 | 7 | `pipeline/modules/guardrails/`, `config/personas/security.toml` | `server/test_server_bad_words.py` |
-| EV3 | US-52, US-53, US-68 | 8 | `monitoring/`, `commands/dashboard.py` | `monitoring/`, `test_conversation_logging.py`, `persistent_db/test_interactions.py`, `commands/test_commands_dashboard.py` |
-| X2 | US-37, US-69, US-70 | 6 | `commands/branch.py`, `ui/` | `commands/test_commands_branch.py`, `client/tui/test_tui_app.py` |
-| X3 | US-39, US-71 | 6 | `commands/data_transfer/` | `server/test_server_export.py`, `server/test_server_import.py` |
+| B1 | US-59, US-60, US-61 | 9 | `llm/provider/ollama.py`, `chat/chat.py`, `memory/conversation.py`, `commands/_model.py`, `app/app.py`, TUI `parsing.py`, `connection.py` | `server/llm/test_server_llm_ollama.py`, `server/chat/test_server_chat.py`, `server/memory/test_server_conversation.py`, `server/app/test_server_ws.py`, `server/commands/test_server_commands.py`, `client/tui/test_tui_parsing.py`, `client/tui/test_tui_main.py` |
+| M1 | US-01, US-62 | 6 | `memory/persistent_db/`, `commands/_branch.py` | `server/memory/test_server_sql_alchemy.py`, `server/commands/test_server_branch_command.py` |
+| M2 | US-03, US-04, US-63 | 6 | `monitoring/budget.py`, `pipeline/modules/compression.py`, `commands/_compress.py`, `chat/usage.py` | `server/monitoring/test_server_context_budget.py`, `server/pipeline/test_server_compression.py`, `server/memory/test_server_summaries.py`, `server/commands/test_server_compress_command.py`, `server/chat/test_server_context_usage.py`, `client/tui/test_tui_context.py` |
+| T1 | US-05, US-06, US-58 | 4 | `tools/mcp/` | `server/tools/mcp/`, `server/app/test_server_mcp_app.py` |
+| T3 | US-07, US-08 | 1, 3 | `tools/web/` | `server/tools/test_server_tools_web.py` |
+| R1 | US-13, US-14 | 5 | `rag/`, `pipeline/modules/rag.py`, `commands/_index.py` | `server/rag/`, `server/pipeline/test_server_rag_stage.py`, `server/commands/test_server_index.py` |
+| R2 | US-16, US-64 | 5 | `rag/chunking.py`, `rag/rag.py` | `server/rag/test_server_rag_chunking.py`, `server/rag/test_server_rag.py` |
+| A1 | US-17, US-18, US-47, US-48 | 1 | `chat/react.py`, `commands/_effort.py` | `server/chat/test_server_react.py`, `server/commands/test_server_commands.py` |
+| A3 | US-19, US-54, US-55, US-56 | 3 | `tools/tool_manager.py`, `tools/state.py`, `commands/_tools.py`, `app/outbound.py` | `server/tools/test_server_tool_manager.py`, `server/tools/test_server_tool_state.py`, `server/commands/test_server_tools_command.py`, `server/app/test_server_outbound.py` |
+| X4 | US-20, US-57 | 3 | `tools/ask_user.py` | `server/tools/test_server_ask_user.py` |
+| A5 | US-23, US-24, US-65 | 2, 7 | `llm/persona/`, `pipeline/modules/persona.py`, `commands/_persona.py` | `server/llm/test_server_persona.py`, `server/pipeline/test_server_persona_stage.py` |
+| A6 | US-49, US-50, US-51 | 2 | `cache/`, `pipeline/modules/cache.py` | `server/cache/`, `server/pipeline/test_server_cache_stage.py`, `server/app/test_server_app_cache.py` |
+| EV2 | US-66, US-67 | 7 | `pipeline/modules/guardrails/`, `config/personas/security.toml` | `server/pipeline/test_server_bad_words.py`, `server/llm/test_server_security_persona.py` |
+| EV3 | US-52, US-53, US-68 | 8 | `monitoring/`, `commands/_dashboard.py`, TUI `ui/_dashboard.py` | `server/monitoring/`, `server/memory/test_server_interactions.py`, `server/app/test_server_monitoring_app.py`, `client/tui/test_tui_dashboard.py` |
+| X2 | US-37, US-69, US-70 | 6 | `commands/_branch.py`, `session/session.py`, TUI `ui/` | `server/commands/test_server_branch_command.py`, `server/session/test_server_session.py`, `client/tui/test_tui_app.py` |
+| X3 | US-39, US-71 | 6 | `commands/_export.py`, `commands/_import.py`, TUI `client_commands/file.py` | `server/commands/test_server_export.py`, `server/commands/test_server_import.py`, `client/tui/test_tui_client_commands.py` |
 
-Code paths are relative to the `sensai` package, test paths to `tests/`. The tests mock Ollama, Redis and the vector
-database where needed; `make tests` runs them all.
+Code paths are relative to the `sensai_server` package (`packages/server/src/sensai_server`), or to `sensai_tui`
+(`packages/client/tui/src/sensai_tui`) when marked TUI; test paths are relative to `tests/`. The tests mock Ollama,
+Redis and the vector database where needed; `make tests` runs them all.
 
 ## Details
 
@@ -62,11 +63,13 @@ database where needed; `make tests` runs them all.
 
 - Answers are streamed token by token into the chat.
 - Every turn is sent to the model with the previous ones of the conversation.
-- Errors are reported instead of crashing: unreachable Ollama or missing model at start (one-line error, exit code
-  1, no traceback), unknown model on `/model`, unknown command, empty input ignored. With no Ollama and an empty
-  stdin, the program exits cleanly (checked by the CI).
-- The model is chosen with `--model <name>` (or `make run MODEL=<name>`), switched at runtime with `/model <name>`,
-  and `/model` alone lists the models Ollama serves. The settings file is chosen with `--config <path>`.
+- Sensai runs as a server (`make run-server`) and a terminal client (`make run-tui`) talking over a local
+  websocket; see the README.
+- Errors are reported instead of crashing: unreachable server (one-line error, exit code 1, no traceback), unknown
+  model at login or on `/model` (an error listing the available ones), unknown command, empty input ignored.
+- The model is chosen with the client's `--model <name>` (or `make run-tui MODEL=<name>`), switched at runtime with
+  `/model <name>`, and `/model` alone lists the models Ollama serves. The server's settings file is chosen with
+  `--config <path>`.
 - `/help` lists the commands, and commands and their arguments are completed with Tab.
 
 ### M1 — Session Persistence & Profiles (partial)
@@ -95,7 +98,8 @@ database where needed; `make tests` runs them all.
 - Any number of MCP servers, one `[mcp.<name>]` table each, local (`stdio`) or remote (streamable `http`, with
   `headers` for tokens). Their tools are offered to the model as `<server>__<tool>`.
 - Servers start concurrently; one that fails or times out is skipped with a message, the others still start.
-- One session per server is kept open until Sensai quits, so a server keeps its state between calls.
+- One session per MCP server is kept open until the Sensai server stops, shared by every client, so an MCP server
+  keeps its state between calls.
 - A failing call is sent back to the model as an `error: ...` result.
 - Tested with our own server (`tests/server/tools/mcp/fixtures/tiny_server.py`, stdio and http) and the official filesystem
   server. Details in the README.
@@ -110,11 +114,12 @@ database where needed; `make tests` runs them all.
 
 ### R1 — Basic RAG
 
-- `/index <path|url> ...` ingests text, Markdown, HTML and PDF files and web pages: cleaning, chunking, embedding
+- `/index <path|url> ...` ingests text, Markdown, HTML and PDF files and web pages (files are read by the client, in
+  its working directory, and sent to the server): cleaning, chunking, embedding
   (`[llm].embedding_model`), storage in Qdrant (Docker, or embedded with a directory as `db.rag.location`).
 - Re-indexing a source replaces its chunks, so answers follow the latest version.
 - In the chat, the chunks closest to the message are added to the context, and the answer ends with
-  `Sources: ...`. `/ask <question>` answers from the documents only.
+  `Sources: ...`. `/ask` (documents only) is not ported to the server yet.
 - A failed search is reported, and the model answers without the documents.
 
 ### R2 — Advanced RAG (partial)
@@ -150,11 +155,12 @@ database where needed; `make tests` runs them all.
 ### A6 — Semantic Cache
 
 - Answers are stored in Redis with their query embedding and a TTL (`[cache].ttl`), and served instantly to a query
-  whose similarity passes `[cache].similarity_threshold`.
+  of the same client session whose similarity passes `[cache].similarity_threshold`. The cache is cleared when the
+  server starts and stops.
 - A cached answer is only reused for the same model, persona and embedding model, and a similar preceding
   discussion.
 - Answers built with tools are not cached, their sources being likely to change.
-- Without Redis or an embedding model, Sensai runs without the cache.
+- Without Redis or an embedding model, the server runs without the cache.
 
 ### EV2 — Content & Privacy Guardrails (partial)
 
@@ -182,6 +188,7 @@ database where needed; `make tests` runs them all.
 ### X3 — Export & Publication (partial)
 
 - `/export current|<uuid>` writes a branch to `<uuid>.json`; `/import <path>` recreates a branch from such a file.
+  Both files are on the client's machine, written and read by the client.
 - Missing: Markdown/PDF export and public links.
 
 ### X4 — Questions & Forms (partial)
