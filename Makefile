@@ -1,19 +1,10 @@
-NAME := sensai
 MODEL = qwen3:1.7b
 
 all: install
 
-SETTINGS := src/sensai/config/settings.toml
-
-install: $(SETTINGS)
+install:
 	uv sync --locked --all-packages
 	uv run pre-commit install
-
-$(SETTINGS):
-	cp $(SETTINGS).template $(SETTINGS)
-
-run: docker
-	uv run $(NAME) --model ${MODEL}
 
 run-server: docker
 	uv run --package sensai-server sensai-server --config ./packages/server/settings.toml
@@ -28,7 +19,8 @@ docker-stop:
 	docker compose down
 
 help:
-	uv run $(NAME) --help
+	uv run --package sensai-tui sensai-tui --help
+	uv run --package sensai-server sensai-server --help
 
 tests:
 	uv run pytest
@@ -43,4 +35,4 @@ format:
 lock:
 	uv lock
 
-.PHONY: all install run run-server run-tui docker docker-stop tests lint format lock
+.PHONY: all install run-server run-tui docker docker-stop tests lint format lock
