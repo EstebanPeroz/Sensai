@@ -245,6 +245,22 @@ keeps its state between calls (an open browser, a login) and a remote server is 
 limit: a server that disconnects while Sensai runs is not reconnected. Its tools then answer
 `MCP server '<name>' disconnected, restart Sensai to reconnect: ...`, while the other servers keep working.
 
+## Monitoring
+
+The server records every call it makes to a model (each step of a ReAct exchange counts as one call) in the
+`interaction` table of the persistent database: the model, the persona, the latency, the time to first token, the
+token counts, the tools called and how the call ended (`ok`, `error` or `interrupted`). Answers served from the
+semantic cache never reach the model and are not recorded. The `[logging]` table of `settings.toml` controls it:
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `true` | `false` records nothing |
+| `log_content` | `true` | `false` keeps the metrics and the tool names, and drops the prompt, the answer, the thinking and the tool arguments |
+
+The records are written in the background and never delay an answer: a failed write is only logged on the server.
+Stopping the server cleanly stops the running answers and waits for their records; a killed process loses the
+records not yet written.
+
 ## Development
 
 ```sh

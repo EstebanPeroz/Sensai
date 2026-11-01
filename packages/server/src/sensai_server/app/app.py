@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
@@ -28,11 +29,13 @@ from sensai_server.app.outbound import Outbound
 from sensai_server.cache import CacheError, SemanticCache
 from sensai_server.chat.react import ReAct
 from sensai_server.commands import CommandRegistry, build_commands
+from sensai_server.events import EventBus
 from sensai_server.llm.embedder import Embedder
 from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
+from sensai_server.monitoring.logger import InteractionLogger
 from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import CacheStage, ModelStage, PersonaStage, RagStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
@@ -49,6 +52,7 @@ if TYPE_CHECKING:
     from sensai_server.config.settings import Settings
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
     from sensai_server.session.session import Session
+    from sensai_server.tools.mcp import MCPHost
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +72,26 @@ def create_app(
     (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task. So
     is the tool manager (see `_build_tool_manager`): each session keeps only its own tool state. So is the ReAct loop
     the pipeline's model stage hands each exchange to: it keeps nothing between two exchanges. So is the semantic
-    cache (see `_build_cache`), when there is one: its entries are cleared when the app starts and when it stops
-    (see `_lifespan`).
+    cache (see `_build_cache`), when there is one: its entries are cleared when the app starts and when it stops. So
+    is the event bus every chat emits its model calls on: the interaction logger stores them in the database, unless
+    logging is disabled. So is the MCP host, started with the tools: it is closed when the app stops, or right away if
+    building the app fails. At shutdown, the running chats are stopped and their last calls stored (see `_lifespan`).
     """
     pm: ProviderManager = ProviderManager(settings.llm)
     embedder = _build_embedder(settings, pm)
-    tool_manager = _build_tool_manager(settings, embedder)
+    tool_manager, mcp = _build_tool_manager(settings, embedder)
+    try:
+        app = _create_app(settings, pm, embedder, tool_manager, mcp)
+    except BaseException:
+        mcp.close()
+        raise
+    return app
+
+
+def _create_app(
+    settings: Settings, pm: ProviderManager, embedder: Embedder | None, tool_manager: ToolManager, mcp: MCPHost
+) -> FastAPI:
+    """Build the rest of the app around its providers, embedder and tools: see `create_app`."""
     react = ReAct(pm, tool_manager)
     set_db(settings.db.persistent)
     db = get_db()
@@ -90,6 +108,9 @@ def create_app(
     sessions = SessionRegistry(pm, persona_manager, tool_manager, cache)
     commands = CommandRegistry()
     commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager, rag=rag))
+    events = EventBus()
+    interaction_logger = InteractionLogger(db.interactions, settings.logging)
+    interaction_logger.attach(events)
 
     app = FastAPI(lifespan=_lifespan)
     set_app_state(
@@ -107,6 +128,9 @@ def create_app(
             pipeline=pipeline,
             rag=rag,
             cache=cache,
+            events=events,
+            interaction_logger=interaction_logger,
+            mcp=mcp,
         ),
     )
     app.include_router(router)
@@ -187,10 +211,12 @@ def _redis_answers(redis_url: str) -> bool:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    """Clear the semantic cache when the app starts, then close every session and clear the cache when it stops.
+    """Clear the semantic cache when the app starts, then close every session, the MCP host and the cache when it stops.
 
-    At startup, the entries left are those of a previous run's sessions, which no longer exist: each login has a fresh
-    client id. A failing clear is logged and never stops the app from starting or stopping.
+    At startup, the cache entries left are those of a previous run's sessions, which no longer exist: each login has
+    a fresh client id. A failing clear is logged and never stops the app from starting or stopping. Stopping a chat
+    mid-answer emits its call as interrupted: the interaction logger is drained only after the sessions are closed.
+    The MCP host is closed after the sessions too, so that their running tool calls are cancelled first.
     """
     state = app_state(app)
     if state.cache is not None:
@@ -199,6 +225,8 @@ async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
         yield
     finally:
         await state.registry.close_all()
+        await state.interaction_logger.drain()
+        await asyncio.to_thread(state.mcp.close)
         if state.cache is not None:
             await _clear_cache(state.cache)
             await state.cache.close()
@@ -212,21 +240,27 @@ async def _clear_cache(cache: SemanticCache) -> None:
         logger.warning("the semantic cache could not be cleared: %s", error)
 
 
-def _build_tool_manager(settings: Settings, embedder: Embedder | None) -> ToolManager:
-    """Build the manager of every built-in tool, shared by every session.
+def _build_tool_manager(settings: Settings, embedder: Embedder | None) -> tuple[ToolManager, MCPHost]:
+    """Build the manager of every tool, shared by every session, and the started MCP host serving the MCP ones.
 
-    Names in the disabled or confirm settings matching no tool are logged: at startup there is no client to tell.
+    Names in the disabled or confirm settings matching no tool are logged: at startup there is no client to tell. If
+    the manager cannot be built, such as for two tools of the same name, the host is closed before the error is raised.
     """
-    manager = ToolManager(
-        build_tools(settings, embedder),
-        disabled=settings.features.disabled_in("tools"),
-        confirm=settings.features.confirm_in("tools"),
-    )
+    built = build_tools(settings, embedder)
+    try:
+        manager = ToolManager(
+            built.tools,
+            disabled=settings.features.disabled_in("tools"),
+            confirm=settings.features.confirm_in("tools"),
+        )
+    except BaseException:
+        built.mcp.close()
+        raise
     for name in manager.unknown_disabled():
         logger.warning("unknown tool '%s' in the disabled features", name)
     for name in manager.unknown_confirm():
         logger.warning("unknown tool '%s' in the confirm features", name)
-    return manager
+    return manager, built.mcp
 
 
 @router.websocket("/ws")
@@ -273,7 +307,7 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message, state.pipeline, state.db, state.rag)
+            await handlers.handle_chat(session, message, state.pipeline, state.db, state.events, state.rag)
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():

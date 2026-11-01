@@ -10,13 +10,16 @@ if TYPE_CHECKING:
     from sensai_server.chat.react import ReAct
     from sensai_server.commands import CommandRegistry
     from sensai_server.config.settings import Settings
+    from sensai_server.events import EventBus
     from sensai_server.llm.embedder import Embedder
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
+    from sensai_server.monitoring.logger import InteractionLogger
     from sensai_server.pipeline import ChatPipeline
     from sensai_server.rag import Rag
     from sensai_server.session import SessionRegistry
+    from sensai_server.tools.mcp import MCPHost
     from sensai_server.tools.tool_manager import ToolManager
 
 # The attribute of `app.state` holding the `AppState`.
@@ -43,6 +46,9 @@ class AppState:
     pipeline: ChatPipeline
     rag: Rag | None
     cache: SemanticCache | None
+    events: EventBus
+    interaction_logger: InteractionLogger
+    mcp: MCPHost
 
 
 def set_app_state(app: Starlette, state: AppState) -> None:

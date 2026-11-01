@@ -9,6 +9,7 @@ from sensai_protocol import AiChunk, Error, Input, Role, ServerMessage, System
 from sensai_server.chat import BRANCH_NAME_LENGTH, chat
 from sensai_server.chat.chat import _to_ai_chunk
 from sensai_server.chat.react import ANSWER_INSTRUCTION, EFFORTS, ReAct
+from sensai_server.events import EventBus
 from sensai_server.llm.error import RequestCallError
 from sensai_server.llm.persona import Persona, PersonaManager
 from sensai_server.llm.provider import ChatResponse, ProviderManager
@@ -94,19 +95,19 @@ def _history(session: Session) -> list[dict]:
 class TestChat:
     async def test_does_not_echo_the_prompt(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         FakeAdapter.replies = [chunk("hi", done=True)]
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         assert not any(isinstance(message, Input) for message in _sent(session))
 
     async def test_streams_chunks_in_order(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         FakeAdapter.replies = [chunk("a"), chunk("b"), chunk("c", done=True)]
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         chunks = [message for message in _sent(session) if isinstance(message, AiChunk)]
         assert [item.content for item in chunks] == ["a", "b", "c"]
         assert [item.done for item in chunks] == [False, False, True]
 
     async def test_saves_both_messages(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         FakeAdapter.replies = [chunk("hi "), chunk("there", done=True)]
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         expected = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "hi there"}]
         assert _history(session) == expected
         assert session.conv.uuid is not None
@@ -119,17 +120,17 @@ class TestChat:
     async def test_creates_the_branch_once(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         prompt = "x" * (BRANCH_NAME_LENGTH + 10)
         FakeAdapter.replies = [chunk("a", done=True)]
-        await chat(session, prompt, pipeline, db)
+        await chat(session, prompt, pipeline, db, EventBus())
         branch = session.conv.uuid
         assert branch is not None
         assert db.get_branches()[branch] == prompt[:BRANCH_NAME_LENGTH]
-        await chat(session, "again", pipeline, db)
+        await chat(session, "again", pipeline, db, EventBus())
         assert session.conv.uuid == branch
         assert list(db.get_branches()) == [branch]
 
     async def test_provider_error(self, session: Session, db: SqlAlchemy) -> None:
         pipeline = ChatPipeline(RecordingNext(ChatResponse({"error": "boom"}), ChatResponse(chunk("never"))))
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         chunks = [message for message in _sent(session) if isinstance(message, AiChunk)]
         assert chunks == [AiChunk(error="boom", done=True)]
         assert _history(session) == [{"role": "user", "content": "hello"}]
@@ -138,7 +139,7 @@ class TestChat:
         self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy
     ) -> None:
         session.conv.model = "nope"
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         errors = [message for message in _sent(session) if isinstance(message, Error)]
         assert [error.message for error in errors] == ["No provider serves model nope"]
         assert not any(isinstance(message, AiChunk) for message in _sent(session))
@@ -152,13 +153,13 @@ class TestChat:
             raise RequestCallError(msg)
 
         monkeypatch.setattr(FakeAdapter, "chat", failing_chat)
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         assert any(isinstance(message, Error) for message in _sent(session))
         assert _history(session) == [{"role": "user", "content": "hello"}]
 
     async def test_blank_answer_is_not_saved(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         FakeAdapter.replies = [chunk("  ", done=True)]
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         assert [message for message in _sent(session) if isinstance(message, AiChunk)] == [
             AiChunk(content="  ", done=True)
         ]
@@ -171,7 +172,7 @@ class TestChat:
     ) -> None:
         monkeypatch.setattr(db, "add_message_to_branch", lambda *_: None)
         FakeAdapter.replies = [chunk("a", done=True)]
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         assert [type(message) for message in _sent(session)] == [System]
         assert FakeAdapter.last_payload is None
         assert _history(session) == []
@@ -180,8 +181,8 @@ class TestChat:
         self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy
     ) -> None:
         FakeAdapter.replies = [chunk("hi", done=True)]
-        await chat(session, "hello", pipeline, db)
-        await chat(session, "again", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
+        await chat(session, "again", pipeline, db, EventBus())
         assert FakeAdapter.last_payload is not None
         assert FakeAdapter.last_payload["messages"] == [
             {"role": "user", "content": "hello"},
@@ -192,14 +193,14 @@ class TestChat:
 
     async def test_no_model_sends_an_error(self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy) -> None:
         session.conv.model = None
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         assert [type(message) for message in _sent(session)] == [Error]
         assert session.conv.uuid is None
 
     async def test_bad_word_is_answered_by_the_guard(
         self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy
     ) -> None:
-        await chat(session, "fuck", pipeline, db)
+        await chat(session, "fuck", pipeline, db, EventBus())
         assert [message for message in _sent(session) if isinstance(message, AiChunk)] == [
             AiChunk(content=WARNING, done=True)
         ]
@@ -214,7 +215,7 @@ class TestChat:
     ) -> None:
         session.conv.persona = PERSONA
         FakeAdapter.replies = [chunk("a", done=True)]
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         assert FakeAdapter.last_payload is not None
         assert FakeAdapter.last_payload["messages"] == [
             {"role": "system", "content": PERSONA.prompt},
@@ -225,7 +226,7 @@ class TestChat:
 
     async def test_context_carries_the_tool_state_of_the_session(self, session: Session, db: SqlAlchemy) -> None:
         model = RecordingNext(ChatResponse(chunk("a", done=True)))
-        await chat(session, "hello", ChatPipeline(model), db)
+        await chat(session, "hello", ChatPipeline(model), db, EventBus())
         assert [context.tools for context in model.calls] == [session.tools]
         assert model.calls[0].tools is session.tools
 
@@ -235,18 +236,18 @@ class TestChat:
     ) -> None:
         session.effort = level
         model = RecordingNext(ChatResponse(chunk("a", done=True)))
-        await chat(session, "hello", ChatPipeline(model), db)
+        await chat(session, "hello", ChatPipeline(model), db, EventBus())
         assert [context.max_iterations for context in model.calls] == [steps]
 
     async def test_context_carries_the_rag_id_of_the_conversation(self, session: Session, db: SqlAlchemy) -> None:
         model = RecordingNext(ChatResponse(chunk("a", done=True)))
-        await chat(session, "hello", ChatPipeline(model), db)
+        await chat(session, "hello", ChatPipeline(model), db, EventBus())
         assert [context.rag_id for context in model.calls] == [session.conv.rag_id]
 
     async def test_first_message_stores_the_rag_id_with_the_branch(
         self, session: Session, pipeline: ChatPipeline, db: SqlAlchemy
     ) -> None:
-        await chat(session, "hello", pipeline, db)
+        await chat(session, "hello", pipeline, db, EventBus())
         assert session.conv.uuid is not None
         assert db.get_branch_rag_id(session.conv.uuid) == session.conv.rag_id
 
@@ -256,8 +257,8 @@ class TestChat:
         rag_id = session.conv.rag_id
         assert rag_id is not None
         assert not _exists(rag, rag_id)
-        await chat(session, "hello", pipeline, db, rag)
-        await chat(session, "again", pipeline, db, rag)
+        await chat(session, "hello", pipeline, db, EventBus(), rag)
+        await chat(session, "again", pipeline, db, EventBus(), rag)
         assert session.conv.uuid is not None
         assert _exists(rag, rag_id)
         assert await rag.rag_id_for(session.conv.uuid) == rag_id
@@ -267,7 +268,7 @@ class TestChat:
     ) -> None:
         embedder.failing = True
         FakeAdapter.replies = [chunk("hi", done=True)]
-        await chat(session, "hello", pipeline, db, rag)
+        await chat(session, "hello", pipeline, db, EventBus(), rag)
         assert any(
             isinstance(message, System) and "could not be created" in message.message for message in _sent(session)
         )
@@ -279,7 +280,7 @@ class TestChat:
         FakeAdapter.replies = [chunk("a"), chunk("b", done=True)]
         out = _SignallingOutbound()
         session.out = out
-        task = asyncio.create_task(chat(session, "hello", pipeline, db))
+        task = asyncio.create_task(chat(session, "hello", pipeline, db, EventBus()))
         try:
             await asyncio.wait_for(out.chunk_sent.wait(), TIMEOUT)
             task.cancel()

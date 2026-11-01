@@ -11,6 +11,7 @@ from sensai_server.app import _handlers, create_app
 from sensai_server.app._state import app_state
 from sensai_server.commands._persona import read_persona_file
 from sensai_server.config.settings import DBSettings, LLMSettings, OllamaSettings, PersistentDBSettings, Settings
+from sensai_server.events import EventBus
 from sensai_server.llm.persona import PersonaError, PersonaManager
 from sensai_server.llm.provider import provider_manager
 from sensai_server.memory.persistent_db import PersistentDatabase, base
@@ -30,7 +31,12 @@ PERSONA_PATH = "x.toml"
 
 
 async def fake_chat(
-    session: Session, prompt: str, _pipeline: ChatPipeline, _db: PersistentDatabase, _rag: Rag | None = None
+    session: Session,
+    prompt: str,
+    _pipeline: ChatPipeline,
+    _db: PersistentDatabase,
+    _events: EventBus,
+    _rag: Rag | None = None,
 ) -> None:
     """Answer with the prompt in one chunk. A `slow` prompt then streams forever, until cancelled.
 

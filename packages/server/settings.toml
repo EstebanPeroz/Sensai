@@ -1,3 +1,6 @@
+# Template of the local settings: `make install` copies it to settings.toml (git-ignored), edit that copy.
+# Without settings.toml, sensai runs with this template.
+
 [db]
 persistent.url= "sqlite:///persistent.db"
 
@@ -13,14 +16,40 @@ embedding_model = "nomic-embed-text:latest"
 [llm.ollama]
 base_url = "http://localhost:11434/"
 
+[cache]
+# Redis server of the semantic cache (`docker compose up redis`); without it, answers are not cached.
+redis_url = "redis://localhost:6379/0"
+similarity_threshold = 0.95
+ttl = 86400
+
 [web]
 api_base_url = "https://ollama.com/"
 # Ollama API key (https://ollama.com/settings/keys), to set in settings.toml only.
 api_key = ""
 timeout = 10.0
 
+# MCP servers to start, one `[mcp.<name>]` table each; the name must only contain letters, digits, '_' or '-'.
+# Their tools are named `<name>__<tool>`.
+# [mcp.filesystem]
+# command = "npx"
+# args = ["--yes", "@modelcontextprotocol/server-filesystem", "/tmp/sensai-mcp-demo"]
+# startup_timeout = 30
+#
+# A remote server; keep its token in settings.toml only.
+# [mcp.remote]
+# transport = "http"
+# url = "http://127.0.0.1:8000/mcp"
+# headers = { Authorization = "Bearer <token>" }
+
 [features]
 # Feature ids to switch off, as `<namespace>.<name>`.
 disabled = []
+# Feature ids asking the user before acting, as `<namespace>.<name>`, such as `tools.web_fetch`.
+confirm = []
 
 # disabled = ["tools.inexesistant.test"]
+
+[logging]
+# Record every call to the model in the persistent database; log_content = false keeps only the metadata.
+enabled = true
+log_content = true
