@@ -30,6 +30,7 @@ from sensai_server.llm.persona import DuplicatePersonaError, PersonaManager
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
+from sensai_server.monitoring.logger import InteractionLogger
 from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import ModelStage, PersonaStage
 from sensai_server.pipeline.modules.guardrails import BadWordsGuard
@@ -38,6 +39,8 @@ from sensai_server.tools import build_tools
 from sensai_server.tools.tool_manager import ToolManager
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from sensai_protocol import ClientMessage
 
     from sensai_server.config.settings import Settings
@@ -57,7 +60,9 @@ def create_app(
     and the default persona is stored in it if it is not there yet. The chat pipeline is built once
     (see `_build_pipeline`) and shared by every session: each `chat` prompt goes through it as the session's task. So
     is the tool manager (see `_build_tool_manager`): each session keeps only its own tool state. So is the ReAct loop
-    the pipeline's model stage hands each exchange to: it keeps nothing between two exchanges.
+    the pipeline's model stage hands each exchange to: it keeps nothing between two exchanges. So is the event bus
+    every chat emits its model calls on: the interaction logger stores them in the database, unless logging is
+    disabled. At shutdown, the running chats are stopped and their last calls stored (see `_lifespan`).
     """
     pm: ProviderManager = ProviderManager(settings.llm)
     embedder = _build_embedder(settings, pm)
@@ -76,8 +81,11 @@ def create_app(
     sessions = SessionRegistry(pm, persona_manager, tool_manager)
     commands = CommandRegistry()
     commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager))
+    events = EventBus()
+    interaction_logger = InteractionLogger(db.interactions, settings.logging)
+    interaction_logger.attach(events)
 
-    app = FastAPI()
+    app = FastAPI(lifespan=_lifespan)
     set_app_state(
         app,
         AppState(
@@ -91,11 +99,24 @@ def create_app(
             registry=sessions,
             commands=commands,
             pipeline=pipeline,
-            events=EventBus(),
+            events=events,
+            interaction_logger=interaction_logger,
         ),
     )
     app.include_router(router)
     return app
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    """Serve `app`, then, at shutdown, stop every running chat and wait until its model calls are stored.
+
+    Stopping a chat mid-answer emits its call as interrupted: the logger is drained only after the sessions are closed.
+    """
+    yield
+    state = app_state(app)
+    await state.registry.close_all()
+    await state.interaction_logger.drain()
 
 
 def _build_pipeline(react: ReAct) -> ChatPipeline:
