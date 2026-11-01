@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from functools import partial
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, FastAPI, WebSocket, WebSocketDisconnect
@@ -23,6 +24,7 @@ from sensai_protocol import (
     UserAnswer,
     parse_client_message,
 )
+from sensai_protocol.error import SensaiError
 
 from sensai_server.app import _handlers as handlers
 from sensai_server.app._state import AppState, app_state, set_app_state
@@ -36,6 +38,7 @@ from sensai_server.llm.persona import DuplicatePersonaError, Persona, PersonaMan
 from sensai_server.llm.provider import ProviderManager
 from sensai_server.memory.persistent_db.base import get_db, set_db
 from sensai_server.memory.persistent_db.error import DbConnectionError
+from sensai_server.monitoring.budget import ContextBudget
 from sensai_server.monitoring.logger import InteractionLogger
 from sensai_server.pipeline import ChatPipeline
 from sensai_server.pipeline.modules import CacheStage, ModelStage, PersonaStage, RagStage
@@ -106,10 +109,12 @@ def _create_app(
     cache = _build_cache(settings, embedder)
     pipeline = _build_pipeline(react, rag, cache, persona_manager.security_personas())
 
+    events = EventBus()
+    budget = ContextBudget(settings.context, partial(_context_length, pm))
+    budget.attach(events)
     sessions = SessionRegistry(pm, persona_manager, tool_manager, cache)
     commands = CommandRegistry()
-    commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager, rag=rag))
-    events = EventBus()
+    commands.set_commands(build_commands(sessions, commands, db, pm, tool_manager, rag=rag, budget=budget))
     interaction_logger = InteractionLogger(db.interactions, settings.logging)
     interaction_logger.attach(events)
 
@@ -130,6 +135,7 @@ def _create_app(
             rag=rag,
             cache=cache,
             events=events,
+            budget=budget,
             interaction_logger=interaction_logger,
             mcp=mcp,
         ),
@@ -155,6 +161,20 @@ def _build_pipeline(
     if rag is not None:
         pipeline.use(RagStage(rag))
     return pipeline
+
+
+def _context_length(pm: ProviderManager, model: str) -> int | None:
+    """Return the context length of `model`, None when no provider serves it or its provider cannot tell.
+
+    It asks the provider over HTTP and blocks: the budget runs it in a thread.
+    """
+    provider = pm.get_provider(model)
+    if provider is None:
+        return None
+    try:
+        return provider.show(model).context_length
+    except SensaiError:
+        return None
 
 
 def _build_embedder(settings: Settings, pm: ProviderManager) -> Embedder | None:
@@ -286,7 +306,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 await out.send_error(str(err))
                 continue
             if isinstance(message, Login):
-                session = await handlers.handle_login(state.registry, out, session, message, state.commands.names())
+                session = await handlers.handle_login(
+                    state.registry, out, session, message, state.commands.names(), budget=state.budget
+                )
                 continue
             if session is None:
                 await out.send_error("Login first.")
@@ -311,7 +333,9 @@ async def _dispatch(ws: WebSocket, state: AppState, session: Session, message: C
             await ws.close()
             return False
         case Chat():
-            await handlers.handle_chat(session, message, state.pipeline, state.db, state.events, state.rag)
+            await handlers.handle_chat(
+                session, message, state.pipeline, state.db, state.events, state.rag, budget=state.budget
+            )
         case Command():
             await handlers.handle_command(session, message, state.commands)
         case Cancel():

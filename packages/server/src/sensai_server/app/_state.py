@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from sensai_server.llm.persona import PersonaManager
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
+    from sensai_server.monitoring.budget import ContextBudget
     from sensai_server.monitoring.logger import InteractionLogger
     from sensai_server.pipeline import ChatPipeline
     from sensai_server.rag import Rag
@@ -47,6 +48,7 @@ class AppState:
     rag: Rag | None
     cache: SemanticCache | None
     events: EventBus
+    budget: ContextBudget
     interaction_logger: InteractionLogger
     mcp: MCPHost
 

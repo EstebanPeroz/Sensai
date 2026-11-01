@@ -1,8 +1,10 @@
 from typing import TYPE_CHECKING, override
 
+from sensai_server.chat.usage import send_context_usage
 from sensai_server.commands._base import Command
 
 if TYPE_CHECKING:
+    from sensai_server.monitoring.budget import ContextBudget
     from sensai_server.session import Session
 
 
@@ -12,6 +14,13 @@ class Model(Command):
     name = "model"
     help = "List the available models, or set the model to use."
     usage = "/model [model_name]"
+
+    _budget: ContextBudget | None
+
+    def __init__(self, budget: ContextBudget | None = None) -> None:
+        """Initialize the Model command, sending the new context usage from `budget`, if any, on a model change."""
+        super().__init__()
+        self._budget = budget
 
     async def _display_available_models(self, session: Session) -> None:
         """Display the available models."""
@@ -24,9 +33,10 @@ class Model(Command):
         await session.out.send_system_message("\n".join(lines))
 
     async def _set_model(self, session: Session, model_name: str) -> None:
-        """Set the model `session` uses."""
+        """Set the model `session` uses, then send its context usage: the same tokens against the new budget."""
         if await session.set_model(model_name):
             await session.out.send_system_message(f"Model set to '{model_name}'.")
+            await send_context_usage(session, self._budget)
         else:
             await session.out.send_system_message(f"Model '{model_name}' is not available.")
 

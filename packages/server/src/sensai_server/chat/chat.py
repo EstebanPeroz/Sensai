@@ -10,6 +10,7 @@ from sensai_protocol import AiChunk
 from sensai_protocol.server_messages import Role
 
 from sensai_server.chat.react import EFFORTS
+from sensai_server.chat.usage import send_context_usage
 from sensai_server.pipeline import ChatContext
 
 if TYPE_CHECKING:
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from sensai_server.events import EventBus
     from sensai_server.llm.responses import ChatResponse
     from sensai_server.memory.persistent_db import PersistentDatabase
+    from sensai_server.monitoring.budget import ContextBudget
     from sensai_server.monitoring.interaction import Interaction
     from sensai_server.pipeline import ChatPipeline
     from sensai_server.session import Session
@@ -26,10 +28,20 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def run_chat(
-    session: Session, prompt: str, pipeline: ChatPipeline, db: PersistentDatabase, events: EventBus
+async def run_chat(  # noqa: PLR0913 - the shared services a chat needs come through here
+    session: Session,
+    prompt: str,
+    pipeline: ChatPipeline,
+    db: PersistentDatabase,
+    events: EventBus,
+    *,
+    budget: ContextBudget | None = None,
 ) -> None:
-    """Run the chat pipeline, emitting every call it makes to the model on `events`, tagged with the branch."""
+    """Run the chat pipeline, emitting every call it makes to the model on `events`, tagged with the branch.
+
+    Once the answer is saved, the session is sent its new context usage from `budget`, if any: the last call has
+    just been measured.
+    """
     conv = session.conv
     if not await conv.save_message(Role.USER, prompt, session.out, db):
         return
@@ -48,9 +60,9 @@ async def run_chat(
         ),
     )
     content = await _stream(session.out, pipeline, context)
-    if content.strip() == "":
-        return
-    await conv.save_message(Role.ASSISTANT, content, session.out, db)
+    if content.strip() != "":
+        await conv.save_message(Role.ASSISTANT, content, session.out, db)
+    await send_context_usage(session, budget)
 
 
 def _emit_interaction(events: EventBus, branch_id: UUID | None, persona: str | None, interaction: Interaction) -> None:

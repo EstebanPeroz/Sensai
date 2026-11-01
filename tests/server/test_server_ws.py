@@ -22,6 +22,7 @@ from sensai_protocol import (
     ConfirmAnswer,
     Confirmation,
     ConfirmTool,
+    ContextUsage,
     Error,
     Input,
     Login,
@@ -81,6 +82,7 @@ def _login(ws: WebSocketTestSession) -> Session:
     _send(ws, Login(model=MODEL))
     message = _receive(ws)
     assert isinstance(message, Session)
+    assert isinstance(_receive(ws), ContextUsage)
     return message
 
 
@@ -500,7 +502,7 @@ class TestDispatch:
         assert received_session.client_id == session.client_id
         assert received_message == message
 
-    def test_chat_reaches_its_handler_with_the_pipeline_db_events_and_rag(
+    def test_chat_reaches_its_handler_with_the_pipeline_db_events_rag_and_budget(
         self, app: FastAPI, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         handler = AsyncMock()
@@ -515,6 +517,7 @@ class TestDispatch:
         assert db is app_state(app).db
         assert events is app_state(app).events
         assert rag is app_state(app).rag
+        assert handler.await_args.kwargs["budget"] is app_state(app).budget
 
     def test_logout_reaches_its_handler_with_the_registry(
         self, client: TestClient, registry: SessionRegistry, monkeypatch: pytest.MonkeyPatch
