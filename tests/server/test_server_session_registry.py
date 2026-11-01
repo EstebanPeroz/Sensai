@@ -82,6 +82,14 @@ class TestSessionRegistry:
         assert first.client_id != second.client_id
         assert len(registry) == 2
 
+    async def test_two_sessions_get_distinct_rag_ids(self, persona_manager: PersonaManager) -> None:
+        registry = _registry(persona_manager)
+        first = await registry.open(RecordingOutbound(), MODEL)
+        second = await registry.open(RecordingOutbound(), MODEL)
+        assert first is not None
+        assert second is not None
+        assert first.conv.rag_id != second.conv.rag_id
+
     async def test_sessions_share_the_persona_manager(self, persona_manager: PersonaManager) -> None:
         registry = _registry(persona_manager)
         first = await registry.open(RecordingOutbound(), MODEL)

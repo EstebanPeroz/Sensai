@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from sensai_server.llm.provider import ProviderManager
     from sensai_server.memory.persistent_db.adapter import PersistentDatabase
     from sensai_server.pipeline import ChatPipeline
+    from sensai_server.rag import Rag
     from sensai_server.session import SessionRegistry
     from sensai_server.tools.tool_manager import ToolManager
 
@@ -39,6 +40,7 @@ class AppState:
     registry: SessionRegistry
     commands: CommandRegistry
     pipeline: ChatPipeline
+    rag: Rag | None
 
 
 def set_app_state(app: Starlette, state: AppState) -> None:
